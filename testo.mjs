@@ -10,23 +10,23 @@ export class X
   static members = [];
   _outproducts = new Set();
 
-  constructor(x)
+  constructor(t0)
   {
     for (const member of X.members)
     {
-      if (Object.is(member.x, x))
+      if (Object.is(member.t0, t0))
       {
         return member;
       }
     }
-    this.x = x;
+    this.t0 = t0;
     this._id = X.members.length;
     X.members.push(this);
   }
 
   toString()
   {
-    return atomString("x", this.x);
+    return atomString("X", this.t0);
   }
 }
 
@@ -36,24 +36,24 @@ export class I
   static members = [];
   _outproducts = new Set();
 
-  constructor(x, y)
+  constructor(t0, t1)
   {
     for (const member of I.members)
     {
-      if (Object.is(member.x, x) && Object.is(member.y, y))
+      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
       {
         return member;
       }
     }
-    this.x = x;
-    this.y = y;
+    this.t0 = t0;
+    this.t1 = t1;
     this._id = I.members.length;
     I.members.push(this);
   }
 
   toString()
   {
-    return atomString("i", this.x, this.y);
+    return atomString("i", this.t0, this.t1);
   }
 }
 
@@ -62,24 +62,24 @@ export class R
   static members = [];
   _outproducts = new Set();
 
-  constructor(x, z)
+  constructor(t0, t1)
   {
     for (const member of R.members)
     {
-      if (Object.is(member.x, x) && Object.is(member.z, z))
+      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
       {
         return member;
       }
     }
-    this.x = x;
-    this.z = z;
+    this.t0 = t0;
+    this.t1 = t1;
     this._id = R.members.length;
     R.members.push(this);
   }
 
   toString()
   {
-    return atomString("r", this.x, this.z);
+    return atomString("r", this.t0, this.t1);
   }
 }
 
@@ -88,91 +88,56 @@ const Rule1 =
 {
   name : 'r1',
   
-  // fire with delta tuples for deltaPos
   fire(deltaPos, deltaTuples)
   {
-    const wl0 = [[new Map(), []]]; // env + ptuples
-    
-    // atom 0 (X x) 
-    const wl1 = [];
-    for (const [env, ptuples] of wl0)
-    {
-      for (const Xtuple of (deltaPos === 0 ? deltaTuples : X.members))
-      {
-        // term 0 var 'x' [unbound]
-        const x = Xtuple.x;
-        wl1.push([Maps.put(env, 'x', x), Arrays.push(ptuples, Xtuple)]); // mutation iso. functional?
-      }  
-    }
-
-    //atom 1 (I x y)
-    const wl2 = [];
-    for (const [env, ptuples] of wl1)
-    {
-      const wl2_1 = [];
-      for (const Ituple of (deltaPos === 1 ? deltaTuples : I.members))
-      {
-        // term 0 var 'x' [bound]
-        const x = Ituple.x;
-        const existingx = env.get('x');
-        if (existingx === x)
-        {
-          wl2_1.push([env, Ituple]);
-        }
-      }
-      
-      // term 1 var 'y' [unbound]
-      for (const [env, Ituple] of wl2_1)
-      {
-        const y = Ituple.y;
-        wl2.push([Maps.put(env, 'y', y), Arrays.push(ptuples, Ituple)]); // mutation?
-      }
-    }
-    
-    // clause 2 z = y*y [unbound]
-    const wl3 = [];
-    for (const [env, ptuples] of wl2)
-    {
-      const y = env.get('y');
-      wl3.push([Maps.put(env, 'z', y*y), ptuples]); // mutation?
-    }
-
-    /// bind head (R x sum<z>)
     const updates = new Map(); // groupby -> additionalValues
-    for (const [env, ptuples] of wl3)
-    {
-      const x = env.get('x');
-      const z = env.get('z');
-      const productGB = new ProductGB(new Set(ptuples), env);
-      const groupby = new Rule1GB(x);
 
-      if (productGB._outgb === groupby) // 'not new': TODO turn this around
+    for (const tuple0 of (deltaPos === 0 ? deltaTuples : X.members))
+    {
+      const x = tuple0.t0;
+      for (const tuple1 of (deltaPos === 1 ? deltaTuples : I.members))
       {
-        // already contributes, do nothing
-      }
-      else
-      {
-        const currentAdditionalValues = updates.get(groupby);
-        if (!currentAdditionalValues)
+        if (tuple1.t0 === x)
         {
-          updates.set(groupby, [z]);
+          const y = tuple1.t1;
+
+          //assign
+          const z = y * y;
+
+          const ptuples = new Set([tuple0, tuple1]);
+          const productGB = new ProductGB(ptuples, z);
+          const groupby = new Rule1GB(x);
+
+          if (productGB._outgb === groupby) // 'not new': TODO turn this around
+          {
+            // already contributes, do nothing
+          }
+          else
+          {
+            const currentAdditionalValues = updates.get(groupby);
+            if (!currentAdditionalValues)
+            {
+              updates.set(groupby, [z]);
+            }
+            else
+            {
+              currentAdditionalValues.push(z);
+            }
+            for (const tuple of ptuples)
+            {
+              tuple._outproducts.add(productGB);
+            }
+            productGB._outgb = groupby;
+          }
         }
-        else
-        {
-          currentAdditionalValues.push(z);
-        }
-        for (const tuple of ptuples)
-        {
-          tuple._outproducts.add(productGB);
-        }
-        productGB._outgb = groupby;
       }
     }
-
+    
+    // bind head (R x sum<z>)
     for (const [groupby, additionalValues] of updates)
     {
-      const currentResultTuple = groupby._outtuple; // should be API
-      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.z;
+      const currentResultTuple = groupby._outtuple;
+      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.t1;
       const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
       const updatedResultTuple = new R(groupby.x, updatedValue);  
       groupby._outtuple = updatedResultTuple;
@@ -274,7 +239,7 @@ export function toDot()
   for (const productGB of productsGB())
   {
     const p = productTag(productGB);
-    sb += `${p} [label="${[...productGB.env.entries()].map(entry => entry[0]+":"+termString(entry[1]))}"];\n`;
+    sb += `${p} [label="${productGB.value}"];\n`;
     sb += `${p} -> ${groupbyTag(productGB._outgb)};\n`;    
   }
 

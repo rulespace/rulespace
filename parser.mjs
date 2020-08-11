@@ -1,7 +1,6 @@
 import esprima from 'esprima';
 import {assertTrue} from './common.mjs';
 
-
 export class Lit
 {
   constructor(x)

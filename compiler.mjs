@@ -1,6 +1,7 @@
 import fs from 'fs';
-import {assertTrue, Sets} from './common.mjs';
-import {parseProgram, Visitor} from './parser.mjs';
+import { assertTrue, Sets } from './common.mjs';
+import { parseProgram, Var, Atom, Bin, Assign } from './parser.mjs';
+import { analyzeProgram } from './analyzer.mjs';
 
 export function compileFile(name)
 {
@@ -12,7 +13,7 @@ export function compile(src)
 {
   const program = parseProgram(src);
 
-  const staticInfo = analyze(program);
+  const staticInfo = analyzeProgram(program);
   console.log(staticInfo);
 
   const sb = [];
@@ -24,7 +25,10 @@ export function compile(src)
     sb.push(emitTupleClass(pred, arity));
   }
 
-
+  program.rules.forEach((rule, i) =>
+  {
+    sb.push(emitRuleObject(rule, i));
+  });
   
   sb.push(emitRest);
 
@@ -69,51 +73,174 @@ export class ${pred}
   `;
 }
 
-class CollectingVisitor extends Visitor
+function emitRuleAtomTermFire(termNumber, term, pred, compileEnv, wl)
+{
+  if (term instanceof Var)
   {
-    predicates = new Map(); // name -> arity
-    rules = new Map(); // pred -> rules
-    
-    visitAtom(atom)
+    const name = term.name;
+    const bound = compileEnv.has(name);
+    compileEnv.add(name);
+    const comment = `// term ${termNumber} Var ${term} ${bound ? '[bound]' : '[unbound]'}`;
+    if (bound)
     {
-      const pred = atom.pred;
-      const arity = atom.arity();
-      const currentArity = this.predicates.get(pred);
-      if (currentArity === undefined)
-      {
-        this.predicates.set(pred, atom.terms.length);
-      }
-      else if (currentArity !== arity)
-      {
-        throw new Error("arity mismatch for predicate " + pred);
-      }
-      return true;
+      return `
+${comment}
+const ${wl} = [];    
+for (const tuple of (deltaPos === ${} ? deltaTuples : ${pred}.members))
+{
+  const ${name} = tuple.t${termNumber};
+  const existingx = env.get('${name}');
+  if (existingx === ${name})
+  {
+    ${wl}.push([env, tuple]);
+  }
+}
+      `;
+    }
+    else
+    {
+      return `
+${comment}
+for (const tuple of (deltaPos === 0 ? deltaTuples : ${pred}.members))
+{
+  const ${name} = tuple.t${termNumber};
+  ${wl}.push([Maps.put(env, '${name}', ${name}), Arrays.push(ptuples, tuple)]); // mutation iso. functional?
+}  
+      `; 
+    }    
+  }
+  throw new Error("compile error: " + term);
+}
+
+
+function emitRuleAtomFire(atomNumber, atom, compileEnv, wl, previousWl)
+{
+  if (atom instanceof Atom)
+  {
+    console.log(`emitRuleAtomFire ${atomNumber} Atom ${atom}`);
+    const comment = `// atom ${atomNumber} ${atom}`;
+    
+    const pred = atom.pred;
+  
+    const termFires = atom.terms.map((term, termNumber) => emitRuleAtomTermFire(termNumber, term, pred, compileEnv, termNumber === (atom.terms.length - 1) ? wl : (wl + "_" + termNumber))).join('\n');
+  
+    return `
+${comment}
+const ${wl} = [];
+for (const [env, ptuples] of ${previousWl})
+{
+  ${termFires}
+}
+    `;
+  }
+  if (atom instanceof Assign)
+  {
+    assertTrue(atom.operator === '=');
+
+    console.log(`emitRuleAssignFire ${atomNumber} Assign ${atom}`);
+    const comment = `// assign ${atomNumber} ${atom}`;  
+    const name = atom.left.name;
+
+    if (compileEnv.has(name))
+    {
+      throw new Error("compile error: assigning to bound var " + name);
     }
 
-    visitRule(rule)
+    compileEnv.add(name);
+    const compiledRight = compileTerm(atom.right);
+
+    return `
+${comment}    
+const ${wl} = [];
+for (const [env, ptuples] of ${previousWl})
+{
+  const ${name} = env.get('y');
+  ${wl}.push([Maps.put(env, '${name}', ${compiledRight}), ptuples]); // mutation?
+}    
+    `;
+  }
+  throw new Error("compile error: " + atom);
+}
+
+// (R x sum<z>) :- (X x) (I x y), z = y*y 
+function emitRuleObject(rule, ruleNumber)
+{
+  console.log(`emitRuleObject ${ruleNumber} ${rule}`);
+  const ruleComment = "/*\n " + rule + "\n*/";
+  const ruleName = "Rule" + ruleNumber;
+  const compileEnv = new Set();
+  const atomFires = rule.body.map((atom, atomNumber) => emitRuleAtomFire(atomNumber, atom, compileEnv, `wl${atomNumber+1}`, `wl${atomNumber}`)).join('\n');
+  const bindComment = "// bind head " + rule.head;
+
+  return `
+${ruleComment}  
+const ${ruleName} =
+{
+  name : '${ruleName}',
+  
+  // fire with delta tuples for deltaPos
+  fire(deltaPos, deltaTuples)
+  {
+    const wl0 = [[new Map(), []]]; // env + ptuples
+    
+    ${atomFires}
+
+    ${bindComment}
+    const updates = new Map(); // groupby -> additionalValues
+    for (const [env, ptuples] of wl${rule.body.length})
     {
-      const pred = rule.head.pred;
-      const currentRules = this.rules.get(pred);
-      if (currentRules === undefined)
+      const x = env.get('x');
+      const z = env.get('z');
+      const productGB = new ProductGB(new Set(ptuples), env);
+      const groupby = new Rule1GB(x);
+
+      if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
-        this.rules.set(pred, [rule]);
+        // already contributes, do nothing
       }
       else
       {
-        currentRules.push(rule);
+        const currentAdditionalValues = updates.get(groupby);
+        if (!currentAdditionalValues)
+        {
+          updates.set(groupby, [z]);
+        }
+        else
+        {
+          currentAdditionalValues.push(z);
+        }
+        for (const tuple of ptuples)
+        {
+          tuple._outproducts.add(productGB);
+        }
+        productGB._outgb = groupby;
       }
-      return true;
+    }
+
+    for (const [groupby, additionalValues] of updates)
+    {
+      const currentResultTuple = groupby._outtuple; // should be API
+      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.z;
+      const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
+      const updatedResultTuple = new R(groupby.x, updatedValue);  
+      groupby._outtuple = updatedResultTuple;
     }
   }
- 
-function analyze(program)
+}
+  `;
+}
+
+function compileTerm(term)
 {
-  const collectingVisitor = new CollectingVisitor();
-  program.visit(collectingVisitor);
-  return {
-    predicates: collectingVisitor.predicates, 
-    rules: collectingVisitor.rules
-  };
+  if (term instanceof Var)
+  {
+    return `env.get('${term.name}')`;
+  }
+  if (term instanceof Bin)
+  {
+    return compileTerm(term.left) + term.operator + compileTerm(term.right);
+  }
+  throw new Error("compile term error: " + term);
 }
 
 
@@ -140,7 +267,7 @@ export function toDot()
 
   function groupbyTag(gb)
   {
-    return gb.rule().name + gb._id;
+    return gb.rule.name() + gb._id;
   }
   
   let sb = "digraph G {\\nnode [style=filled,fontname=\\"Roboto Condensed\\"];\\n";

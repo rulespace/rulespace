@@ -10,7 +10,7 @@ export class ProductGB
   static members = [];
   _outgb = null;
 
-  constructor(tuples, env)
+  constructor(tuples, value)
   {
     for (const member of ProductGB.members)
     {
@@ -20,7 +20,7 @@ export class ProductGB
       }
     }
     this.tuples = tuples;
-    this.env = env;
+    this.value = value;
     this._id = ProductGB.members.length;
     ProductGB.members.push(this);
   }
