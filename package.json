@@ -1,0 +1,14 @@
+{
+  "name": "testlog",
+  "version": "1.0.0",
+  "description": "",
+  "main": "testo.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jens Nicolay <jens.nicolay@gmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "esprima": "^4.0.1"
+  }
+}

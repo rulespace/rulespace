@@ -1,7 +1,6 @@
 import {
-  assertTrue, Maps, Arrays,
-  ProductGB, productsGB, TuplePartition,
-  atomString, termString
+  assertTrue, Maps, Sets, Arrays,
+  atomString, termString,
 } from './scriptlog-common.mjs';
 
 export class X
@@ -83,11 +82,45 @@ export class R
   }
 }
 
+// const stratifiedPredicates = [[X, I], [R]];
+// const predicates = stratifiedPredicates.flat();
+// const predicates = [[X, I], [R]];
+
 // (R x sum<z>) :- (X x) (I x y), z = y*y 
 const Rule1 =
 {
   name : 'r1',
   
+  GroupBy : class
+  {
+    static members = [];
+    _outtuple = null;
+
+    constructor(x)
+    {
+      for (const member of Rule1.GroupBy.members)
+      {
+        if (Object.is(member.x, x))
+        {
+          return member;
+        }
+      }
+      this.x = x;
+      this._id = Rule1.GroupBy.members.length;
+      Rule1.GroupBy.members.push(this);
+    }
+
+    rule()
+    {
+      return Rule1;
+    }
+
+    toString()
+    {
+      return atomString('r', this.x, ({toString: () => "sum<z>"}));
+    }
+  },
+
   // fire with delta tuples for deltaPos
   fire(deltaPos, deltaTuples)
   {
@@ -144,7 +177,7 @@ const Rule1 =
       const x = env.get('x');
       const z = env.get('z');
       const productGB = new ProductGB(new Set(ptuples), env);
-      const groupby = new Rule1GB(x);
+      const groupby = new Rule1.GroupBy(x);
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -163,9 +196,9 @@ const Rule1 =
         }
         for (const tuple of ptuples)
         {
-          tuple._outproducts.add(productGB);
+          tuple2product(tuple, productGB); 
         }
-        productGB._outgb = groupby;
+        product2groupby(productGB, groupby);
       }
     }
 
@@ -175,38 +208,31 @@ const Rule1 =
       const currentValue = currentResultTuple === null ? 0 : currentResultTuple.z;
       const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
       const updatedResultTuple = new R(groupby.x, updatedValue);  
-      groupby._outtuple = updatedResultTuple;
+      groupby2tuple(groupby, updatedResultTuple);
     }
-  }
+  },
 }
 
-class Rule1GB
-{
-  static members = [];
-  _outtuple = null;
 
-  constructor(x)
+class ProductGB
+{
+
+  static members = [];
+  _outgb = null;
+
+  constructor(tuples, env)
   {
-    for (const member of Rule1GB.members)
+    for (const member of ProductGB.members)
     {
-      if (Object.is(member.x, x))
+      if (Sets.equals(member.tuples, tuples))
       {
         return member;
       }
     }
-    this.x = x;
-    this._id = Rule1GB.members.length;
-    Rule1GB.members.push(this);
-  }
-
-  rule()
-  {
-    return Rule1;
-  }
-
-  toString()
-  {
-    return atomString('r', this.x, ({toString: () => "sum<z>"}));
+    this.tuples = tuples;
+    this.env = env;
+    this._id = ProductGB.members.length;
+    ProductGB.members.push(this);
   }
 }
 
@@ -217,11 +243,64 @@ function* tuples()
   yield* R.members;
 }
 
-function* groupbys()
+function* productsGB()
 {
-  yield* Rule1GB.members;
+  yield* ProductGB.members;
 }
 
+function* groupbys()
+{
+  yield* Rule1.GroupBy.members;
+}
+
+function tuple2product(tuple, product)
+{
+  tuple._outproducts.add(product);
+}
+
+function product2groupby(product, groupby) // should become method
+{
+  assertTrue(product._outgb === null);
+  product._outgb = groupby;
+}
+
+function product2tuple(product, tuple)
+{
+
+}
+
+function groupby2tuple(groupby, tuple)
+{
+  groupby._outtuple = tuple;
+}
+
+class TuplePartition
+{
+  table = new Map();
+
+  constructor()
+  {
+  }
+
+  add(tuple)
+  {
+    const key = tuple.constructor;
+    const currentValue = this.table.get(key);
+    if (currentValue === undefined)
+    {
+      this.table.set(key, [tuple]);
+    }
+    else
+    {
+      currentValue.push(tuple);
+    }
+  }
+
+  get(predicate)
+  {
+    return this.table.get(predicate);
+  }
+}
 
 export function addTuples(edbTuples)
 {
@@ -241,6 +320,7 @@ export function addTuples(edbTuples)
       // Rule 1: (R x sum<z>) :- (X x) *(I x y)*, z = y*y 
       Rule1.fire(1, Ituples);
 }
+
 
 export function toDot()
 {
@@ -291,3 +371,4 @@ export function toDot()
   sb += "}";
   return sb;
 }
+
