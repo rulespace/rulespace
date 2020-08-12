@@ -129,6 +129,11 @@ export class Rule
     }
   }
 
+  aggregates()
+  {
+    return this.head.body[this.head.body.length - 1] instanceof Agg;
+  }
+
   toString()
   {
     return `${this.head}\n{\n\t${this.body.join()}\n}`;

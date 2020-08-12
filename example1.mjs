@@ -1,7 +1,7 @@
 import {
   assertTrue, Maps, Sets, Arrays,
   ProductGB, productsGB, TuplePartition,
-  atomString, termString,
+  atomString,
 } from './scriptlog-common.mjs';
 
 
@@ -89,78 +89,41 @@ export class i
 }
   
 
-/*
- r[X,{sum: Z}]
+/* rule 
+r[X,{sum: Z}]
 {
 	x[X],i[X,Y],Z=Y*Y
-}
-*/  
+}  
+*/
 const Rule0 =
 {
   name : 'Rule0',
-  
-  // fire with delta tuples for deltaPos
+
   fire(deltaPos, deltaTuples)
   {
-    const wl0 = [[new Map(), []]]; // env + ptuples
-    
-    
-// atom 0 x[X]
-const wl1 = [];
-for (const [env, ptuples] of wl0)
-{
-  
-// term 0 Var X [unbound]
-for (const tuple of (deltaPos === 0 ? deltaTuples : x.members))
-{
-  const X = tuple.t0;
-  wl1.push([Maps.put(env, 'X', X), Arrays.push(ptuples, tuple)]); // mutation iso. functional?
-}  
-      
-}
-    
-
-// atom 1 i[X,Y]
-const wl2 = [];
-for (const [env, ptuples] of wl1)
-{
-  
-// term 0 Var X [bound]      
-const X = tuple.t0;
-const existingx = env.get('X');
-if (existingx === X)
-{
-  wl2_0.push([env, tuple]);
-}
-      
-
-// term 1 Var Y [unbound]
-for (const tuple of (deltaPos === 0 ? deltaTuples : i.members))
-{
-  const Y = tuple.t1;
-  wl2.push([Maps.put(env, 'Y', Y), Arrays.push(ptuples, tuple)]); // mutation iso. functional?
-}  
-      
-}
-    
-
-// assign 2 Z=Y*Y    
-const wl3 = [];
-for (const [env, ptuples] of wl2)
-{
-  const Z = env.get('y');
-  wl3.push([Maps.put(env, 'Z', env.get('Y')*env.get('Y')), ptuples]); // mutation?
-}    
-    
-
-    // bind head r[X,{sum: Z}]
     const updates = new Map(); // groupby -> additionalValues
-    for (const [env, ptuples] of wl3)
-    {
-      const x = env.get('x');
-      const z = env.get('z');
-      const productGB = new ProductGB(new Set(ptuples), env);
-      const groupby = new Rule1GB(x);
+
+    
+      // atom x[X] [no conditions]
+      for (const tuple0 of (deltaPos === 0 ? deltaTuples : x.members))
+      {
+        const X = tuple0.t0;
+        
+      // atom i[X,Y] [conditions]
+      for (const tuple1 of (deltaPos === 1 ? deltaTuples : i.members))
+      {
+        if (tuple1.t0 === X)
+        {
+          const Y = tuple1.t1;
+          
+      // assign Z=Y*Y
+      const Z = Y*Y;
+
+      
+      // updates for r[X,{sum: Z}]
+      const ptuples = new Set([tuple0,tuple1]);
+      const productGB = new ProductGB(ptuples, Z);
+      const groupby = new Rule1GB(X);
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -171,11 +134,11 @@ for (const [env, ptuples] of wl2)
         const currentAdditionalValues = updates.get(groupby);
         if (!currentAdditionalValues)
         {
-          updates.set(groupby, [z]);
+          updates.set(groupby, [Z]);
         }
         else
         {
-          currentAdditionalValues.push(z);
+          currentAdditionalValues.push(Z);
         }
         for (const tuple of ptuples)
         {
@@ -183,18 +146,72 @@ for (const [env, ptuples] of wl2)
         }
         productGB._outgb = groupby;
       }
-    }
 
+    
+        }
+      }
+      
+      }
+      
+    
+    // bind head r[X,{sum: Z}]
     for (const [groupby, additionalValues] of updates)
     {
-      const currentResultTuple = groupby._outtuple; // should be API
-      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.z;
+      const currentResultTuple = groupby._outtuple;
+      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.NaN;
       const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
-      const updatedResultTuple = new R(groupby.x, updatedValue);  
+      const updatedResultTuple = new r(, updatedValue);  
       groupby._outtuple = updatedResultTuple;
     }
   }
+} // end Rule0
+
+
+class Rule0GB
+{
+  static members = [];
+  _outtuple = null;
+
+  constructor(t0)
+  {
+    for (const member of Rule0GB.members)
+    {
+      if (Object.is(member.t0, t0))
+      {
+        return member;
+      }
+    }
+    this.t0 = t0;
+    this._id = Rule0GB.members.length;
+    Rule0GB.members.push(this);
+  }
+
+  rule()
+  {
+    return Rule0;
+  }
+
+  toString()
+  {
+    return atomString('r', this.t0, ({toString: () => "{sum: Z}"}));
+  }
 }
+
+  
+
+  
+
+function* tuples()
+{
+  yield* r.members;
+  yield* x.members;
+  yield* i.members;
+}
+
+function* groupbys()
+{
+  yield* Rule0GB.members;
+}  
   
 
 export function toDot()

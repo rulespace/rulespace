@@ -2,17 +2,19 @@ import { Visitor } from './parser.mjs';
 
 class CollectingVisitor extends Visitor
   {
-    predicates = new Map(); // name -> arity
+    pred2arity = new Map(); // name -> arit 
+    rules = [];
     pred2rules = new Map();
+    
     
     visitAtom(atom)
     {
       const pred = atom.pred;
       const arity = atom.arity();
-      const currentArity = this.predicates.get(pred);
+      const currentArity = this.pred2arity.get(pred);
       if (currentArity === undefined)
       {
-        this.predicates.set(pred, atom.terms.length);
+        this.pred2arity.set(pred, atom.terms.length);
       }
       else if (currentArity !== arity)
       {
@@ -23,6 +25,7 @@ class CollectingVisitor extends Visitor
 
     visitRule(rule)
     {
+      this.rules.push(rule);
       const pred = rule.head.pred;
       const currentRules = this.pred2rules.get(pred);
       if (currentRules === undefined)
@@ -42,7 +45,9 @@ export function analyzeProgram(program)
   const collectingVisitor = new CollectingVisitor();
   program.visit(collectingVisitor);
   return {
-    predicates: collectingVisitor.predicates, 
-    pred2rules: collectingVisitor.pred2rules
+    pred2arity: collectingVisitor.pred2arity, 
+    predicates: [...collectingVisitor.pred2arity.keys()],
+    pred2rules: collectingVisitor.pred2rules,
+    rules: collectingVisitor.rules
   };
 }

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { assertTrue, Sets } from './common.mjs';
-import { parseProgram, Var, Atom, Bin, Assign } from './parser.mjs';
+import { parseProgram, Var, Atom, Bin, Assign, Agg} from './parser.mjs';
 import { analyzeProgram } from './analyzer.mjs';
 
 export function compileFile(name)
@@ -19,16 +19,18 @@ export function compile(src)
   const sb = [];
 
   sb.push(emitImports);
-
-  for (const [pred, arity] of staticInfo.predicates.entries())
+  
+  for (const [pred, arity] of staticInfo.pred2arity)
   {
     sb.push(emitTupleClass(pred, arity));
   }
 
-  program.rules.forEach((rule, i) =>
+  staticInfo.rules.forEach((rule, i) =>
   {
     sb.push(emitRuleObject(rule, i));
   });
+
+  sb.push(emitIterators(staticInfo.predicates, staticInfo.rules));
   
   sb.push(emitRest);
 
@@ -38,11 +40,10 @@ export function compile(src)
 
 function emitTupleClass(pred, arity)
 {
-  console.log(`emitTupleClass ${pred} ${arity}`);
   const termNames = Array.from(Array(arity), (_, i) => "t" + i);
-  const termEqualities = termNames.map(t => `Object.is(member.${t}, ${t})`).join(' && ');
-  const termAssignments = termNames.map(t => `this.${t} = ${t}`).join('; ');
-  const termToStrings = termNames.map(t => `this.${t}`).join(', ');
+  const termEqualities = termNames.map(t => `Object.is(member.${t}, ${t})`);
+  const termAssignments = termNames.map(t => `this.${t} = ${t}`);
+  const termToStrings = termNames.map(t => `this.${t}`);
   return `
 
 export class ${pred}
@@ -55,144 +56,38 @@ export class ${pred}
   {
     for (const member of ${pred}.members)
     {
-      if (${termEqualities})
+      if (${termEqualities.join(' && ')})
       {
         return member;
       }
     }
-    ${termAssignments};
+    ${termAssignments.join('; ')};
     this._id = ${pred}.members.length;
     ${pred}.members.push(this);
   }
 
   toString()
   {
-    return atomString('${pred}', ${termToStrings});
+    return atomString('${pred}', ${termToStrings.join(', ')});
   }
 }
   `;
 }
 
-function emitRuleAtomTermFire(termNumber, term, pred, compileEnv, wl)
+function compileRuleFireBody(head, body, i, compileEnv)
 {
-  if (term instanceof Var)
+  if (i === body.length)
   {
-    const name = term.name;
-    const bound = compileEnv.has(name);
-    compileEnv.add(name);
-    const comment = `// term ${termNumber} Var ${term} ${bound ? '[bound]' : '[unbound]'}`;
-    if (bound)
-    {
-      return `
-${comment}
-const ${wl} = [];    
-for (const tuple of (deltaPos === ${} ? deltaTuples : ${pred}.members))
-{
-  const ${name} = tuple.t${termNumber};
-  const existingx = env.get('${name}');
-  if (existingx === ${name})
-  {
-    ${wl}.push([env, tuple]);
-  }
-}
-      `;
-    }
-    else
-    {
-      return `
-${comment}
-for (const tuple of (deltaPos === 0 ? deltaTuples : ${pred}.members))
-{
-  const ${name} = tuple.t${termNumber};
-  ${wl}.push([Maps.put(env, '${name}', ${name}), Arrays.push(ptuples, tuple)]); // mutation iso. functional?
-}  
-      `; 
-    }    
-  }
-  throw new Error("compile error: " + term);
-}
-
-
-function emitRuleAtomFire(atomNumber, atom, compileEnv, wl, previousWl)
-{
-  if (atom instanceof Atom)
-  {
-    console.log(`emitRuleAtomFire ${atomNumber} Atom ${atom}`);
-    const comment = `// atom ${atomNumber} ${atom}`;
-    
-    const pred = atom.pred;
-  
-    const termFires = atom.terms.map((term, termNumber) => emitRuleAtomTermFire(termNumber, term, pred, compileEnv, termNumber === (atom.terms.length - 1) ? wl : (wl + "_" + termNumber))).join('\n');
-  
+    const ptuples = Array.from(Array(i-1), (_, j) => "tuple" + j);
+    const agg = head.terms[head.terms.length - 1];
+    assertTrue(agg instanceof Agg);
+    const aggregand = agg.aggregand;
+    const gb = head.terms.slice(0, head.terms.length - 1);
     return `
-${comment}
-const ${wl} = [];
-for (const [env, ptuples] of ${previousWl})
-{
-  ${termFires}
-}
-    `;
-  }
-  if (atom instanceof Assign)
-  {
-    assertTrue(atom.operator === '=');
-
-    console.log(`emitRuleAssignFire ${atomNumber} Assign ${atom}`);
-    const comment = `// assign ${atomNumber} ${atom}`;  
-    const name = atom.left.name;
-
-    if (compileEnv.has(name))
-    {
-      throw new Error("compile error: assigning to bound var " + name);
-    }
-
-    compileEnv.add(name);
-    const compiledRight = compileTerm(atom.right);
-
-    return `
-${comment}    
-const ${wl} = [];
-for (const [env, ptuples] of ${previousWl})
-{
-  const ${name} = env.get('y');
-  ${wl}.push([Maps.put(env, '${name}', ${compiledRight}), ptuples]); // mutation?
-}    
-    `;
-  }
-  throw new Error("compile error: " + atom);
-}
-
-// (R x sum<z>) :- (X x) (I x y), z = y*y 
-function emitRuleObject(rule, ruleNumber)
-{
-  console.log(`emitRuleObject ${ruleNumber} ${rule}`);
-  const ruleComment = "/*\n " + rule + "\n*/";
-  const ruleName = "Rule" + ruleNumber;
-  const compileEnv = new Set();
-  const atomFires = rule.body.map((atom, atomNumber) => emitRuleAtomFire(atomNumber, atom, compileEnv, `wl${atomNumber+1}`, `wl${atomNumber}`)).join('\n');
-  const bindComment = "// bind head " + rule.head;
-
-  return `
-${ruleComment}  
-const ${ruleName} =
-{
-  name : '${ruleName}',
-  
-  // fire with delta tuples for deltaPos
-  fire(deltaPos, deltaTuples)
-  {
-    const wl0 = [[new Map(), []]]; // env + ptuples
-    
-    ${atomFires}
-
-    ${bindComment}
-    const updates = new Map(); // groupby -> additionalValues
-    for (const [env, ptuples] of wl${rule.body.length})
-    {
-      const x = env.get('x');
-      const z = env.get('z');
-      const productGB = new ProductGB(new Set(ptuples), env);
-      const groupby = new Rule1GB(x);
+      // updates for ${head}
+      const ptuples = new Set([${ptuples.join()}]);
+      const productGB = new ProductGB(ptuples, ${aggregand});
+      const groupby = new Rule1GB(${gb.join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -203,11 +98,11 @@ const ${ruleName} =
         const currentAdditionalValues = updates.get(groupby);
         if (!currentAdditionalValues)
         {
-          updates.set(groupby, [z]);
+          updates.set(groupby, [${aggregand}]);
         }
         else
         {
-          currentAdditionalValues.push(z);
+          currentAdditionalValues.push(${aggregand});
         }
         for (const tuple of ptuples)
         {
@@ -215,18 +110,190 @@ const ${ruleName} =
         }
         productGB._outgb = groupby;
       }
-    }
+`;
+  }
 
+
+  const atom = body[i];
+
+  if (atom instanceof Atom)
+  {
+    const tuple = "tuple" + i;
+    const pred = atom.pred;
+    const bindUnboundVars = [];
+    const conditions = [];
+    atom.terms.forEach((term, i) => {
+      if (term instanceof Var)
+      {
+        if (compileEnv.has(term.name))
+        {
+          conditions.push(`${tuple}.t${i} === ${term.name}`);
+        }
+        else
+        {
+          bindUnboundVars.push(`const ${term.name} = ${tuple}.t${i};`);
+          compileEnv.add(term.name);
+        }
+      }
+      else if (term instanceof Lit)
+      {
+        conditions.push(`${tuple}.t${i} === ${termToString(term.value)}`);
+      }
+      else
+      {
+        throw new Error();
+      }
+    });
+
+    if (conditions.length === 0)
+    {
+      return `
+      // atom ${atom} [no conditions]
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}.members))
+      {
+        ${bindUnboundVars.join('\n')}
+        ${compileRuleFireBody(head, body, i+1, compileEnv)}
+      }
+      `;  
+    }
+    else
+    {
+      return `
+      // atom ${atom} [conditions]
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}.members))
+      {
+        if (${conditions.join('&&')})
+        {
+          ${bindUnboundVars.join('\n')}
+          ${compileRuleFireBody(head, body, i+1, compileEnv)}
+        }
+      }
+      `;  
+    }
+  }
+
+  if (atom instanceof Assign)
+  {
+    assertTrue(atom.operator === '='); // nothing else supported at the moment
+    assertTrue(atom.left instanceof Var); // nothing else supported at the moment
+    const name = atom.left.name;
+    if (compileEnv.has(name))
+    {
+      throw new Error("assigning bound name: " + name);
+    }
+    compileEnv.add(name);
+    const left = compileTerm(atom.left);
+    const right = compileTerm(atom.right);
+    return `
+      // assign ${atom}
+      const ${left} = ${right};
+
+      ${compileRuleFireBody(head, body, i+1, compileEnv)}
+    `;
+  }
+
+  throw new Error(body[i]);
+}
+
+// (R x sum<z>) :- (X x) (I x y), z = y*y 
+function emitRuleObject(rule, ruleNumber)
+{
+  const pred = rule.head.pred;
+  const ruleName = "Rule" + ruleNumber;
+  const compileEnv = new Set();
+  const gbNames = Array.from(Array(rule.head.terms.length - 2), (_, i) => "groupby"+i);
+  const aggregandName ="t" + rule.head.terms.length - 1;
+
+  const GBclass = emitRuleGBClass(rule, ruleName);
+
+  return `
+/* rule 
+${rule}  
+*/
+const ${ruleName} =
+{
+  name : '${ruleName}',
+
+  fire(deltaPos, deltaTuples)
+  {
+    const updates = new Map(); // groupby -> additionalValues
+
+    ${compileRuleFireBody(rule.head, rule.body, 0, compileEnv)}
+    
+    // bind head ${rule.head}
     for (const [groupby, additionalValues] of updates)
     {
-      const currentResultTuple = groupby._outtuple; // should be API
-      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.z;
+      const currentResultTuple = groupby._outtuple;
+      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.${aggregandName};
       const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
-      const updatedResultTuple = new R(groupby.x, updatedValue);  
+      const updatedResultTuple = new ${pred}(${gbNames.join()}, updatedValue);  
       groupby._outtuple = updatedResultTuple;
     }
   }
+} // end ${ruleName}
+
+${GBclass}
+
+  `;
 }
+
+function emitRuleGBClass(rule, ruleName)
+{
+  const numGbTerms = rule.head.terms.length - 1;
+  const termNames = Array.from(Array(numGbTerms), (_, i) => "t" + i);
+  const termEqualities = termNames.map(t => `Object.is(member.${t}, ${t})`);
+  const termAssignments = termNames.map(t => `this.${t} = ${t}`);
+  const termToStrings = termNames.map(t => `this.${t}`);
+  const aggTerm = rule.head.terms[rule.head.terms.length - 1];
+  return `
+class ${ruleName}GB
+{
+  static members = [];
+  _outtuple = null;
+
+  constructor(${termNames.join(', ')})
+  {
+    for (const member of ${ruleName}GB.members)
+    {
+      if (${termEqualities.join(' && ')})
+      {
+        return member;
+      }
+    }
+    ${termAssignments.join('; ')};
+    this._id = ${ruleName}GB.members.length;
+    ${ruleName}GB.members.push(this);
+  }
+
+  rule()
+  {
+    return ${ruleName};
+  }
+
+  toString()
+  {
+    return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"}));
+  }
+}
+
+  `;
+}
+
+function emitIterators(predNames, rules)
+{
+  const tupleYielders = predNames.map(pred => `yield* ${pred}.members;`);
+  const gbYielders = rules.flatMap((rule, i) => rule.aggregates ? [`yield* Rule${i}GB.members;`] : []);
+
+  return `
+function* tuples()
+{
+  ${tupleYielders.join('\n  ')}
+}
+
+function* groupbys()
+{
+  ${gbYielders.join('\n  ')}
+}  
   `;
 }
 
@@ -234,7 +301,7 @@ function compileTerm(term)
 {
   if (term instanceof Var)
   {
-    return `env.get('${term.name}')`;
+    return term.name;
   }
   if (term instanceof Bin)
   {
@@ -247,7 +314,7 @@ function compileTerm(term)
 const emitImports = `import {
   assertTrue, Maps, Sets, Arrays,
   ProductGB, productsGB, TuplePartition,
-  atomString, termString,
+  atomString,
 } from './scriptlog-common.mjs';
 `;
 

@@ -1,7 +1,7 @@
 import {
   assertTrue, Maps, Arrays,
   ProductGB, productsGB, TuplePartition,
-  atomString, termString
+  atomString
 } from './scriptlog-common.mjs';
 
 export class X
@@ -104,6 +104,7 @@ const Rule1 =
           //assign
           const z = y * y;
 
+          // updates for head (R x sum<z>)
           const ptuples = new Set([tuple0, tuple1]);
           const productGB = new ProductGB(ptuples, z);
           const groupby = new Rule1GB(x);
@@ -139,7 +140,7 @@ const Rule1 =
       const currentResultTuple = groupby._outtuple;
       const currentValue = currentResultTuple === null ? 0 : currentResultTuple.t1;
       const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
-      const updatedResultTuple = new R(groupby.x, updatedValue);  
+      const updatedResultTuple = new R(groupby.t0, updatedValue);  
       groupby._outtuple = updatedResultTuple;
     }
   }
@@ -150,16 +151,16 @@ class Rule1GB
   static members = [];
   _outtuple = null;
 
-  constructor(x)
+  constructor(t0)
   {
     for (const member of Rule1GB.members)
     {
-      if (Object.is(member.x, x))
+      if (Object.is(member.t0, t0))
       {
         return member;
       }
     }
-    this.x = x;
+    this.t0 = t0;
     this._id = Rule1GB.members.length;
     Rule1GB.members.push(this);
   }
@@ -171,7 +172,7 @@ class Rule1GB
 
   toString()
   {
-    return atomString('r', this.x, ({toString: () => "sum<z>"}));
+    return atomString('r', this.t0, ({toString: () => "sum<z>"}));
   }
 }
 
@@ -186,7 +187,6 @@ function* groupbys()
 {
   yield* Rule1GB.members;
 }
-
 
 export function addTuples(edbTuples)
 {
