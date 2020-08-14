@@ -89,11 +89,95 @@ export class i
 }
   
 
-/* rule 
+
+export class reachable
+{
+
+  static members = [];
+  _outproducts = new Set();
+
+  constructor(t0,t1)
+  {
+    for (const member of reachable.members)
+    {
+      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
+      {
+        return member;
+      }
+    }
+    this.t0 = t0; this.t1 = t1;
+    this._id = reachable.members.length;
+    reachable.members.push(this);
+  }
+
+  toString()
+  {
+    return atomString('reachable', this.t0, this.t1);
+  }
+}
+  
+
+
+export class link
+{
+
+  static members = [];
+  _outproducts = new Set();
+
+  constructor(t0,t1)
+  {
+    for (const member of link.members)
+    {
+      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
+      {
+        return member;
+      }
+    }
+    this.t0 = t0; this.t1 = t1;
+    this._id = link.members.length;
+    link.members.push(this);
+  }
+
+  toString()
+  {
+    return atomString('link', this.t0, this.t1);
+  }
+}
+  
+
+
+export class reachable2
+{
+
+  static members = [];
+  _outproducts = new Set();
+
+  constructor(t0,t1)
+  {
+    for (const member of reachable2.members)
+    {
+      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
+      {
+        return member;
+      }
+    }
+    this.t0 = t0; this.t1 = t1;
+    this._id = reachable2.members.length;
+    reachable2.members.push(this);
+  }
+
+  toString()
+  {
+    return atomString('reachable2', this.t0, this.t1);
+  }
+}
+  
+
+/* rule [aggregates] 
 r[X,{sum: Z}]
 {
 	x[X],i[X,Y],Z=Y*Y
-}  
+} 
 */
 const Rule0 =
 {
@@ -158,9 +242,9 @@ const Rule0 =
     for (const [groupby, additionalValues] of updates)
     {
       const currentResultTuple = groupby._outtuple;
-      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.NaN;
+      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.t1;
       const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
-      const updatedResultTuple = new r(, updatedValue);  
+      const updatedResultTuple = new r(groupby.t0, updatedValue);  
       groupby._outtuple = updatedResultTuple;
     }
   }
@@ -201,17 +285,130 @@ class Rule0GB
 
   
 
+/* rule [no aggregates] 
+reachable[X,Y]
+{
+	link[X,Y]
+} 
+*/
+const Rule1 =
+{
+  name : 'Rule1',
+
+  fire(deltaPos, deltaTuples)
+  {
+
+  }
+} // end Rule1
+
+  
+
+/* rule [no aggregates] 
+reachable2[X,Y]
+{
+	reachable[X,Z],link[Z,Y]
+} 
+*/
+const Rule2 =
+{
+  name : 'Rule2',
+
+  fire(deltaPos, deltaTuples)
+  {
+
+  }
+} // end Rule2
+
+  
+
+/* rule [no aggregates] 
+reachable[X,Y]
+{
+	reachable2[X,Y]
+} 
+*/
+const Rule3 =
+{
+  name : 'Rule3',
+
+  fire(deltaPos, deltaTuples)
+  {
+
+  }
+} // end Rule3
+
+  
+
 function* tuples()
 {
   yield* r.members;
   yield* x.members;
   yield* i.members;
+  yield* reachable.members;
+  yield* link.members;
+  yield* reachable2.members;
 }
 
 function* groupbys()
 {
   yield* Rule0GB.members;
 }  
+  
+
+
+// strataLogic
+
+    // stratum 0
+    
+      /* 0 pred link
+            no rules
+    
+  
+
+    // stratum 1
+    
+      /* 0 pred i
+            no rules
+    
+  
+
+    // stratum 2
+    
+      /* 0 pred x
+            no rules
+    
+  
+
+    // stratum 3
+    
+      /* 0 pred r
+            r[X,{sum: Z}]
+{
+	x[X],i[X,Y],Z=Y*Y
+}
+    
+  
+
+    // stratum 4
+    
+      /* 0 pred reachable2
+            reachable2[X,Y]
+{
+	reachable[X,Z],link[Z,Y]
+}
+    
+
+      /* 1 pred reachable
+            reachable[X,Y]
+{
+	link[X,Y]
+}
+reachable[X,Y]
+{
+	reachable2[X,Y]
+}
+    
+  
   
 
 export function toDot()

@@ -131,7 +131,7 @@ export class Rule
 
   aggregates()
   {
-    return this.head.body[this.head.body.length - 1] instanceof Agg;
+    return this.head.terms[this.head.terms.length - 1] instanceof Agg;
   }
 
   toString()
@@ -271,8 +271,16 @@ export function parseProgram(dslProgramSrc)
   {
     if (jsProgram.body[i+1].type === "BlockStatement")
     {
-      const rule = parseRule(jsProgram.body[i].expression, jsProgram.body[++i].body[0].expression.expressions);
-      rules.push(rule);
+      if (jsProgram.body[i+1].body[0].expression.type === "SequenceExpression")
+      {
+        const rule = parseRule(jsProgram.body[i].expression, jsProgram.body[++i].body[0].expression.expressions);
+        rules.push(rule);
+      }
+      else
+      {
+        const rule = parseRule(jsProgram.body[i].expression, [jsProgram.body[++i].body[0].expression]);
+        rules.push(rule);
+      }
     }
     else
     {

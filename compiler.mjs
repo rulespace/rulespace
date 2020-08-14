@@ -14,7 +14,7 @@ export function compile(src)
   const program = parseProgram(src);
 
   const staticInfo = analyzeProgram(program);
-  console.log(staticInfo);
+  //console.log("topo: " + staticInfo.topoSorted);
 
   const sb = [];
 
@@ -27,10 +27,19 @@ export function compile(src)
 
   staticInfo.rules.forEach((rule, i) =>
   {
-    sb.push(emitRuleObject(rule, i));
+    if (rule.aggregates())
+    {
+      sb.push(emitRuleGBObject(rule, i));
+    }
+    else
+    {
+      sb.push(emitRuleObject(rule, i));
+    }
   });
 
   sb.push(emitIterators(staticInfo.predicates, staticInfo.rules));
+
+  sb.push(emitAddTuples(staticInfo.strata));
   
   sb.push(emitRest);
 
@@ -74,7 +83,34 @@ export class ${pred}
   `;
 }
 
-function compileRuleFireBody(head, body, i, compileEnv)
+// (Reachable x y) :- (Reachable x z) (Link z y)
+function emitRuleObject(rule, ruleNumber)
+{
+  const pred = rule.head.pred;
+  const ruleName = "Rule" + ruleNumber;
+  const compileEnv = new Set();
+
+
+  return `
+/* rule [no aggregates] 
+${rule} 
+*/
+const ${ruleName} =
+{
+  name : '${ruleName}',
+
+  fire(deltaPos, deltaTuples)
+  {
+
+  }
+} // end ${ruleName}
+
+  `;
+}
+
+
+
+function compileRuleGBFireBody(head, body, i, compileEnv)
 {
   if (i === body.length)
   {
@@ -152,7 +188,7 @@ function compileRuleFireBody(head, body, i, compileEnv)
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}.members))
       {
         ${bindUnboundVars.join('\n')}
-        ${compileRuleFireBody(head, body, i+1, compileEnv)}
+        ${compileRuleGBFireBody(head, body, i+1, compileEnv)}
       }
       `;  
     }
@@ -165,7 +201,7 @@ function compileRuleFireBody(head, body, i, compileEnv)
         if (${conditions.join('&&')})
         {
           ${bindUnboundVars.join('\n')}
-          ${compileRuleFireBody(head, body, i+1, compileEnv)}
+          ${compileRuleGBFireBody(head, body, i+1, compileEnv)}
         }
       }
       `;  
@@ -188,7 +224,7 @@ function compileRuleFireBody(head, body, i, compileEnv)
       // assign ${atom}
       const ${left} = ${right};
 
-      ${compileRuleFireBody(head, body, i+1, compileEnv)}
+      ${compileRuleGBFireBody(head, body, i+1, compileEnv)}
     `;
   }
 
@@ -196,19 +232,19 @@ function compileRuleFireBody(head, body, i, compileEnv)
 }
 
 // (R x sum<z>) :- (X x) (I x y), z = y*y 
-function emitRuleObject(rule, ruleNumber)
+function emitRuleGBObject(rule, ruleNumber)
 {
   const pred = rule.head.pred;
   const ruleName = "Rule" + ruleNumber;
   const compileEnv = new Set();
-  const gbNames = Array.from(Array(rule.head.terms.length - 2), (_, i) => "groupby"+i);
-  const aggregandName ="t" + rule.head.terms.length - 1;
+  const gbNames = Array.from(Array(rule.head.terms.length - 1), (_, i) => "groupby.t"+i);
+  const aggregandName ="t" + (rule.head.terms.length - 1);
 
   const GBclass = emitRuleGBClass(rule, ruleName);
 
   return `
-/* rule 
-${rule}  
+/* rule [aggregates] 
+${rule} 
 */
 const ${ruleName} =
 {
@@ -218,7 +254,7 @@ const ${ruleName} =
   {
     const updates = new Map(); // groupby -> additionalValues
 
-    ${compileRuleFireBody(rule.head, rule.body, 0, compileEnv)}
+    ${compileRuleGBFireBody(rule.head, rule.body, 0, compileEnv)}
     
     // bind head ${rule.head}
     for (const [groupby, additionalValues] of updates)
@@ -282,7 +318,7 @@ class ${ruleName}GB
 function emitIterators(predNames, rules)
 {
   const tupleYielders = predNames.map(pred => `yield* ${pred}.members;`);
-  const gbYielders = rules.flatMap((rule, i) => rule.aggregates ? [`yield* Rule${i}GB.members;`] : []);
+  const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${i}GB.members;`] : []);
 
   return `
 function* tuples()
@@ -317,6 +353,27 @@ const emitImports = `import {
   atomString,
 } from './scriptlog-common.mjs';
 `;
+
+function emitAddTuples(strata)
+{
+  const strataLogic = strata.map((stratum, i) => {
+    const predsWithRules = stratum.predsWithRules;
+    const preds = predsWithRules.map(([pred, rules], i) => `
+      /* ${i} pred ${pred}
+            ${rules ? rules.join('\n') : 'no rules'}
+    `);
+    return `
+    // stratum ${i}
+    ${preds.join('\n')}
+  `;
+  });
+
+  return `
+
+// strataLogic
+${strataLogic.join('\n')}
+  `;
+}
 
 
 const emitRest = `

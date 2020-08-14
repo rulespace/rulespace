@@ -1,7 +1,7 @@
 import {Sets} from './common.mjs';
 
 export {
-  assertTrue, Maps, Sets, Arrays
+  assertTrue, Maps, Sets, MutableSets, Arrays
 } from './common.mjs';
 
 export class ProductGB
@@ -23,6 +23,27 @@ export class ProductGB
     this.value = value;
     this._id = ProductGB.members.length;
     ProductGB.members.push(this);
+  }
+}
+
+export class Product
+{
+
+  static members = [];
+  _outtuple = null;
+
+  constructor(tuples)
+  {
+    for (const member of Product.members)
+    {
+      if (Sets.equals(member.tuples, tuples))
+      {
+        return member;
+      }
+    }
+    this.tuples = tuples;
+    this._id = Product.members.length;
+    Product.members.push(this);
   }
 }
 
@@ -58,6 +79,11 @@ export class TuplePartition
 export function* productsGB()
 {
   yield* ProductGB.members;
+}
+
+export function* products()
+{
+  yield* Product.members;
 }
 
 

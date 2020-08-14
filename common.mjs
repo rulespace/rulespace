@@ -58,6 +58,17 @@ export const Sets =
 
 }
 
+export const MutableSets =
+{
+  addAll(x, y)
+  {
+    for (const elem of y)
+    {
+      x.add(elem);
+    }
+  }
+}
+
 export const Maps =
 {
   put(map, key, value)
@@ -65,5 +76,21 @@ export const Maps =
     const map2 = new Map(map);
     map2.set(key, value);
     return map2;
+  }
+}
+
+export const MutableMaps =
+{
+  putJoinArray(map, key, value)
+  {
+    const current = map.get(key);
+    if (current === undefined)
+    {
+      map.set(key, [value]);
+    }
+    else
+    {
+      current.push(value);
+    }
   }
 }
