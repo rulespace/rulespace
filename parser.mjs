@@ -114,10 +114,12 @@ export class Agg
 
 export class Rule
 {
+  static counter = 0;
   constructor(head, body)
   {
     this.head = head;
     this.body = body;
+    this._id = Rule.counter++;
   }
 
   visit(visitor)

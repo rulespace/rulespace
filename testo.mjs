@@ -1,31 +1,8 @@
 import {
-  assertTrue, Maps, Arrays, MutableSets,
+  MutableSets,
   Product, ProductGB, products, productsGB, TuplePartition,
   atomString
 } from './scriptlog-common.mjs';
-
-let generation = 0;
-
-export function X(t0)
-{
-  for (const member of X_.members)
-  {
-    if (Object.is(member.t0, t0))
-    {
-      return member;
-    }
-  }
-  return new X_(t0);
-}
-function X_(t0)
-{
-  this.t0 = t0;
-  this._id = X_.members.length;
-  this._outproducts = new Set();
-  X_.members.push(this);
-}
-X_.members = [];
-X_.prototype.toString = function () {return atomString("X", this.t0)};
 
 export function R(t0, t1)
 {
@@ -48,6 +25,28 @@ function R_(t0, t1)
 }
 R_.members = [];
 R_.prototype.toString = function () {return atomString("R", this.t0, this.t1)};
+
+
+export function X(t0)
+{
+  for (const member of X_.members)
+  {
+    if (Object.is(member.t0, t0))
+    {
+      return member;
+    }
+  }
+  return new X_(t0);
+}
+function X_(t0)
+{
+  this.t0 = t0;
+  this._id = X_.members.length;
+  this._outproducts = new Set();
+  X_.members.push(this);
+}
+X_.members = [];
+X_.prototype.toString = function () {return atomString("X", this.t0)};
 
 export function I(t0, t1)
 {
@@ -173,27 +172,27 @@ class Rule0GB
 
 
 //////
-export function Link(t0, t1)
+export function link(t0, t1)
 {
-  for (const member of Link_.members)
+  for (const member of link_.members)
   {
     if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
     {
       return member;
     }
   }
-  return new Link_(t0, t1);
+  return new link_(t0, t1);
 }
-function Link_(t0, t1)
+function link_(t0, t1)
 {
   this.t0 = t0;
   this.t1 = t1;
-  this._id = Link_.members.length;
+  this._id = link_.members.length;
   this._outproducts = new Set();
-  Link_.members.push(this);
+  link_.members.push(this);
 }
-Link_.members = [];
-Link_.prototype.toString = function () {return atomString("Link", this.t0, this.t1)};
+link_.members = [];
+link_.prototype.toString = function () {return atomString("link", this.t0, this.t1)};
 
 export function Reachable(t0, t1)
 {
@@ -272,7 +271,7 @@ const Rule1 =
   {
     const newTuples = new Set();
 
-    for (const tuple0 of (deltaPos === 0 ? deltaTuples : Link_.members))
+    for (const tuple0 of (deltaPos === 0 ? deltaTuples : link_.members))
     {
       const x = tuple0.t0;
       const y = tuple0.t1;
@@ -306,13 +305,13 @@ const Rule2 =
       const x = tuple0.t0;
       const z = tuple0.t1;
 
-      for (const tuple1 of (deltaPos === 1 ? deltaTuples : Link_.members))
+      for (const tuple1 of (deltaPos === 1 ? deltaTuples : link_.members))
       {
-        if (tuple1.t0 === tuple0.t1)
+        if (tuple1.t0 === z)
         {
           const y = tuple1.t1;
 
-          // updates for head (Reachable x y)
+          // updates for head (Reachable2 x y)
           const ptuples = new Set([tuple0, tuple1]);
           const product = new Product(ptuples);
           const resultTuple = Reachable2(x, y);
@@ -370,7 +369,7 @@ function* tuples()
   yield* I_.members;
   yield* R_.members;
 
-  yield* Link_.members;
+  yield* link_.members;
   yield* Reachable_.members;
   yield* Reachable2_.members;
   yield* Node_.members;
@@ -386,12 +385,11 @@ export function addTuples(edbTuples)
   const partition = new TuplePartition();
   for (const edbTuple of edbTuples)
   {
-    edbTuple.generation = generation;
     partition.add(edbTuple);
   }
 
   // stratum 0: link; no rules
-  const Linktuples = partition.get(Link_) || new Set();
+  const linktuples = partition.get(link_) || new Set();
 
   // stratum 1: i; no rules
   const Ituples = partition.get(I_) || new Set();
@@ -403,20 +401,22 @@ export function addTuples(edbTuples)
   const Rtuples = new Set();
   // non-recursive rule: Rule0
     // Rule0 (R x sum<z>) :- (X x) (I x y), z = y*y 
-      // term 0
+      // atom 0
       const Rtuples0 = Rule0.fire(0, Xtuples);
       MutableSets.addAll(Rtuples, Rtuples0);
-      // term 1
+      // atom 1
       const Rtuples1 = Rule0.fire(1, Ituples);
       MutableSets.addAll(Rtuples, Rtuples1);
   
+
+
   // stratum 4: reachable;
   const Reachabletuples = new Set();
   const Reachable2tuples = new Set();  
   
   // non-recursive rules: Rule1
   // Rule 1
-  const Reachabletuples0 = Rule1.fire(0, Linktuples);
+  const Reachabletuples0 = Rule1.fire(0, linktuples);
   MutableSets.addAll(Reachabletuples, Reachabletuples0);
 
   // recursive rules: Rule2, Rule3
@@ -435,7 +435,7 @@ export function addTuples(edbTuples)
       MutableSets.addAll(newReachable2, rule2tuples);
     }
 
-    // Rule3
+    // Rule3:
     if (localReachable2.size > 0)
     {
       const rule3tuples = Rule3.fire(0, localReachable2);

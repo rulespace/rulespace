@@ -122,7 +122,36 @@ export function analyzeProgram(program)
   program.visit(collectingVisitor);
 
   const precGraph = collectingVisitor.precGraph;
-  const topoPreds = topoSort(precGraph); 
+  const topoPreds = topoSort(precGraph);
+
+  function recursiveRule(rule, stratumPreds)
+  {
+    const sp = new Set(stratumPreds);
+    for (const atom of rule.body)
+    {
+      if (atom instanceof Atom)
+      {
+        if (sp.has(atom.pred))
+        {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  
+  function stratumMaker(stratumPreds)
+  {
+    const rules = stratumPreds.flatMap(pred => collectingVisitor.pred2rules.get(pred) || []);
+    const stratum = 
+    {
+      preds: stratumPreds,
+      rules,
+      recursiveRules: rules.filter(rule => recursiveRule(rule, stratumPreds)),
+      nonRecursiveRules: rules.filter(rule => !recursiveRule(rule, stratumPreds))
+    }
+    return stratum;
+  }
 
   return {
     pred2arity: collectingVisitor.pred2arity, 
@@ -131,6 +160,6 @@ export function analyzeProgram(program)
     rules: collectingVisitor.rules,
     precGraph,
     topoPreds,
-    strata: topoPreds.map(stratum => ({ predsWithRules: stratum.map(pred => [pred, collectingVisitor.pred2rules.get(pred)])}))
+    strata: topoPreds.map(stratumMaker)
   };
 }
