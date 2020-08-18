@@ -59,9 +59,9 @@ reachable[X,Y]
 	link[X,Y]
 } 
 */
-const Rule0 =
+const Rule2 =
 {
-  name : 'Rule0',
+  name : 'Rule2',
 
   fire(deltaPos, deltaTuples)
   {
@@ -90,33 +90,33 @@ const Rule0 =
 
     return newTuples;
   }
-} // end Rule0
+} // end Rule2
 
   
 
 /* rule [no aggregates] 
 reachable[X,Y]
 {
-	reachable[X,Z],link[Z,Y]
+	link[X,Z],reachable[Z,Y]
 } 
 */
-const Rule1 =
+const Rule3 =
 {
-  name : 'Rule1',
+  name : 'Rule3',
 
   fire(deltaPos, deltaTuples)
   {
     const newTuples = new Set();
 
     
-      // atom reachable[X,Z] [no conditions]
-      for (const tuple0 of (deltaPos === 0 ? deltaTuples : reachable_.members))
+      // atom link[X,Z] [no conditions]
+      for (const tuple0 of (deltaPos === 0 ? deltaTuples : link_.members))
       {
         const X = tuple0.t0;
         const Z = tuple0.t1;
         
-      // atom link[Z,Y] [conditions]
-      for (const tuple1 of (deltaPos === 1 ? deltaTuples : link_.members))
+      // atom reachable[Z,Y] [conditions]
+      for (const tuple1 of (deltaPos === 1 ? deltaTuples : reachable_.members))
       {
         if (tuple1.t0 === Z)
         {
@@ -142,7 +142,7 @@ const Rule1 =
 
     return newTuples;
   }
-} // end Rule1
+} // end Rule3
 
   
 
@@ -213,12 +213,12 @@ export function addTuples(freshEdbTuples)
 
     // stratum 1
     // preds: reachable
-    // non-recursive rules: Rule0
-    // recursive rules: Rule1
+    // non-recursive rules: Rule2
+    // recursive rules: Rule3
 
     const reachabletuples = new Set();
 
-    /* Rule0 [nonRecursive]
+    /* Rule2 [nonRecursive]
 reachable[X,Y]
 {
 	link[X,Y]
@@ -226,12 +226,12 @@ reachable[X,Y]
     */
     
       // atom 0 link[X,Y]
-      const Rule0tuples0 = Rule0.fire(0, linktuples);
-      MutableSets.addAll(reachabletuples, Rule0tuples0);
+      const Rule2tuples0 = Rule2.fire(0, linktuples);
+      MutableSets.addAll(reachabletuples, Rule2tuples0);
     
   
 
-    // recursive rules: Rule1
+    // recursive rules: Rule3
     // produce: reachable
 
     
@@ -243,19 +243,19 @@ reachable[X,Y]
     const newreachable = new Set();
   
       
-    /* Rule1 [recursive]
+    /* Rule3 [recursive]
 reachable[X,Y]
 {
-	reachable[X,Z],link[Z,Y]
+	link[X,Z],reachable[Z,Y]
 }
     */
     
-        // atom 0 reachable[X,Z]
+        // atom 1 reachable[Z,Y]
         if (localreachable.size > 0)
         {
-          const reachabletuples0 = Rule1.fire(0, localreachable);
-          MutableSets.addAll(reachabletuples, reachabletuples0);  
-          MutableSets.addAll(newreachable, reachabletuples0);
+          const reachabletuples1 = Rule3.fire(1, localreachable);
+          MutableSets.addAll(reachabletuples, reachabletuples1);  
+          MutableSets.addAll(newreachable, reachabletuples1);
         }    
       
   

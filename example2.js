@@ -3,12 +3,8 @@ reachable[X, Y]
   link[X, Y]
 }
 
-reachable2[X, Y] 
+reachable[X, Y] 
 {
-  reachable[X, Z], link[Z, Y]
+  link[X, Z], reachable[Z, Y]
 }
 
-reachable[X, Y]
-{
-  reachable2[X, Y]
-}

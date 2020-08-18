@@ -71,12 +71,11 @@ function emitTupleObjects(pred, arity)
   function ${pred}_(${termNames.join(', ')})
   {
     ${termAssignments.join('; ')};
-    this._id = ${pred}_.members.length;
     this._outproducts = new Set();
     this._outproductsgb = new Set();
-    ${pred}_.members.push(this);
+    ${pred}_.members.add(this);
   }
-  ${pred}_.members = [];
+  ${pred}_.members = new Set();
   ${pred}_.prototype.toString = function () {return atomString("${pred}", ${termToStrings.join(', ')})};  
 
   `;
@@ -505,7 +504,7 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
         // atom ${i} ${atom}
         if (local${pred}.size > 0)
         {
-          const ${producesPred}tuples${i} = ${ruleName}.fire(0, local${pred});
+          const ${producesPred}tuples${i} = ${ruleName}.fire(${i}, local${pred});
           MutableSets.addAll(${producesPred}tuples, ${producesPred}tuples${i});  
           MutableSets.addAll(new${producesPred}, ${producesPred}tuples${i});
         }    
@@ -660,9 +659,16 @@ export function addTuples(freshEdbTuples)
 const emitRest = `
 export function toDot()
 {
+  const tuples = [];
   function tupleTag(tuple)
   {
-    return tuple.constructor.name + tuple._id;
+    let id = tuples.indexOf(tuple);
+    if (id === -1)
+    {
+      id = tuples.length;
+      tuples.push(tuple);
+    }
+    return tuple.constructor.name + id;
   }
 
   function productTag(product)
