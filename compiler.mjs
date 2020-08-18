@@ -39,6 +39,7 @@ export function compile(src)
 
   sb.push(emitIterators(staticInfo.predicates, staticInfo.rules));
 
+  sb.push(emitEdbTuples(staticInfo.strata));
   sb.push(emitAddTuples(staticInfo.strata));
   
   sb.push(emitRest);
@@ -53,6 +54,7 @@ function emitTupleObjects(pred, arity)
   const termEqualities = termNames.map(t => `Object.is(member.${t}, ${t})`);
   const termAssignments = termNames.map(t => `this.${t} = ${t}`);
   const termToStrings = termNames.map(t => `this.${t}`);
+
   return `
 
   export function ${pred}(${termNames.join(', ')})
@@ -71,6 +73,7 @@ function emitTupleObjects(pred, arity)
     ${termAssignments.join('; ')};
     this._id = ${pred}_.members.length;
     this._outproducts = new Set();
+    this._outproductsgb = new Set();
     ${pred}_.members.push(this);
   }
   ${pred}_.members = [];
@@ -244,7 +247,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
         }
         for (const tuple of ptuples)
         {
-          tuple._outproducts.add(productGB);
+          tuple._outproductsgb.add(productGB);
         }
         productGB._outgb = groupby;
       }
@@ -429,7 +432,7 @@ function emitIterators(predNames, rules)
   const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${i}GB.members;`] : []);
 
   return `
-function* tuples()
+function* tuples_()
 {
   ${tupleYielders.join('\n  ')}
 }
@@ -470,8 +473,8 @@ function emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred)
     const pred = atom.pred;
     return [`
       // atom ${i} ${atom}
-      const ${producesPred}tuples${i} = ${ruleName}.fire(${i}, ${pred}tuples);
-      MutableSets.addAll(${producesPred}tuples, ${producesPred}tuples${i});
+      const ${ruleName}tuples${i} = ${ruleName}.fire(${i}, ${pred}tuples);
+      MutableSets.addAll(${producesPred}tuples, ${ruleName}tuples${i});
     `];
   }
   return [];
@@ -484,7 +487,9 @@ function emitNonRecursiveRule(rule)
   const atoms = rule.body.flatMap((atom, i) => emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred));
 
   return `
-    // ${ruleName} [nonRecursive]
+    /* ${ruleName} [nonRecursive]
+${rule}
+    */
     ${atoms.join('\n    ')}
   `;
 }
@@ -516,7 +521,9 @@ function emitRecursiveRule(rule, recursivePreds)
   const producesPred = rule.head.pred;
   const atoms = rule.body.flatMap((atom, i) => emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred));
   return `
-    // ${ruleName} [recursive] produces ${producesPred}
+    /* ${ruleName} [recursive]
+${rule}
+    */
     ${atoms.join('\n    ')}
   `;
 }
@@ -581,6 +588,42 @@ function stratumLogic(stratum)
   return sb.join('\n');
 }
 
+function emitEdbTuples()
+{
+  return `
+  const edbTuples_ = new Set();
+
+  export function edbTuples()
+  {
+    return new Set(edbTuples_);
+  }  
+
+  export function tuples()
+  {
+    const tuples = new Set();
+    const wl = [...edbTuples_];
+
+    while (wl.length > 0)
+    {
+      const tuple = wl.pop();
+      if (!tuples.has(tuple))
+      {
+        tuples.add(tuple);
+        for (const outproduct of tuple._outproducts)
+        {
+          wl.push(outproduct._outtuple);
+        }
+        for (const outproductgb of tuple._outproductsgb)
+        {
+          wl.push(outproductgb._outgb._outtuple);
+        }
+      }
+    }
+    return tuples;
+  }
+  `;
+}
+
 function emitAddTuples(strata)
 {
   const strataLogic = strata.map((stratum, i) => {
@@ -596,12 +639,16 @@ function emitAddTuples(strata)
   });
 
   return `
-export function addTuples(edbTuples)
+export function addTuples(freshEdbTuples)
 {
   const partition = new TuplePartition();
-  for (const edbTuple of edbTuples)
+  for (const edbTuple of freshEdbTuples)
   {
-    partition.add(edbTuple);
+    if (!edbTuples_.has(edbTuple))
+    {
+      edbTuples_.add(edbTuple);
+      partition.add(edbTuple);  
+    }
   }
   
   ${strataLogic.join('\n')}
@@ -630,11 +677,15 @@ export function toDot()
   
   let sb = "digraph G {\\nnode [style=filled,fontname=\\"Roboto Condensed\\"];\\n";
 
-  for (const tuple of tuples())
+  for (const tuple of tuples_())
   {
     const t = tupleTag(tuple);
     sb += \`\${t} [shape=box label="\${tuple}"];\\n\`;
     for (const product of tuple._outproducts)
+    {
+      sb += \`\${t} -> \${productTag(product)};\\n\`;    
+    }
+    for (const productGB of tuple._outproductsgb)
     {
       sb += \`\${t} -> \${productTag(product)};\\n\`;    
     }
@@ -670,7 +721,7 @@ export function toDot()
 `;
 
 
-const result = compileFile("example1");
-console.log(String(result));
-console.log("done");
+// const result = compileFile("example1");
+// console.log(String(result));
+// console.log("done");
 
