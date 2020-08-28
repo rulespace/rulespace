@@ -42,6 +42,8 @@ export function compile(src)
   sb.push(emitEdbTuples(staticInfo.strata));
   sb.push(emitAddTuples(staticInfo.strata));
   
+  sb.push(emitReset(staticInfo.predicates, staticInfo.rules));
+
   sb.push(emitRest);
 
   return sb.join('\n');
@@ -81,7 +83,7 @@ function emitTupleObjects(pred, arity)
   `;
 }
 
-function compileRuleFireBody(head, body, i, compileEnv, ptuples)
+function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
 {
   if (i === body.length)
   {
@@ -90,7 +92,7 @@ function compileRuleFireBody(head, body, i, compileEnv, ptuples)
     return `
       // updates for ${head}
       const ptuples = new Set([${ptuples.join(', ')}]);
-      const product = new Product(ptuples);
+      const product = new Product(${ruleName}, ptuples);
       const resultTuple = ${pred}(${head.terms.join(', ')});
       if (product._outtuple !== resultTuple)
       {
@@ -141,7 +143,7 @@ function compileRuleFireBody(head, body, i, compileEnv, ptuples)
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_.members))
       {
         ${bindUnboundVars.join('\n        ')}
-        ${compileRuleFireBody(head, body, i+1, compileEnv, ptuples)}
+        ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
       }
       `;  
     }
@@ -154,7 +156,7 @@ function compileRuleFireBody(head, body, i, compileEnv, ptuples)
         if (${conditions.join('&&')})
         {
           ${bindUnboundVars.join('\n       ')}
-          ${compileRuleFireBody(head, body, i+1, compileEnv, ptuples)}
+          ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
         }
       }
       `;  
@@ -177,18 +179,16 @@ function compileRuleFireBody(head, body, i, compileEnv, ptuples)
       // assign ${atom}
       const ${left} = ${right};
 
-      ${compileRuleFireBody(head, body, i+1, compileEnv, ptuples)}
+      ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
     `;
   }
 
   throw new Error(body[i]);
 }
 
-
 // (Reachable x y) :- (Reachable x z) (Link z y)
 function emitRuleObject(rule)
 {
-  const pred = rule.head.pred;
   const ruleName = "Rule" + rule._id;
   const compileEnv = new Set();
 
@@ -204,7 +204,7 @@ const ${ruleName} =
   {
     const newTuples = new Set();
 
-    ${compileRuleFireBody(rule.head, rule.body, 0, compileEnv, [])}
+    ${compileRuleFireBody(ruleName, rule.head, rule.body, 0, compileEnv, [])}
 
     return newTuples;
   }
@@ -226,7 +226,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
     return `
       // updates for ${head}
       const ptuples = new Set([${ptuples.join()}]);
-      const productGB = new ProductGB(ptuples, ${aggregand});
+      const productGB = new ProductGB(${ruleName}, ptuples, ${aggregand});
       const groupby = new ${ruleName}GB(${gb.join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
@@ -429,6 +429,7 @@ function emitIterators(predNames, rules)
 {
   const tupleYielders = predNames.map(pred => `yield* ${pred}_.members;`);
   const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${i}GB.members;`] : []);
+  const ruleNames = rules.map(rule => `Rule${rule._id}`);
 
   return `
 function* tuples_()
@@ -439,6 +440,29 @@ function* tuples_()
 function* groupbys()
 {
   ${gbYielders.join('\n  ')}
+}  
+
+function rules()
+{
+  return [${ruleNames.join(', ')}];
+}
+  `;
+}
+
+function emitReset(predNames, rules)
+{
+  const tupleResetters = predNames.map(pred => `${pred}_.members = new Set();`);
+  const gbResetters = rules.flatMap((rule, i) => rule.aggregates() ? [`Rule${i}GB.members = new Set();`] : []);
+
+  return `
+export function reset()
+{
+  ${tupleResetters.join('\n  ')}
+  ${gbResetters.join('\n  ')}
+
+  Product.members = [];
+  ProductGB.members = [];
+  edbTuples_.clear();
 }  
   `;
 }
@@ -700,7 +724,7 @@ export function toDot()
   for (const product of products())
   {
     const p = productTag(product);
-    sb += \`\${p} [label="&&"];\\n\`;
+    sb += \`\${p} [label="\${product.rule.name}"];\\n\`;
     sb += \`\${p} -> \${tupleTag(product._outtuple)};\\n\`;    
   }
 

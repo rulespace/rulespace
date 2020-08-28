@@ -4,6 +4,28 @@ export {
   assertTrue, Maps, Sets, MutableSets, Arrays
 } from './common.mjs';
 
+export class Product
+{
+
+  static members = [];
+  _outtuple = null;
+
+  constructor(rule, tuples)
+  {
+    for (const member of Product.members)
+    {
+      if (member.rule === rule && Sets.equals(member.tuples, tuples))
+      {
+        return member;
+      }
+    }
+    this.rule = rule;
+    this.tuples = tuples;
+    this._id = Product.members.length;
+    Product.members.push(this);
+  }
+}
+
 export class ProductGB
 {
 
@@ -14,36 +36,16 @@ export class ProductGB
   {
     for (const member of ProductGB.members)
     {
-      if (Sets.equals(member.tuples, tuples))
+      if (member.rule === rule && Sets.equals(member.tuples, tuples))
       {
         return member;
       }
     }
+    this.rule = rule;
     this.tuples = tuples;
     this.value = value;
     this._id = ProductGB.members.length;
     ProductGB.members.push(this);
-  }
-}
-
-export class Product
-{
-
-  static members = [];
-  _outtuple = null;
-
-  constructor(tuples)
-  {
-    for (const member of Product.members)
-    {
-      if (Sets.equals(member.tuples, tuples))
-      {
-        return member;
-      }
-    }
-    this.tuples = tuples;
-    this._id = Product.members.length;
-    Product.members.push(this);
   }
 }
 

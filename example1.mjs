@@ -76,7 +76,7 @@ const Rule0 =
         
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0]);
-      const product = new Product(ptuples);
+      const product = new Product(Rule0, ptuples);
       const resultTuple = reachable(X, Y);
       if (product._outtuple !== resultTuple)
       {
@@ -124,7 +124,7 @@ const Rule1 =
           
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0, tuple1]);
-      const product = new Product(ptuples);
+      const product = new Product(Rule1, ptuples);
       const resultTuple = reachable(X, Y);
       if (product._outtuple !== resultTuple)
       {
@@ -156,6 +156,11 @@ function* groupbys()
 {
   
 }  
+
+function rules()
+{
+  return [Rule0, Rule1];
+}
   
 
   const edbTuples_ = new Set();
@@ -270,6 +275,18 @@ reachable[X,Y]
 }
   
 
+export function reset()
+{
+  reachable_.members = new Set();
+  link_.members = new Set();
+  
+
+  Product.members = [];
+  ProductGB.members = [];
+  edbTuples_.clear();
+}  
+  
+
 export function toDot()
 {
   const tuples = [];
@@ -313,7 +330,7 @@ export function toDot()
   for (const product of products())
   {
     const p = productTag(product);
-    sb += `${p} [label="&&"];\n`;
+    sb += `${p} [label="${product.rule.name}"];\n`;
     sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
   }
 
