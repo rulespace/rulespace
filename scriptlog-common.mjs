@@ -32,7 +32,7 @@ export class ProductGB
   static members = [];
   _outgb = null;
 
-  constructor(tuples, value)
+  constructor(rule, tuples, value)
   {
     for (const member of ProductGB.members)
     {

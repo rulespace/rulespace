@@ -20,5 +20,5 @@ node[Y]
 
 unreachable[X, Y]
 {
-  node[X], node[Y], !reachable[X, Y];
+  node[X], node[Y], !reachable[X, Y]
 }

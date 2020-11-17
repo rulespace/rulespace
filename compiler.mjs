@@ -324,6 +324,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
   if (atom instanceof Atom)
   {
     const tuple = "tuple" + i;
+    ptuples.push(tuple);
     const pred = atom.pred;
     const bindUnboundVars = [];
     const conditions = [];
@@ -409,6 +410,32 @@ function emitRuleGBObject(rule)
   const gbNames = Array.from(Array(rule.head.terms.length - 1), (_, i) => "groupby.t"+i);
   const aggregandName ="t" + (rule.head.terms.length - 1);
 
+  const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
+  let joinOperation; // join semilattice
+  let addOperation, identityValue; // commutative group
+  switch (aggregator)
+  {
+    case "max": joinOperation = "Math.max(acc, val)"; break;
+    case "min": joinOperation = "Math.min(acc, val)"; break;
+    case "sum": addOperation = "acc + val"; identityValue = 0; break;
+    case "count": addOperation = "acc + 1"; identityValue = 0; break;
+    default: throw new Error("Unknown aggregator: " + aggregator);
+  }
+
+  let updateOperation;
+  if (joinOperation)
+  {
+    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${joinOperation}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregandName})`
+  }
+  else if (addOperation)
+  {
+    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregandName})`
+  }
+  else
+  {
+    throw new Error("No update operation for aggregator: " + aggregator)
+  }
+
   const GBclass = emitRuleGBClass(rule, ruleName);
 
   return `
@@ -430,8 +457,7 @@ const ${ruleName} =
     for (const [groupby, additionalValues] of updates)
     {
       const currentResultTuple = groupby._outtuple;
-      const currentValue = currentResultTuple === null ? 0 : currentResultTuple.${aggregandName};
-      const updatedValue = additionalValues.reduce((acc, val) => acc + val, currentValue);
+      const updatedValue = ${updateOperation};
       const updatedResultTuple = new ${pred}(${gbNames.join()}, updatedValue);  
       if (groupby._outtuple !== updatedResultTuple)
       {
@@ -493,7 +519,7 @@ class ${ruleName}GB
 function emitIterators(predNames, negatedPredNames, rules)
 {
   const tupleYielders = predNames.map(pred => `yield* ${pred}_.members;`).concat(negatedPredNames.map(pred => `yield* NOT_${pred}_.members;`));
-  const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${i}GB.members;`] : []);
+  const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${rule._id}GB.members;`] : []);
   const ruleNames = rules.map(rule => `Rule${rule._id}`);
 
   return `
@@ -517,7 +543,7 @@ function rules()
 function emitReset(predNames, rules)
 {
   const tupleResetters = predNames.map(pred => `${pred}_.members = new Set();`);
-  const gbResetters = rules.flatMap((rule, i) => rule.aggregates() ? [`Rule${i}GB.members = new Set();`] : []);
+  const gbResetters = rules.flatMap((rule, i) => rule.aggregates() ? [`Rule${rule._id}GB.members = [];`] : []);
 
   return `
 export function reset()
@@ -765,6 +791,11 @@ export function toDot()
     return "p" + product._id;
   }
 
+  function productGBTag(product)
+  {
+    return "pgb" + product._id;
+  }
+
   function groupbyTag(gb)
   {
     return gb.rule().name + "gb" + gb._id;
@@ -782,7 +813,7 @@ export function toDot()
     }
     for (const productGB of tuple._outproductsgb)
     {
-      sb += \`\${t} -> \${productTag(product)};\\n\`;    
+      sb += \`\${t} -> \${productGBTag(productGB)};\\n\`;    
     }
   }
 
@@ -795,8 +826,8 @@ export function toDot()
 
   for (const productGB of productsGB())
   {
-    const p = productTag(productGB);
-    sb += \`\${p} [label="\${productGB.value}"];\\n\`;
+    const p = productGBTag(productGB);
+    sb += \`\${p} [label="\${productGB.rule.name} \${productGB.value}"];\\n\`;
     sb += \`\${p} -> \${groupbyTag(productGB._outgb)};\\n\`;    
   }
 

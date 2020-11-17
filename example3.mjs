@@ -448,6 +448,11 @@ export function toDot()
     return "p" + product._id;
   }
 
+  function productGBTag(product)
+  {
+    return "pgb" + product._id;
+  }
+
   function groupbyTag(gb)
   {
     return gb.rule().name + "gb" + gb._id;
@@ -465,7 +470,7 @@ export function toDot()
     }
     for (const productGB of tuple._outproductsgb)
     {
-      sb += `${t} -> ${productTag(product)};\n`;    
+      sb += `${t} -> ${productGBTag(productGB)};\n`;    
     }
   }
 
@@ -478,8 +483,8 @@ export function toDot()
 
   for (const productGB of productsGB())
   {
-    const p = productTag(productGB);
-    sb += `${p} [label="${productGB.value}"];\n`;
+    const p = productGBTag(productGB);
+    sb += `${p} [label="${productGB.rule.name} ${productGB.value}"];\n`;
     sb += `${p} -> ${groupbyTag(productGB._outgb)};\n`;    
   }
 

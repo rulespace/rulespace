@@ -98,8 +98,21 @@ test('example4', module => {
       module.node('a'), module.node('b'), module.node('c'), module.node('d'),
       module.unreachable('a', 'a'), module.unreachable('b', 'a'), module.unreachable('c', 'a'),
       module.unreachable('d', 'd'), module.unreachable('d', 'c'), module.unreachable('d', 'b'), module.unreachable('d', 'a')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples, true);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
 });
+
+compileFile('example5'); // rmax
+test('example5', module => {
+  const edbTuples = new Set([module.i('a', 10), module.i('a', 20), module.i('b', 33)]);
+  const expectedIdbTuples = new Set([
+    module.rsum('a', 30), module.rsum('b', 33),
+    module.rmax('a', 20), module.rmax('b', 33),
+    module.rmin('a', 10), module.rmin('b', 33),
+    module.rcount('a', 2), module.rcount('b', 1),
+  ]);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
+});
+
 
 
 
@@ -134,11 +147,11 @@ test('example4', module => {
 //   {
 //     module.addTuples([tuple]);
 //   }
-//   assertTrue(Sets.equals(module.edbTuples(), Sets.union(edbTuples, new Set(add_wl))));
-//   // const expectedIdbTuples = new Set([module.reachable('a', 'b'), module.reachable('b', 'c'), module.reachable('a', 'c')]);
-//   //const expectedTuples = Sets.union(edbTuples, expectedIdbTuples);
-//   //assertTrue(Sets.equals(module.tuples(), expectedTuples));
-//   // console.log(module.toDot());
+  // assertTrue(Sets.equals(module.edbTuples(), Sets.union(edbTuples, new Set(add_wl))));
+  // const expectedIdbTuples = new Set([module.reachable('a', 'b'), module.reachable('b', 'c'), module.reachable('a', 'c')]);
+  //const expectedTuples = Sets.union(edbTuples, expectedIdbTuples);
+  //assertTrue(Sets.equals(module.tuples(), expectedTuples));
+  // console.log(module.toDot());
 
 
 
