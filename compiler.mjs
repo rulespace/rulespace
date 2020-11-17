@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { assertTrue } from './common.mjs';
-import { parseProgram, Var, Atom, Bin, Assign, Agg} from './parser.mjs';
+import { parseProgram, Var, Atom, Bin, Assign, Agg, Neg} from './parser.mjs';
 import { analyzeProgram } from './analyzer.mjs';
 
 export function compileFile(name)
@@ -25,6 +25,12 @@ export function compile(src)
     sb.push(emitTupleObjects(pred, arity));
   }
 
+  for (const negatedPred of staticInfo.negatedPreds)
+  {
+    const arity = staticInfo.pred2arity.get(negatedPred);
+    sb.push(emitTupleObjects("NOT_" + negatedPred, arity));
+  }
+
   staticInfo.rules.forEach((rule, i) =>
   {
     if (rule.aggregates())
@@ -37,7 +43,7 @@ export function compile(src)
     }
   });
 
-  sb.push(emitIterators(staticInfo.predicates, staticInfo.rules));
+  sb.push(emitIterators(staticInfo.predicates, staticInfo.negatedPreds, staticInfo.rules));
 
   sb.push(emitEdbTuples(staticInfo.strata));
   sb.push(emitAddTuples(staticInfo.strata));
@@ -153,7 +159,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       // atom ${atom} [conditions]
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_.members))
       {
-        if (${conditions.join('&&')})
+        if (${conditions.join(' && ')})
         {
           ${bindUnboundVars.join('\n       ')}
           ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
@@ -162,6 +168,65 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       `;  
     }
   }
+
+  if (atom instanceof Neg)
+  {
+    const natom = atom.atom;
+    const tuple = "tuple" + i;
+    ptuples.push('NOT_' + tuple);
+    const pred = natom.pred;
+    //const bindUnboundVars = [];
+    const conditions = [];
+    natom.terms.forEach((term, i) => {
+      if (term instanceof Var)
+      {
+        if (compileEnv.has(term.name))
+        {
+          conditions.push(`${tuple}.t${i} === ${term.name}`);
+        }
+        else
+        {
+          // bindUnboundVars.push(`const ${term.name} = ${tuple}.t${i};`);
+          compileEnv.add(term.name);
+        }
+      }
+      else if (term instanceof Lit)
+      {
+        conditions.push(`${tuple}.t${i} === ${termToString(term.value)}`);
+      }
+      else
+      {
+        throw new Error();
+      }
+    });
+
+    if (conditions.length === 0)
+    {
+      throw new Error("TODO");
+    }
+    else
+    {
+      return `
+      // atom ${atom} [conditions]
+      let found${i} = false;
+      for (const ${tuple} of ${pred}_.members)
+      {
+        if (${conditions.join(' && ')})
+        {
+          found${i} = true; // TODO solve with continue;
+          break;
+        }
+      }
+      if (found${i})
+      {
+        continue;
+      }
+      const NOT_${tuple} = NOT_${pred}(${natom.terms.join(', ')});
+      ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+      `;  
+    }
+  }// Neg
+
 
   if (atom instanceof Assign)
   {
@@ -425,9 +490,9 @@ class ${ruleName}GB
   `;
 }
 
-function emitIterators(predNames, rules)
+function emitIterators(predNames, negatedPredNames, rules)
 {
-  const tupleYielders = predNames.map(pred => `yield* ${pred}_.members;`);
+  const tupleYielders = predNames.map(pred => `yield* ${pred}_.members;`).concat(negatedPredNames.map(pred => `yield* NOT_${pred}_.members;`));
   const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${i}GB.members;`] : []);
   const ruleNames = rules.map(rule => `Rule${rule._id}`);
 

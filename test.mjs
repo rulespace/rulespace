@@ -64,9 +64,42 @@ test('example3', module => {
   const expectedIdbTuples = new Set([module.reachable('a', 'b'), module.reachable('b', 'c'), module.reachable('a', 'c'), module.reachable('c', 'c'),
       module.reachable('c', 'd'), module.reachable('b', 'd'), module.reachable('a', 'd'),
       module.node('a'), module.node('b'), module.node('c'), module.node('d')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples, true);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
 });
 
+compileFile('example4'); // reachable: link, reachable; node; unreachable
+test('example4', module => {
+  const edbTuples = new Set([module.link('a', 'b'), module.link('b', 'c')]);
+  const expectedIdbTuples = new Set([module.reachable('a', 'b'), module.reachable('b', 'c'), module.reachable('a', 'c'),
+      module.node('a'), module.node('b'), module.node('c'), 
+      module.unreachable('a', 'a'), module.unreachable('b', 'a'), module.unreachable('b', 'b'), module.unreachable('c', 'a'), module.unreachable('c', 'b'), module.unreachable('c', 'c')]);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
+});
+test('example4', module => {
+  const edbTuples = new Set([module.link('a', 'b'), module.link('b', 'c'), module.link('c', 'c')]);
+  const expectedIdbTuples = new Set([module.reachable('a', 'b'), module.reachable('b', 'c'), module.reachable('a', 'c'), module.reachable('c', 'c'),
+      module.node('a'), module.node('b'), module.node('c'), 
+      module.unreachable('a', 'a'), module.unreachable('b', 'a'), module.unreachable('b', 'b'), module.unreachable('c', 'a'), module.unreachable('c', 'b')]);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
+});
+test('example4', module => {
+  const edbTuples = new Set([module.link('a', 'b'), module.link('b', 'c'), module.link('c', 'c'), module.link('c', 'd')]);
+  const expectedIdbTuples = new Set([module.reachable('a', 'b'), module.reachable('b', 'c'), module.reachable('a', 'c'), module.reachable('c', 'c'), 
+      module.reachable('c', 'd'), module.reachable('b', 'd'), module.reachable('a', 'd'),
+      module.node('a'), module.node('b'), module.node('c'), module.node('d'),
+      module.unreachable('a', 'a'), module.unreachable('b', 'a'), module.unreachable('b', 'b'), module.unreachable('c', 'a'), module.unreachable('c', 'b'),
+      module.unreachable('d', 'd'), module.unreachable('d', 'c'), module.unreachable('d', 'b'), module.unreachable('d', 'a')]);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
+});
+test('example4', module => {
+  const edbTuples = new Set([module.link('a', 'b'), module.link('b', 'c'), module.link('c', 'c'), module.link('c', 'd'), module.link('c', 'b')]);
+  const expectedIdbTuples = new Set([module.reachable('a', 'b'), module.reachable('b', 'c'), module.reachable('a', 'c'), module.reachable('c', 'c'), 
+      module.reachable('c', 'd'), module.reachable('b', 'd'), module.reachable('a', 'd'), module.reachable('c', 'b'), module.reachable('b', 'b'),
+      module.node('a'), module.node('b'), module.node('c'), module.node('d'),
+      module.unreachable('a', 'a'), module.unreachable('b', 'a'), module.unreachable('c', 'a'),
+      module.unreachable('d', 'd'), module.unreachable('d', 'c'), module.unreachable('d', 'b'), module.unreachable('d', 'a')]);
+  testInitialSolve(module, edbTuples, expectedIdbTuples, true);
+});
 
 
 

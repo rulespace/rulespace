@@ -3,10 +3,17 @@ import { Atom, Visitor } from './parser.mjs';
 
 class CollectingVisitor extends Visitor
   {
-    pred2arity = new Map(); // pred -> arit 
+    pred2arity = new Map(); // pred -> arity 
     rules = [];
     pred2rules = new Map();
     precGraph = new Map(); // pred -> pred
+    negatedPreds = [];
+
+    visitNeg(neg)
+    {
+      this.negatedPreds.push(neg.atom.pred);
+      return true;
+    }
 
     visitAtom(atom)
     {
@@ -157,6 +164,7 @@ export function analyzeProgram(program)
     pred2arity: collectingVisitor.pred2arity, 
     predicates: [...collectingVisitor.pred2arity.keys()],
     pred2rules: collectingVisitor.pred2rules,
+    negatedPreds: collectingVisitor.negatedPreds,
     rules: collectingVisitor.rules,
     precGraph,
     topoPreds,

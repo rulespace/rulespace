@@ -340,6 +340,12 @@ function parseTerm(exp)
     return new Agg(aggregator, aggregand);
   }
 
+  if (exp.type === "UnaryExpression") // only in body
+  {
+    assertTrue(exp.operator === '!')
+    return new Neg(parseAtom(exp.argument));
+  }
+
   console.error(exp);
   throw new Error("parse term error");
 }

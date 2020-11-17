@@ -75,33 +75,12 @@ import {
   node_.members = new Set();
   node_.prototype.toString = function () {return atomString("node", this.t0)};  
 
-  export function node(t0)
-  {
-    for (const member of node_.members)
-    {
-      if (Object.is(member.t0, t0))
-      {
-        return member;
-      }
-    }
-    return new node_(t0);
-  }
+  
 
-
-  function unreachable_(t0, t1)
-  {
-    this.t0 = t0;
-    this.t1 = t1;
-    this._outproducts = new Set();
-    this._outproductsgb = new Set();
-    node_.members.add(this);
-  }
-  node_.members = new Set();
-  node_.prototype.toString = function () {return atomString("unreachable", this.t0)};  
 
   export function unreachable(t0, t1)
   {
-    for (const member of node_.members)
+    for (const member of unreachable_.members)
     {
       if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
       {
@@ -110,6 +89,41 @@ import {
     }
     return new unreachable_(t0, t1);
   }
+  function unreachable_(t0, t1)
+  {
+    this.t0 = t0; this.t1 = t1;
+    this._outproducts = new Set();
+    this._outproductsgb = new Set();
+    unreachable_.members.add(this);
+  }
+  unreachable_.members = new Set();
+  unreachable_.prototype.toString = function () {return atomString("unreachable", this.t0, this.t1)};  
+
+  
+
+
+  export function NOT_reachable(t0, t1)
+  {
+    for (const member of NOT_reachable_.members)
+    {
+      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
+      {
+        return member;
+      }
+    }
+    return new NOT_reachable_(t0, t1);
+  }
+  function NOT_reachable_(t0, t1)
+  {
+    this.t0 = t0; this.t1 = t1;
+    this._outproducts = new Set();
+    this._outproductsgb = new Set();
+    NOT_reachable_.members.add(this);
+  }
+  NOT_reachable_.members = new Set();
+  NOT_reachable_.prototype.toString = function () {return atomString("NOT_reachable", this.t0, this.t1)};  
+
+  
 
 /* rule [no aggregates] 
 reachable[X,Y]
@@ -117,9 +131,9 @@ reachable[X,Y]
 	link[X,Y]
 } 
 */
-const Rule4 =
+const Rule8 =
 {
-  name : 'Rule4',
+  name : 'Rule8',
 
   fire(deltaPos, deltaTuples)
   {
@@ -134,7 +148,7 @@ const Rule4 =
         
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0]);
-      const product = new Product(Rule4, ptuples);
+      const product = new Product(Rule8, ptuples);
       const resultTuple = reachable(X, Y);
       if (product._outtuple !== resultTuple)
       {
@@ -148,7 +162,7 @@ const Rule4 =
 
     return newTuples;
   }
-} // end Rule4
+} // end Rule8
 
   
 
@@ -158,9 +172,9 @@ reachable[X,Y]
 	link[X,Z],reachable[Z,Y]
 } 
 */
-const Rule5 =
+const Rule9 =
 {
-  name : 'Rule5',
+  name : 'Rule9',
 
   fire(deltaPos, deltaTuples)
   {
@@ -182,7 +196,7 @@ const Rule5 =
           
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0, tuple1]);
-      const product = new Product(Rule5, ptuples);
+      const product = new Product(Rule9, ptuples);
       const resultTuple = reachable(X, Y);
       if (product._outtuple !== resultTuple)
       {
@@ -200,7 +214,7 @@ const Rule5 =
 
     return newTuples;
   }
-} // end Rule5
+} // end Rule9
 
   
 
@@ -210,9 +224,9 @@ node[X]
 	link[X,_]
 } 
 */
-const Rule6 =
+const Rule10 =
 {
-  name : 'Rule6',
+  name : 'Rule10',
 
   fire(deltaPos, deltaTuples)
   {
@@ -227,7 +241,7 @@ const Rule6 =
         
       // updates for node[X]
       const ptuples = new Set([tuple0]);
-      const product = new Product(Rule6, ptuples);
+      const product = new Product(Rule10, ptuples);
       const resultTuple = node(X);
       if (product._outtuple !== resultTuple)
       {
@@ -241,7 +255,7 @@ const Rule6 =
 
     return newTuples;
   }
-} // end Rule6
+} // end Rule10
 
   
 
@@ -251,9 +265,9 @@ node[Y]
 	link[_,Y]
 } 
 */
-const Rule7 =
+const Rule11 =
 {
-  name : 'Rule7',
+  name : 'Rule11',
 
   fire(deltaPos, deltaTuples)
   {
@@ -268,7 +282,7 @@ const Rule7 =
         
       // updates for node[Y]
       const ptuples = new Set([tuple0]);
-      const product = new Product(Rule7, ptuples);
+      const product = new Product(Rule11, ptuples);
       const resultTuple = node(Y);
       if (product._outtuple !== resultTuple)
       {
@@ -282,19 +296,19 @@ const Rule7 =
 
     return newTuples;
   }
-} // end Rule7
+} // end Rule11
 
   
 
 /* rule [no aggregates] 
 unreachable[X,Y]
 {
-	node[X], node[Y], !reachable[X,Y]
+	node[X],node[Y],¬reachable[X,Y]
 } 
 */
-const Rule8 =
+const Rule12 =
 {
-  name : 'Rule8',
+  name : 'Rule12',
 
   fire(deltaPos, deltaTuples)
   {
@@ -310,14 +324,14 @@ const Rule8 =
       for (const tuple1 of (deltaPos === 1 ? deltaTuples : node_.members))
       {
         const Y = tuple1.t0;
-
-      // atom !reachable[X,Y]
-      const found2 = false;
+        
+      // atom ¬reachable[X,Y] [conditions]
+      let found2 = false;
       for (const tuple2 of reachable_.members)
       {
         if (tuple2.t0 === X && tuple2.t1 === Y)
         {
-          found2 = true;
+          found2 = true; // TODO solve with continue;
           break;
         }
       }
@@ -325,20 +339,22 @@ const Rule8 =
       {
         continue;
       }
-
+      const NOT_tuple2 = NOT_reachable(X, Y);
+      
       // updates for unreachable[X,Y]
-      const ptuples = new Set([tuple0, tuple1, tuple2]);
-      const product = new Product(Rule5, ptuples);
-      const resultTuple = reachable(X, Y);
+      const ptuples = new Set([tuple0, tuple1, NOT_tuple2]);
+      const product = new Product(Rule12, ptuples);
+      const resultTuple = unreachable(X, Y);
       if (product._outtuple !== resultTuple)
       {
         product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
         tuple1._outproducts.add(product);
+        NOT_tuple2._outproducts.add(product);
         newTuples.add(resultTuple);
       }
     
-        }
+      
       }
       
       }
@@ -346,16 +362,17 @@ const Rule8 =
 
     return newTuples;
   }
-} // end Rule8
+} // end Rule12
 
   
-
 
 function* tuples_()
 {
   yield* reachable_.members;
   yield* link_.members;
   yield* node_.members;
+  yield* unreachable_.members;
+  yield* NOT_reachable_.members;
 }
 
 function* groupbys()
@@ -365,7 +382,7 @@ function* groupbys()
 
 function rules()
 {
-  return [Rule4, Rule5, Rule6, Rule7];
+  return [Rule8, Rule9, Rule10, Rule11, Rule12];
 }
   
 
@@ -424,12 +441,12 @@ export function addTuples(freshEdbTuples)
 
     // stratum 1
     // preds: reachable
-    // non-recursive rules: Rule4
-    // recursive rules: Rule5
+    // non-recursive rules: Rule8
+    // recursive rules: Rule9
 
     const reachabletuples = new Set();
 
-    /* Rule4 [nonRecursive]
+    /* Rule8 [nonRecursive]
 reachable[X,Y]
 {
 	link[X,Y]
@@ -437,12 +454,12 @@ reachable[X,Y]
     */
     
       // atom 0 link[X,Y]
-      const Rule4tuples0 = Rule4.fire(0, linktuples);
-      MutableSets.addAll(reachabletuples, Rule4tuples0);
+      const Rule8tuples0 = Rule8.fire(0, linktuples);
+      MutableSets.addAll(reachabletuples, Rule8tuples0);
     
   
 
-    // recursive rules: Rule5
+    // recursive rules: Rule9
     // produce: reachable
 
     
@@ -454,7 +471,7 @@ reachable[X,Y]
     const newreachable = new Set();
   
       
-    /* Rule5 [recursive]
+    /* Rule9 [recursive]
 reachable[X,Y]
 {
 	link[X,Z],reachable[Z,Y]
@@ -464,7 +481,7 @@ reachable[X,Y]
         // atom 1 reachable[Z,Y]
         if (localreachable.size > 0)
         {
-          const reachabletuples1 = Rule5.fire(1, localreachable);
+          const reachabletuples1 = Rule9.fire(1, localreachable);
           MutableSets.addAll(reachabletuples, reachabletuples1);  
           MutableSets.addAll(newreachable, reachabletuples1);
         }    
@@ -481,12 +498,12 @@ reachable[X,Y]
 
     // stratum 2
     // preds: node
-    // non-recursive rules: Rule6,Rule7
+    // non-recursive rules: Rule10,Rule11
     // recursive rules: 
 
     const nodetuples = new Set();
 
-    /* Rule6 [nonRecursive]
+    /* Rule10 [nonRecursive]
 node[X]
 {
 	link[X,_]
@@ -494,12 +511,12 @@ node[X]
     */
     
       // atom 0 link[X,_]
-      const Rule6tuples0 = Rule6.fire(0, linktuples);
-      MutableSets.addAll(nodetuples, Rule6tuples0);
+      const Rule10tuples0 = Rule10.fire(0, linktuples);
+      MutableSets.addAll(nodetuples, Rule10tuples0);
     
   
     
-    /* Rule7 [nonRecursive]
+    /* Rule11 [nonRecursive]
 node[Y]
 {
 	link[_,Y]
@@ -507,8 +524,34 @@ node[Y]
     */
     
       // atom 0 link[_,Y]
-      const Rule7tuples0 = Rule7.fire(0, linktuples);
-      MutableSets.addAll(nodetuples, Rule7tuples0);
+      const Rule11tuples0 = Rule11.fire(0, linktuples);
+      MutableSets.addAll(nodetuples, Rule11tuples0);
+    
+  
+  
+
+    // stratum 3
+    // preds: unreachable
+    // non-recursive rules: Rule12
+    // recursive rules: 
+
+    const unreachabletuples = new Set();
+
+    /* Rule12 [nonRecursive]
+unreachable[X,Y]
+{
+	node[X],node[Y],¬reachable[X,Y]
+}
+    */
+    
+      // atom 0 node[X]
+      const Rule12tuples0 = Rule12.fire(0, nodetuples);
+      MutableSets.addAll(unreachabletuples, Rule12tuples0);
+    
+    
+      // atom 1 node[Y]
+      const Rule12tuples1 = Rule12.fire(1, nodetuples);
+      MutableSets.addAll(unreachabletuples, Rule12tuples1);
     
   
   
@@ -520,6 +563,7 @@ export function reset()
   reachable_.members = new Set();
   link_.members = new Set();
   node_.members = new Set();
+  unreachable_.members = new Set();
   
 
   Product.members = [];
