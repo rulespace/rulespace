@@ -3,7 +3,7 @@ rsum[X, {sum: Y}]
   i[X,Y]
 }
 
-rmax[square(X), {max: Y}] 
+rmax[X, {max: Y}] 
 {
   i[X,Y]
 }
