@@ -1,92 +1,155 @@
 import fs from 'fs';
 import { assertTrue } from './common.mjs';
-import { parseProgram, Var, Atom, Bin, Assign, Agg, Neg} from './parser.mjs';
-import { analyzeProgram } from './analyzer.mjs';
+import { SchemeParser  } from './parser.mjs';
+import { analyzeProgram, Atom, Var, Lit } from './analyzer.mjs';
 
 export function compileFile(name)
 {
-  const compiled = compile(fs.readFileSync(`${name}.js`, 'utf8'));
+  const compiled = compile(fs.readFileSync(`${name}.sl`, 'utf8'));
   fs.writeFileSync(`${name}.mjs`, compiled, 'utf8');
 }
 
 export function compile(src)
 {
-  const program = parseProgram(src);
+  const parser = new SchemeParser();
+  const program = parser.parse(src);
 
-  const staticInfo = analyzeProgram(program);
-  //console.log("topo: " + staticInfo.topoSorted);
+  const analysis = analyzeProgram(program);
+  const strata = analysis.strata;
+  const preds = analysis.preds;
+  const edbPreds = preds.filter(pred => pred.edb);
+  const rules = analysis.program.rules;
 
   const sb = [];
 
   sb.push(emitImports);
-  
-  for (const [pred, arity] of staticInfo.pred2arity)
-  {
-    sb.push(emitTupleObjects(pred, arity));
-  }
+  sb.push(emitFirst);
 
-  for (const negatedPred of staticInfo.negatedPreds)
+  for (const pred of preds)
   {
-    const arity = staticInfo.pred2arity.get(negatedPred);
-    sb.push(emitTupleObjects("NOT_" + negatedPred, arity));
-  }
+    sb.push(`
+//////////////////////////////////////////////////
+// ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name} (arity: ${pred.arity})
+// precedes: ${[...pred.precedes].join(',')}
+// posDependsOn: ${[...pred.posDependsOn].join(',')}
+// negDependsOn: ${[...pred.negDependsOn].join(',')}
+    `);
 
-  staticInfo.rules.forEach((rule, i) =>
-  {
-    if (rule.aggregates())
+    sb.push(emitTupleObject(pred));
+    //sb.push(emitGetTuple(pred));
+    sb.push(emitDeltaAddTuple(pred));
+    // if (pred.edb)
+    // {
+    //   sb.push(emitAddTuple(pred, strata));
+    // }
+    for (const rule of pred.rules)
     {
-      sb.push(emitRuleGBObject(rule));
+      sb.push(`/* ${rule} */`);
+      if (rule.aggregates())
+      {
+        sb.push(emitRuleGBObject(rule));
+      }
+      else
+      {
+        sb.push(emitRuleObject(rule));
+      }
     }
-    else
-    {
-      sb.push(emitRuleObject(rule));
-    }
-  });
-
-  sb.push(emitIterators(staticInfo.predicates, staticInfo.negatedPreds, staticInfo.rules));
-
-  sb.push(emitEdbTuples(staticInfo.strata));
-  sb.push(emitAddTuples(staticInfo.strata));
+  }
   
-  sb.push(emitReset(staticInfo.predicates, staticInfo.rules));
+//   for (const stratum of strata)
+//   {
+//     sb.push(`
+// //////////////////////////////////////////////////
+// // stratum ${stratum.id}
+// // preds: ${stratum.preds.join(', ')}
+//     `);
+//   }
+
+  // for (const negatedPred of staticInfo.negatedPreds)
+  // {
+  //   const arity = staticInfo.pred2arity.get(negatedPred);
+  //   sb.push(emitTupleObject("NOT_" + negatedPred, arity));
+  // }
+
+
+  sb.push(emitAddTuples(strata));
+  sb.push(emitRemoveTuples);
+  
+  sb.push(emitIterators(preds, edbPreds, rules));
+  sb.push(emitClear(edbPreds));
 
   sb.push(emitRest);
 
   return sb.join('\n');
 }
 
+const emitFirst = `
 
-function emitTupleObjects(pred, arity)
+const IMM_EMPTY_COLLECTION = Object.freeze([]);
+
+`;
+
+
+function emitTupleObject(pred)
 {
-  const termNames = Array.from(Array(arity), (_, i) => "t" + i);
-  const termEqualities = termNames.map(t => `Object.is(member.${t}, ${t})`);
-  const termAssignments = termNames.map(t => `this.${t} = ${t}`);
-  const termToStrings = termNames.map(t => `this.${t}`);
+  const tn = termNames(pred);
+  // const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
+  const termAssignments = tn.map(t => `this.${t} = ${t};`);
+  const termFields = tn.map(t => `this.${t}`);
+  // const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
+
 
   return `
+const ${pred}_members = new Set();
+export function ${pred}(${tn.join(', ')})
+{
+  ${termAssignments.join('\n  ')}
+  this._inproducts = ${pred.edb ? `IMM_EMPTY_COLLECTION` : `new Set()`};
+  this._outproducts = new Set();
+  this._outproductsgb = new Set();
+}
+${pred}.prototype.toString = function () {return atomString("${pred}", ${termFields.join(', ')})};  
+${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};  // public API only 
 
-  export function ${pred}(${termNames.join(', ')})
+function get_${pred}(${tn.join(', ')})
+{
+  for (const member of ${pred}_members)
   {
-    for (const member of ${pred}_.members)
+    if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
     {
-      if (${termEqualities.join(' && ')})
-      {
-        return member;
-      }
+      return member;
     }
-    return new ${pred}_(${termNames.join(', ')});
   }
-  function ${pred}_(${termNames.join(', ')})
-  {
-    ${termAssignments.join('; ')};
-    this._outproducts = new Set();
-    this._outproductsgb = new Set();
-    ${pred}_.members.add(this);
-  }
-  ${pred}_.members = new Set();
-  ${pred}_.prototype.toString = function () {return atomString("${pred}", ${termToStrings.join(', ')})};  
+  return null;
+}
+`;
+}
 
-  `;
+
+// function emitGetTuple(pred)
+// {
+//   const arity = pred.arity;
+
+//   const tn = termNames(pred);
+//   const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
+//   return `
+// export function get_${pred}_tuple(${tn.join(', ')})
+// {
+//   for (const member of ${pred}_members)
+//   {
+//     if (${termEqualities.join(' && ')})
+//     {
+//       return member;
+//     }
+//   }
+//   return null;
+// }
+//   `
+// }
+
+function emitAssertTrue(condition)
+{
+  return `assertTrue(${condition})`;
 }
 
 function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
@@ -98,13 +161,23 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
     return `
       // updates for ${head}
       const ptuples = new Set([${ptuples.join(', ')}]);
-      const product = new Product(${ruleName}, ptuples);
-      const resultTuple = ${pred}(${head.terms.join(', ')});
-      if (product._outtuple !== resultTuple)
+      const existing_${pred}_tuple = get_${pred}(${head.terms.join(', ')});
+      if (existing_${pred}_tuple === null)
       {
-        product._outtuple = resultTuple;
+        const new_${pred}_tuple = new ${pred}(${head.terms.join(', ')});
+        newTuples.add(new_${pred}_tuple);
+        ${pred}_members.add(new_${pred}_tuple);
+        const product = new Product(${ruleName}, ptuples);
         ${t2ps.join('\n        ')}
-        newTuples.add(resultTuple);
+        product._outtuple = new_${pred}_tuple;
+        new_${pred}_tuple._inproducts.add(product);
+      }
+      else
+      {
+        const product = new Product(${ruleName}, ptuples);
+        ${t2ps.join('\n        ')}
+        product._outtuple = existing_${pred}_tuple;
+        existing_${pred}_tuple._inproducts.add(product);
       }
     `;
   }
@@ -146,7 +219,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [no conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_.members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
       {
         ${bindUnboundVars.join('\n        ')}
         ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
@@ -157,7 +230,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_.members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
       {
         if (${conditions.join(' && ')})
         {
@@ -209,7 +282,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       return `
       // atom ${atom} [conditions]
       let found${i} = false;
-      for (const ${tuple} of ${pred}_.members)
+      for (const ${tuple} of ${pred}_members)
       {
         if (${conditions.join(' && ')})
         {
@@ -355,7 +428,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [no conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_.members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
       {
         ${bindUnboundVars.join('\n        ')}
         ${compileRuleGBFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
@@ -366,7 +439,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_.members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
       {
         if (${conditions.join('&&')})
         {
@@ -516,16 +589,23 @@ class ${ruleName}GB
   `;
 }
 
-function emitIterators(predNames, negatedPredNames, rules)
+function emitIterators(preds, edbPreds, rules)
 {
-  const tupleYielders = predNames.map(pred => `yield* ${pred}_.members;`).concat(negatedPredNames.map(pred => `yield* NOT_${pred}_.members;`));
+  const tupleYielders = preds.map(pred => `yield* ${pred}_members;`);
+  const edbTupleYielders = edbPreds.map(pred => `yield* ${pred}_members;`);
   const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${rule._id}GB.members;`] : []);
   const ruleNames = rules.map(rule => `Rule${rule._id}`);
 
   return `
-function* tuples_()
+// from membership
+export function* tuples() 
 {
   ${tupleYielders.join('\n  ')}
+}
+
+export function* edbTuples() 
+{
+  ${edbTupleYielders.join('\n  ')}
 }
 
 function* groupbys()
@@ -533,27 +613,21 @@ function* groupbys()
   ${gbYielders.join('\n  ')}
 }  
 
-function rules()
-{
-  return [${ruleNames.join(', ')}];
-}
+// function rules()
+// {
+//   return [${ruleNames.join(', ')}];
+// }
   `;
 }
 
-function emitReset(predNames, rules)
+function emitClear(edbPreds)
 {
-  const tupleResetters = predNames.map(pred => `${pred}_.members = new Set();`);
-  const gbResetters = rules.flatMap((rule, i) => rule.aggregates() ? [`Rule${rule._id}GB.members = [];`] : []);
+  const clearers = edbPreds.map(edbPred => `remove_tuples(${edbPred}_members);`);
 
   return `
-export function reset()
+export function clear()
 {
-  ${tupleResetters.join('\n  ')}
-  ${gbResetters.join('\n  ')}
-
-  Product.members = [];
-  ProductGB.members = [];
-  edbTuples_.clear();
+  ${clearers.join('\n')}
 }  
   `;
 }
@@ -574,9 +648,9 @@ function compileTerm(term)
 
 const emitImports = `import {
   MutableSets,
-  Product, ProductGB, products, productsGB, TuplePartition,
+  Product, ProductGB,
   atomString,
-} from './scriptlog-common.mjs';
+} from './schemelog-common.mjs';
 `;
 
 function emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred)
@@ -587,8 +661,8 @@ function emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred)
     const pred = atom.pred;
     return [`
       // atom ${i} ${atom}
-      const ${ruleName}tuples${i} = ${ruleName}.fire(${i}, ${pred}tuples);
-      MutableSets.addAll(${producesPred}tuples, ${ruleName}tuples${i});
+      const ${ruleName}_tuples${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
+      MutableSets.addAll(${producesPred}_tuples, ${ruleName}_tuples${i});
     `];
   }
   return [];
@@ -617,11 +691,11 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
     {
       return [`
         // atom ${i} ${atom}
-        if (local${pred}.size > 0)
+        if (local_${pred}.size > 0)
         {
-          const ${producesPred}tuples${i} = ${ruleName}.fire(${i}, local${pred});
-          MutableSets.addAll(${producesPred}tuples, ${producesPred}tuples${i});  
-          MutableSets.addAll(new${producesPred}, ${producesPred}tuples${i});
+          const ${producesPred}_tuples_${i} = ${ruleName}.fire(${i}, local_${pred});
+          MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
+          MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
         }    
       `];  
     }
@@ -648,24 +722,24 @@ function emitRecursiveRules(rules, recursivePreds)
 
   // TODO these locals profit only in first step from addition that occurs within loop (cascade, through shared ref to general delta set)
   const locals = producedPreds.map(pred => `
-    let local${pred} = ${pred}tuples;
+    let local_${pred} = ${pred}_tuples;
   `);
   const news = producedPreds.map(pred => `
-    const new${pred} = new Set();
+    const new_${pred} = new Set();
   `);
-  const localConditions = producedPreds.map(pred => `local${pred}.size > 0`);
+  const localConditions = producedPreds.map(pred => `local_${pred}.size > 0`);
 
   const fireRules = rules.map(rule => emitRecursiveRule(rule, recursivePreds));
 
   const transfers = producedPreds.map(pred => `
-    local${pred} = new${pred}
+    local_${pred} = new_${pred};
   `);
 
   return `
     // recursive rules: ${rules.map(rule => "Rule" + rule._id).join(', ')}
     // produce: ${producedPreds}
 
-    ${locals.join('')}
+    ${locals.join('\n')}
     while (${localConditions.join(' || ')})
     {
       ${news.join('\n    ')}
@@ -673,177 +747,127 @@ function emitRecursiveRules(rules, recursivePreds)
   
       ${transfers.join('')}
     }
-
   `;
+}
+
+function termNames(pred)
+{
+  return Array.from(Array(pred.arity), (_, i) => "t" + i);
+}
+
+function termToString(x)
+{
+  return String(x); // ???
 }
 
 function stratumLogic(stratum)
 {
   const sb = [];
-  if (stratum.recursiveRules.length === 0 && stratum.nonRecursiveRules.length === 0)
+  if (stratum.recursiveRules.size === 0 && stratum.nonRecursiveRules.size === 0)
   {
     assertTrue(stratum.preds.length === 1);
     const pred = stratum.preds[0];
-    return `const ${pred}tuples = partition.get(${pred}_) || new Set();`;
+    assertTrue(pred.edb);
+    return `const ${pred}_tuples = delta_add_${pred}_tuples(edbTuplesMap.get(${pred}) || new Set());`;
   }
 
-  const tupleIntroductions = stratum.preds.map(pred => `const ${pred}tuples = new Set();`);
+  const tupleIntroductions = stratum.preds.map(pred => `const ${pred}_tuples = new Set();`);
   sb.push(tupleIntroductions.join('\n    '));
 
-  const nonRecursiveRules = stratum.nonRecursiveRules.map(emitNonRecursiveRule);
+  const nonRecursiveRules = [...stratum.nonRecursiveRules].map(emitNonRecursiveRule);
   sb.push(nonRecursiveRules.join('\n    '));
 
-  if (stratum.recursiveRules.length > 0)
+  if (stratum.recursiveRules.size > 0)
   {
-    const recursiveRules = emitRecursiveRules(stratum.recursiveRules, new Set(stratum.preds));
+    const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], new Set(stratum.preds.map(pred => pred.name)));
     sb.push(recursiveRules);
   }
 
   return sb.join('\n');
 }
 
-function emitEdbTuples()
+
+function emitDeltaAddTuple(pred)
 {
+  const tn = termNames(pred);
+  const termProperties = tn.map(t => `proposed.${t}`);
   return `
-  const edbTuples_ = new Set();
-
-  export function edbTuples()
+function delta_add_${pred}_tuples(proposedEdbTuples)
+{
+  const ${pred}_tuples = [];
+  for (const proposed of proposedEdbTuples)
   {
-    return new Set(edbTuples_);
-  }  
-
-  export function tuples()
-  {
-    const tuples = new Set();
-    const wl = [...edbTuples_];
-
-    while (wl.length > 0)
+    const actual = get_${pred}(${termProperties.join(', ')});
+    if (actual === null)  
     {
-      const tuple = wl.pop();
-      if (!tuples.has(tuple))
-      {
-        tuples.add(tuple);
-        for (const outproduct of tuple._outproducts)
-        {
-          wl.push(outproduct._outtuple);
-        }
-        for (const outproductgb of tuple._outproductsgb)
-        {
-          wl.push(outproductgb._outgb._outtuple);
-        }
-      }
+      ${pred}_tuples.push(proposed);
+      ${pred}_members.add(proposed);
     }
-    return tuples;
   }
-  `;
+  return ${pred}_tuples;
+}
+  `
 }
 
-function emitAddTuples(strata)
+function emitAddTuples(strata) 
 {
-  const strataLogic = strata.map((stratum, i) => {
+
+  const strataLogic = strata.map(stratum => {
 
     return `
-    // stratum ${i}
+    // stratum ${stratum.id}
     // preds: ${stratum.preds.join(', ')}
-    // non-recursive rules: ${stratum.nonRecursiveRules.map(rule => "Rule" + rule._id)}
-    // recursive rules: ${stratum.recursiveRules.map(rule => "Rule" + rule._id)}
+    // non-recursive rules: ${[...stratum.nonRecursiveRules].map(rule => "Rule" + rule._id)}
+    // recursive rules: ${[...stratum.recursiveRules].map(rule => "Rule" + rule._id)}
 
     ${stratumLogic(stratum)}
   `;
   });
 
   return `
-export function addTuples(freshEdbTuples)
+export function add_tuples(edbTuples)
 {
-  const partition = new TuplePartition();
-  for (const edbTuple of freshEdbTuples)
-  {
-    if (!edbTuples_.has(edbTuple))
-    {
-      edbTuples_.add(edbTuple);
-      partition.add(edbTuple);  
-    }
-  }
-  
+  const edbTuplesMap = new Map(edbTuples);
   ${strataLogic.join('\n')}
+  return null; 
 }
   `;
 }
 
-
-const emitRest = `
-export function toDot()
+const emitRemoveTuples = `
+// only forward (so, in essence, only edb tuples supported) 
+export function remove_tuples(tuples)
 {
-  const tuples = [];
-  function tupleTag(tuple)
+  const wl = [...tuples];
+
+  function removeProduct(product)
   {
-    let id = tuples.indexOf(tuple);
-    if (id === -1)
+    for (const intuple of product.tuples)
     {
-      id = tuples.length;
-      tuples.push(tuple);
+      intuple._outproducts.delete(product); 
     }
-    return tuple.constructor.name + id;
+    const outtuple = product._outtuple;
+    outtuple._inproducts.delete(product);
+    if (outtuple._inproducts.size === 0)
+    {
+      wl.push(outtuple);
+    }
+    product._outtuple = null;
   }
 
-  function productTag(product)
+  while (wl.length > 0)
   {
-    return "p" + product._id;
-  }
-
-  function productGBTag(product)
-  {
-    return "pgb" + product._id;
-  }
-
-  function groupbyTag(gb)
-  {
-    return gb.rule().name + "gb" + gb._id;
-  }
-  
-  let sb = "digraph G {\\nnode [style=filled,fontname=\\"Roboto Condensed\\"];\\n";
-
-  for (const tuple of tuples_())
-  {
-    const t = tupleTag(tuple);
-    sb += \`\${t} [shape=box label="\${tuple}"];\\n\`;
+    const tuple = wl.pop();
     for (const product of tuple._outproducts)
     {
-      sb += \`\${t} -> \${productTag(product)};\\n\`;    
-    }
-    for (const productGB of tuple._outproductsgb)
-    {
-      sb += \`\${t} -> \${productGBTag(productGB)};\\n\`;    
+      removeProduct(product);     
     }
   }
-
-  for (const product of products())
-  {
-    const p = productTag(product);
-    sb += \`\${p} [label="\${product.rule.name}"];\\n\`;
-    sb += \`\${p} -> \${tupleTag(product._outtuple)};\\n\`;    
-  }
-
-  for (const productGB of productsGB())
-  {
-    const p = productGBTag(productGB);
-    sb += \`\${p} [label="\${productGB.rule.name} \${productGB.value}"];\\n\`;
-    sb += \`\${p} -> \${groupbyTag(productGB._outgb)};\\n\`;    
-  }
-
-  for (const groupby of groupbys())
-  {
-    const gb = groupbyTag(groupby);
-    sb += \`\${gb} [shape=diamond label="\${groupby}"];\\n\`;
-    const tuple = groupby._outtuple;
-    if (tuple)
-    {
-      sb += \`\${gb} -> \${tupleTag(tuple)};\\n\`;
-    }
-  }
-  sb += "}";
-  return sb;
 }
+`;
+
+
+const emitRest = `
 `;
 
 

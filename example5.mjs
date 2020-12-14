@@ -20,6 +20,7 @@ import {
   function rsum_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     rsum_.members.add(this);
@@ -44,6 +45,7 @@ import {
   function i_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     i_.members.add(this);
@@ -68,6 +70,7 @@ import {
   function rmax_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     rmax_.members.add(this);
@@ -92,6 +95,7 @@ import {
   function rmin_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     rmin_.members.add(this);
@@ -116,6 +120,7 @@ import {
   function rcount_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     rcount_.members.add(this);
@@ -699,6 +704,38 @@ rcount[X,{count: Y}]
 }
   
 
+export function removeTuples(edbTuples)
+{
+  const wl = [...edbTuples];
+
+  function removeProduct(product)
+  {
+    for (const intuple of product.tuples)
+    {
+      intuple._outproducts.delete(product); 
+    }
+    const outtuple = product._outtuple;
+    outtuple._inproducts.delete(product);
+    if (outtuple._inproducts.size === 0)
+    {
+      wl.push(outtuple);
+    }
+    product._outtuple = null;
+  }
+
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    edbTuples_.delete(tuple);
+
+    for (const product of tuple._outproducts)
+    {
+      removeProduct(product);     
+    }
+  }
+}
+
+
 export function reset()
 {
   rsum_.members = new Set();
@@ -766,7 +803,10 @@ export function toDot()
   {
     const p = productTag(product);
     sb += `${p} [label="${product.rule.name}"];\n`;
-    sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
+    if (product._outtuple !== null)
+    {
+      sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
+    }
   }
 
   for (const productGB of productsGB())

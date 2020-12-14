@@ -2,7 +2,7 @@ import {
   MutableSets,
   Product, ProductGB, products, productsGB, TuplePartition,
   atomString,
-} from './scriptlog-common.mjs';
+} from './schemelog-common.mjs';
 
 
 
@@ -20,6 +20,7 @@ import {
   function reachable_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     reachable_.members.add(this);
@@ -44,6 +45,7 @@ import {
   function link_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     link_.members.add(this);
@@ -68,6 +70,7 @@ import {
   function node_(t0)
   {
     this.t0 = t0;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     node_.members.add(this);
@@ -92,6 +95,7 @@ import {
   function unreachable_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     unreachable_.members.add(this);
@@ -116,6 +120,7 @@ import {
   function NOT_reachable_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     NOT_reachable_.members.add(this);
@@ -148,12 +153,13 @@ const Rule8 =
         
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0]);
-      const product = new Product(Rule8, ptuples);
       const resultTuple = reachable(X, Y);
-      if (product._outtuple !== resultTuple)
+      const product = new Product(Rule8, ptuples);
+      if (product._outtuple !== resultTuple) // checks for fresh product
       {
-        product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
+        product._outtuple = resultTuple;
+        resultTuple._inproducts.add(product);
         newTuples.add(resultTuple);
       }
     
@@ -196,13 +202,14 @@ const Rule9 =
           
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0, tuple1]);
-      const product = new Product(Rule9, ptuples);
       const resultTuple = reachable(X, Y);
-      if (product._outtuple !== resultTuple)
+      const product = new Product(Rule9, ptuples);
+      if (product._outtuple !== resultTuple) // checks for fresh product
       {
-        product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
         tuple1._outproducts.add(product);
+        product._outtuple = resultTuple;
+        resultTuple._inproducts.add(product);
         newTuples.add(resultTuple);
       }
     
@@ -241,12 +248,13 @@ const Rule10 =
         
       // updates for node[X]
       const ptuples = new Set([tuple0]);
-      const product = new Product(Rule10, ptuples);
       const resultTuple = node(X);
-      if (product._outtuple !== resultTuple)
+      const product = new Product(Rule10, ptuples);
+      if (product._outtuple !== resultTuple) // checks for fresh product
       {
-        product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
+        product._outtuple = resultTuple;
+        resultTuple._inproducts.add(product);
         newTuples.add(resultTuple);
       }
     
@@ -282,12 +290,13 @@ const Rule11 =
         
       // updates for node[Y]
       const ptuples = new Set([tuple0]);
-      const product = new Product(Rule11, ptuples);
       const resultTuple = node(Y);
-      if (product._outtuple !== resultTuple)
+      const product = new Product(Rule11, ptuples);
+      if (product._outtuple !== resultTuple) // checks for fresh product
       {
-        product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
+        product._outtuple = resultTuple;
+        resultTuple._inproducts.add(product);
         newTuples.add(resultTuple);
       }
     
@@ -343,14 +352,15 @@ const Rule12 =
       
       // updates for unreachable[X,Y]
       const ptuples = new Set([tuple0, tuple1, NOT_tuple2]);
-      const product = new Product(Rule12, ptuples);
       const resultTuple = unreachable(X, Y);
-      if (product._outtuple !== resultTuple)
+      const product = new Product(Rule12, ptuples);
+      if (product._outtuple !== resultTuple) // checks for fresh product
       {
-        product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
         tuple1._outproducts.add(product);
         NOT_tuple2._outproducts.add(product);
+        product._outtuple = resultTuple;
+        resultTuple._inproducts.add(product);
         newTuples.add(resultTuple);
       }
     
@@ -558,6 +568,38 @@ unreachable[X,Y]
 }
   
 
+export function removeTuples(edbTuples)
+{
+  const wl = [...edbTuples];
+
+  function removeProduct(product)
+  {
+    for (const intuple of product.tuples)
+    {
+      intuple._outproducts.delete(product); 
+    }
+    const outtuple = product._outtuple;
+    outtuple._inproducts.delete(product);
+    if (outtuple._inproducts.size === 0)
+    {
+      wl.push(outtuple);
+    }
+    product._outtuple = null;
+  }
+
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    edbTuples_.delete(tuple);
+
+    for (const product of tuple._outproducts)
+    {
+      removeProduct(product);     
+    }
+  }
+}
+
+
 export function reset()
 {
   reachable_.members = new Set();
@@ -621,7 +663,10 @@ export function toDot()
   {
     const p = productTag(product);
     sb += `${p} [label="${product.rule.name}"];\n`;
-    sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
+    if (product._outtuple !== null)
+    {
+      sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
+    }
   }
 
   for (const productGB of productsGB())

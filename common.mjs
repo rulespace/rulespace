@@ -54,8 +54,17 @@ export const Sets =
       union.add(elem);
     }
     return union;
-  }
+  },
 
+  difference(x, y)
+  {
+    const difference = new Set(x)
+    for (const elem of y)
+    {
+      difference.delete(elem);
+    }
+    return difference;
+  }
 }
 
 export const MutableSets =
@@ -81,7 +90,7 @@ export const Maps =
 
 export const MutableMaps =
 {
-  putJoinArray(map, key, value)
+  putPushArray(map, key, value)
   {
     const current = map.get(key);
     if (current === undefined)
@@ -92,5 +101,63 @@ export const MutableMaps =
     {
       current.push(value);
     }
+  },
+
+  putAddSet(map, key, value)
+  {
+    const current = map.get(key);
+    if (current === undefined)
+    {
+      map.set(key, new Set([value]));
+    }
+    else
+    {
+      current.add(value);
+    }
   }
 }
+
+export const Strings = {};
+
+Strings.hashCode =
+    function (x)
+    {
+      var l = x.length;
+      if (l === 0)
+      {
+        return 0;
+      }
+      var result = 1;
+      for (var i = 0; i < l; i++)
+      {
+        result = (31 * result + x.charCodeAt(i)) >> 0;
+      }
+      return result;
+    }
+
+Strings.smartTrim =
+    function (s, l = 30)
+    {
+      const ss = String(s);
+      if (ss.length <= l)
+      {
+        return ss;
+      }
+      const cut1 = ss.length - l + 10;
+      const cut2 = ss.length - 10;
+      return ss.substring(0, cut1) + "..." + ss.substring(cut2);
+    }
+
+export const Characters = {};
+
+Characters.isWhitespace =
+  function (x)
+  {
+    return x === " " || x === "\n" || x === "\t" || x === "\r";
+  }
+  
+Characters.isDigit =
+  function (x)
+  {
+    return x === "0" || x === "1" || x === "2" || x === "3" || x === "4" || x === "5" || x === "6" || x === "7" || x === "8" || x === "9";
+  }

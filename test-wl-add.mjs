@@ -1,7 +1,7 @@
 import { performance } from 'perf_hooks';
 import {link, addTuples, tuples, toDot} from './example2.mjs';
 
-const edbTuples = new Set([link('a', 'b'), link('c', 'c'), link('c', 'd')]);
+const edbTuples = new Set([link('a', 'b'), link('b', 'c'), link('c', 'c'), link('c', 'd')]);
 addTuples(edbTuples);
 const add_wl = [
   link('d', 'e'),

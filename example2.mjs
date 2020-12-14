@@ -20,6 +20,7 @@ import {
   function reachable_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     reachable_.members.add(this);
@@ -44,6 +45,7 @@ import {
   function link_(t0, t1)
   {
     this.t0 = t0; this.t1 = t1;
+    this._inproducts = new Set();
     this._outproducts = new Set();
     this._outproductsgb = new Set();
     link_.members.add(this);
@@ -76,12 +78,13 @@ const Rule2 =
         
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0]);
-      const product = new Product(Rule2, ptuples);
       const resultTuple = reachable(X, Y);
-      if (product._outtuple !== resultTuple)
+      const product = new Product(Rule2, ptuples);
+      if (product._outtuple !== resultTuple) // checks for fresh product
       {
-        product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
+        product._outtuple = resultTuple;
+        resultTuple._inproducts.add(product);
         newTuples.add(resultTuple);
       }
     
@@ -124,13 +127,14 @@ const Rule3 =
           
       // updates for reachable[X,Y]
       const ptuples = new Set([tuple0, tuple1]);
-      const product = new Product(Rule3, ptuples);
       const resultTuple = reachable(X, Y);
-      if (product._outtuple !== resultTuple)
+      const product = new Product(Rule3, ptuples);
+      if (product._outtuple !== resultTuple) // checks for fresh product
       {
-        product._outtuple = resultTuple;
         tuple0._outproducts.add(product);
         tuple1._outproducts.add(product);
+        product._outtuple = resultTuple;
+        resultTuple._inproducts.add(product);
         newTuples.add(resultTuple);
       }
     
@@ -146,9 +150,14 @@ const Rule3 =
 
   
 
-function* tuples_()
+function* tuples()
 {
   yield* reachable_.members;
+  yield* link_.members;
+}
+
+function* edbTuples()
+{
   yield* link_.members;
 }
 
@@ -163,17 +172,15 @@ function rules()
 }
   
 
-  const edbTuples_ = new Set();
-
-  export function edbTuples()
+  export function* edbTuples() 
   {
-    return new Set(edbTuples_);
+    yield* link_.members;
   }  
 
   export function tuples()
   {
     const tuples = new Set();
-    const wl = [...edbTuples_];
+    const wl = [...edbTuples()]; 
 
     while (wl.length > 0)
     {
@@ -275,15 +282,46 @@ reachable[X,Y]
 }
   
 
+export function removeTuples(edbTuples)
+{
+  const wl = [...edbTuples];
+
+  function removeProduct(product)
+  {
+    for (const intuple of product.tuples)
+    {
+      intuple._outproducts.delete(product); 
+    }
+    const outtuple = product._outtuple;
+    outtuple._inproducts.delete(product);
+    if (outtuple._inproducts.size === 0)
+    {
+      wl.push(outtuple);
+    }
+    product._outtuple = null;
+  }
+
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    tuple.constructor.members.delete(tuple);
+
+    for (const product of tuple._outproducts)
+    {
+      removeProduct(product);     
+    }
+  }
+}
+
+
 export function reset()
 {
-  reachable_.members = new Set();
-  link_.members = new Set();
+  reachable_.members.clear();
+  link_.members.clear(); 
   
 
   Product.members = [];
   ProductGB.members = [];
-  edbTuples_.clear();
 }  
   
 
@@ -336,7 +374,10 @@ export function toDot()
   {
     const p = productTag(product);
     sb += `${p} [label="${product.rule.name}"];\n`;
-    sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
+    if (product._outtuple !== null)
+    {
+      sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
+    }
   }
 
   for (const productGB of productsGB())

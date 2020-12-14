@@ -1,81 +1,206 @@
 import { MutableMaps } from './common.mjs';
-import { Atom, Visitor } from './parser.mjs';
+import { Sym, Tuple } from './parser.mjs';
 
-class CollectingVisitor extends Visitor
+export class Lit
+{
+  constructor(x)
   {
-    pred2arity = new Map(); // pred -> arity 
-    rules = [];
-    pred2rules = new Map();
-    precGraph = new Map(); // pred -> pred
-    negatedPreds = [];
-
-    visitNeg(neg)
-    {
-      this.negatedPreds.push(neg.atom.pred);
-      return true;
-    }
-
-    visitAtom(atom)
-    {
-      const pred = atom.pred;
-      const arity = atom.arity();
-      const currentArity = this.pred2arity.get(pred);
-      if (currentArity === undefined)
-      {
-        this.pred2arity.set(pred, atom.terms.length);
-      }
-      else if (currentArity !== arity)
-      {
-        throw new Error("arity mismatch for predicate " + pred);
-      }
-
-      return true;
-    }
-
-    visitRule(rule)
-    {
-      this.rules.push(rule);
-      
-      const pred = rule.head.pred;
-      MutableMaps.putJoinArray(this.pred2rules, pred, rule);
-
-      for (const atom of rule.body)
-      {
-        if (atom instanceof Atom)
-        {
-          const bodyPred = atom.pred;
-          MutableMaps.putJoinArray(this.precGraph, bodyPred, pred);
-        }
-      }
-
-      return true;
-    }
+    this.x = x;
   }
 
-function topoSort(G)
+  toString()
+  {
+    const x = this.x;
+    if (typeof x === "string")
+    {
+      return "'" + x + "'";
+    }
+    return String(x);
+  }
+}
+
+export class Var
+{
+  constructor(name)
+  {
+    this.name = name;
+  }
+
+  toString()
+  {
+    return String(this.name);
+  }
+}
+
+export class Atom
+{
+  constructor(pred, terms)
+  {
+    this.pred = pred;
+    this.terms = terms;
+  }
+
+  arity()
+  {
+    return this.terms.length;
+  }
+
+  toString()
+  {
+    return `[${this.pred} ${this.terms.join()}]`;
+  }
+}
+
+export class Neg
+{
+  constructor(atom)
+  {
+    this.atom = atom;
+  }
+
+  toString()
+  {
+    return "¬" + this.atom;
+  }
+}
+
+export class Agg
+{
+  constructor(aggregator, aggregand)
+  {
+    this.aggregator = aggregator;
+    this.aggregand = aggregand;
+  }
+
+  toString()
+  {
+    return `{${this.aggregator}: ${this.aggregand}}`;
+  }
+}
+
+export class Rule
+{
+  static counter = 0;
+  constructor(head, body)
+  {
+    this.head = head;
+    this.body = body;
+    this._id = Rule.counter++;
+  }
+
+  aggregates()
+  {
+    return this.head.terms[this.head.terms.length - 1] instanceof Agg;
+  }
+
+  bodyAtoms()
+  {
+    return this.body.filter(term => term instanceof Atom);
+  }
+
+  toString()
+  {
+    return `${this.head} :- ${this.body.join()}`;
+  }
+}
+
+export class Program
+{
+  constructor(rules)
+  {
+    this.rules = rules;
+  }
+
+  toString()
+  {
+    return this.rules.join('\n');
+  }
+}
+
+export class Assign
+{
+  constructor(operator, left, right)
+  {
+    this.operator = operator;
+    this.left = left;
+    this.right = right;
+  }
+
+  toString()
+  {
+    return `${this.left}${this.operator}${this.right}`;
+  }
+}
+
+export class Bin
+{
+  constructor(operator, left, right)
+  {
+    this.operator = operator;
+    this.left = left;
+    this.right = right;
+  }
+
+  toString()
+  {
+    return `${this.left}${this.operator}${this.right}`;
+  }
+}
+
+export function structuralAnalysis(exp)
 {
 
-  const N = new Map();
-  const sccs = [];
-
-  function node(name)
+  function analyzeRule(ruleExp)
   {
-    const n = N.get(name);
-    if (n)
-    {
-      return n;
-    }
-    const n_ = {name};
-    N.set(name, n_);
-    return n_;
+    const headExp = ruleExp.cdr.car;
+    const bodyExp = ruleExp.cdr.cdr;
+    const head = analyzeAtom(headExp);
+    const body = [...bodyExp].map(analyzeTerm);
+    return new Rule(head, body);
   }
+
+  function analyzeAtom(tuple)
+  {
+    const pred = tuple.pred.name;
+    const terms = tuple.terms.map(analyzeTerm);
+    return new Atom(pred, terms);
+  }
+
+  function analyzeTerm(exp)
+  {
+    if (exp instanceof Sym)
+    {
+      return new Var(exp.name);
+    }
+
+    if (exp instanceof Tuple)
+    {
+      return analyzeAtom(exp);
+    }
+
+    return new Lit(exp.valueOf()); // TODO: valueOf needed?
+  }
+  
+  const rules = [];
+  for (const rule of exp)
+  {
+    rules.push(analyzeRule(rule));
+  }
+
+  return new Program(rules);
+}
+ 
+function topoSort(predicates)
+{
+
+  const sccs = [];
 
   let index = 0;
   const S = [];
 
-  for (const [v, _] of G)
+  for (const v of predicates)
   {
-    if (node(v).index === undefined)
+    if (v.index === undefined)
     {
       strongconnect(v);
     }
@@ -83,91 +208,173 @@ function topoSort(G)
 
   function strongconnect(v)
   {
-    node(v).index = index;
-    node(v).lowlink = index;
+    v.index = index;
+    v.lowlink = index;
     index++;
     S.push(v);
-    node(v).onStack = true;
+    v.onStack = true;
 
-    for (const [v, ws] of G)
+    for (const w of v.precedes)
     {
-      for (const w of ws)
+      if (w.index === undefined)
       {
-        if (node(w).index === undefined)
-        {
-          strongconnect(w);
-          node(v).lowlink = Math.min(node(v).lowlink, node(w).lowlink);
-        }
-        else if (node(w).onStack)
-        {
-          node(v).lowlink = Math.min(node(v).lowlink, node(w).index);
-        }
+        strongconnect(w);
+        v.lowlink = Math.min(v.lowlink, w.lowlink);
+      }
+      else if (w.onStack)
+      {
+        v.lowlink = Math.min(v.lowlink, w.index);
       }
     }
     
-    if (node(v).lowlink === node(v).index)
+    if (v.lowlink === v.index)
     {
       const scc = [];
       let w;
       do
       {
         w = S.pop();
-        node(w).onStack = false;
+        w.onStack = false;
         scc.push(w);
       }
       while (w !== v)
       sccs.push(scc);
     }
   }
-  return sccs.reverse();
+  const rsccs = sccs.reverse();
+  return rsccs;
 }
  
- 
-export function analyzeProgram(program)
+function Pred(name, arity)
 {
-  const collectingVisitor = new CollectingVisitor();
-  program.visit(collectingVisitor);
+  this.name = name;
+  this.arity = arity;
+  this.edb = true;
+  this.idb = false;
+  this.rules = new Set();
+  this.posDependsOn = new Set();
+  this.negDependsOn = new Set();
+  this.precedes = new Set();
+}
 
-  const precGraph = collectingVisitor.precGraph;
-  const topoPreds = topoSort(precGraph);
-
-  function recursiveRule(rule, stratumPreds)
+Pred.prototype.toString =
+  function ()
   {
-    const sp = new Set(stratumPreds);
-    for (const atom of rule.body)
+    return this.name;
+  }
+
+
+function collect(program)
+{
+
+  const name2pred = new Map();
+
+  function handleAtom(atom)
+  {
+    const name = atom.pred;
+    const arity = atom.arity();
+    let pred = name2pred.get(name);
+    if (pred === undefined)
     {
-      if (atom instanceof Atom)
+      pred = new Pred(name, arity);
+      name2pred.set(name, pred);
+      return pred;
+    }
+    if (pred.arity !== arity)
+    {
+      throw new Error("arity mismatch: " + pred);
+    }
+    return pred;
+  }
+
+  for (const rule of program.rules)
+  {
+    const head = rule.head;
+    const headPred = handleAtom(head);
+    headPred.idb = true;
+    headPred.edb = false;
+    headPred.rules.add(rule);
+    for (const term of rule.body)
+    {
+      if (term instanceof Atom)
       {
-        if (sp.has(atom.pred))
-        {
-          return true;
-        }
+        const pred = handleAtom(term);
+        pred.precedes.add(headPred);
+        headPred.posDependsOn.add(pred);
+      }
+      else if (term instanceof Neg)
+      {
+        const atom = term.atom;
+        const pred = handleAtom(atom);
+        pred.precedes.add(headPred);
+        headPred.negDependsOn.add(pred);
       }
     }
-    return false;
   }
-  
-  function stratumMaker(stratumPreds)
+
+  return { name2pred };
+}
+
+function Stratum(id, preds)
+{
+  this.id = id;
+  this.preds = preds;
+  this.dependsOnPreds = new Set();
+  this.nonRecursiveRules = new Set();
+  this.recursiveRules = new Set();
+}
+
+Stratum.prototype.toString =
+  function ()
   {
-    const rules = stratumPreds.flatMap(pred => collectingVisitor.pred2rules.get(pred) || []);
-    const stratum = 
+    return `{stratum id:${this.id} preds:${this.preds.join(",")}}`;
+  }
+
+function makeStratum(name2pred)
+{
+  return function (scPreds, id)
+  {
+    const stratum = new Stratum(id, scPreds);
+    for (const pred of scPreds)
     {
-      preds: stratumPreds,
-      rules,
-      recursiveRules: rules.filter(rule => recursiveRule(rule, stratumPreds)),
-      nonRecursiveRules: rules.filter(rule => !recursiveRule(rule, stratumPreds))
+      pred.stratum = stratum;
+      outer: for (const rule of pred.rules)
+      {
+        for (const atom of rule.bodyAtoms())
+        {
+          const bodyPred = name2pred.get(atom.pred);
+          stratum.dependsOnPreds.add(bodyPred);
+          if (scPreds.includes(bodyPred))
+          {
+            stratum.recursiveRules.add(rule);
+            continue outer;
+          }
+        }
+        stratum.nonRecursiveRules.add(rule);
+      }
     }
     return stratum;
   }
+}
 
-  return {
-    pred2arity: collectingVisitor.pred2arity, 
-    predicates: [...collectingVisitor.pred2arity.keys()],
-    pred2rules: collectingVisitor.pred2rules,
-    negatedPreds: collectingVisitor.negatedPreds,
-    rules: collectingVisitor.rules,
-    precGraph,
-    topoPreds,
-    strata: topoPreds.map(stratumMaker)
+export function analyzeProgram(exp)
+{
+  const program = structuralAnalysis(exp);
+  const { name2pred } = collect(program);
+  const predicates = [...name2pred.values()];
+  const sccPreds = topoSort(predicates);
+  const strata = sccPreds.map(makeStratum(name2pred));
+
+  const preds = sccPreds.flat();
+
+//     negatedPreds: collectingVisitor.negatedPreds,
+//     edbPreds,
+//     precGraph,
+//     topoPreds,
+//     strata: topoPreds.map(stratumMaker)
+//   };
+  return { 
+    program, name2pred, strata,
+    preds
   };
 }
