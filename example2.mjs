@@ -1,91 +1,155 @@
 import {
   MutableSets,
-  Product, ProductGB, products, productsGB, TuplePartition,
+  Product, ProductGB,
   atomString,
-} from './scriptlog-common.mjs';
+} from './schemelog-common.mjs';
 
 
 
-  export function reachable(t0, t1)
+const IMM_EMPTY_COLLECTION = Object.freeze([]);
+
+
+
+//////////////////////////////////////////////////
+// ebd pred Link(2)
+// precedes: Reachable
+// posDependsOn: 
+// negDependsOn: 
+// negated: false
+    
+
+const Link_members = new Set();
+export function Link(t0, t1)
+{
+  this.t0 = t0;
+  this.t1 = t1;
+  this._inproducts = IMM_EMPTY_COLLECTION;
+  this._outproducts = new Set();
+  this._outproductsgb = new Set();
+}
+Link.prototype.toString = function () {return atomString("Link", this.t0, this.t1)};  
+Link.prototype.get = function () {return get_Link(this.t0, this.t1)};  // public API only 
+Link.prototype._remove = function () {Link_members.delete(this)};
+
+function get_Link(t0, t1)
+{
+  for (const member of Link_members)
   {
-    for (const member of reachable_.members)
+    if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
     {
-      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
-      {
-        return member;
-      }
+      return member;
     }
-    return new reachable_(t0, t1);
   }
-  function reachable_(t0, t1)
-  {
-    this.t0 = t0; this.t1 = t1;
-    this._inproducts = new Set();
-    this._outproducts = new Set();
-    this._outproductsgb = new Set();
-    reachable_.members.add(this);
-  }
-  reachable_.members = new Set();
-  reachable_.prototype.toString = function () {return atomString("reachable", this.t0, this.t1)};  
+  return null;
+}
 
+
+function delta_add_Link_tuples(proposedEdbTuples)
+{
+  const Link_tuples = [];
+  for (const proposed of proposedEdbTuples)
+  {
+    const actual = get_Link(proposed.t0, proposed.t1);
+    if (actual === null)  
+    {
+      Link_tuples.push(proposed);
+      Link_members.add(proposed);
+    }
+  }
+  return Link_tuples;
+}
   
 
+//////////////////////////////////////////////////
+// idb pred Reachable(2)
+// precedes: Reachable
+// posDependsOn: Link,Reachable
+// negDependsOn: 
+// negated: false
+    
 
-  export function link(t0, t1)
+const Reachable_members = new Set();
+export function Reachable(t0, t1)
+{
+  this.t0 = t0;
+  this.t1 = t1;
+  this._inproducts = new Set();
+  this._outproducts = new Set();
+  this._outproductsgb = new Set();
+}
+Reachable.prototype.toString = function () {return atomString("Reachable", this.t0, this.t1)};  
+Reachable.prototype.get = function () {return get_Reachable(this.t0, this.t1)};  // public API only 
+Reachable.prototype._remove = function () {Reachable_members.delete(this)};
+
+function get_Reachable(t0, t1)
+{
+  for (const member of Reachable_members)
   {
-    for (const member of link_.members)
+    if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
     {
-      if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
-      {
-        return member;
-      }
+      return member;
     }
-    return new link_(t0, t1);
   }
-  function link_(t0, t1)
-  {
-    this.t0 = t0; this.t1 = t1;
-    this._inproducts = new Set();
-    this._outproducts = new Set();
-    this._outproductsgb = new Set();
-    link_.members.add(this);
-  }
-  link_.members = new Set();
-  link_.prototype.toString = function () {return atomString("link", this.t0, this.t1)};  
+  return null;
+}
 
+
+function delta_add_Reachable_tuples(proposedEdbTuples)
+{
+  const Reachable_tuples = [];
+  for (const proposed of proposedEdbTuples)
+  {
+    const actual = get_Reachable(proposed.t0, proposed.t1);
+    if (actual === null)  
+    {
+      Reachable_tuples.push(proposed);
+      Reachable_members.add(proposed);
+    }
+  }
+  return Reachable_tuples;
+}
   
+/* [Reachable X Y] :- [Link X Y] */
 
 /* rule [no aggregates] 
-reachable[X,Y]
-{
-	link[X,Y]
-} 
+[Reachable X Y] :- [Link X Y] 
 */
+// const Rule2_products = new Set();
+
 const Rule2 =
 {
   name : 'Rule2',
 
-  fire(deltaPos, deltaTuples)
+  fire(deltaPos, deltaTuples) // TODO: make this fire_xxx function
   {
     const newTuples = new Set();
 
     
-      // atom link[X,Y] [no conditions]
-      for (const tuple0 of (deltaPos === 0 ? deltaTuples : link_.members))
+      // atom [Link X Y] [no conditions]
+      for (const tuple0 of (deltaPos === 0 ? deltaTuples : Link_members))
       {
         const X = tuple0.t0;
         const Y = tuple0.t1;
         
-      // updates for reachable[X,Y]
+      // updates for [Reachable X Y]
       const ptuples = new Set([tuple0]);
-      const resultTuple = reachable(X, Y);
-      const product = new Product(Rule2, ptuples);
-      if (product._outtuple !== resultTuple) // checks for fresh product
+      const existing_Reachable_tuple = get_Reachable(X, Y);
+      if (existing_Reachable_tuple === null)
       {
+        const new_Reachable_tuple = new Reachable(X, Y);
+        newTuples.add(new_Reachable_tuple);
+        Reachable_members.add(new_Reachable_tuple);
+        const product = new Product(Rule2, ptuples);
         tuple0._outproducts.add(product);
-        product._outtuple = resultTuple;
-        resultTuple._inproducts.add(product);
-        newTuples.add(resultTuple);
+        product._outtuple = new_Reachable_tuple;
+        new_Reachable_tuple._inproducts.add(product);
+      }
+      else
+      {
+        const product = new Product(Rule2, ptuples);
+        tuple0._outproducts.add(product);
+        product._outtuple = existing_Reachable_tuple;
+        existing_Reachable_tuple._inproducts.add(product);
       }
     
       }
@@ -96,46 +160,56 @@ const Rule2 =
 } // end Rule2
 
   
+/* [Reachable X Y] :- [Link X Z],[Reachable Z Y] */
 
 /* rule [no aggregates] 
-reachable[X,Y]
-{
-	link[X,Z],reachable[Z,Y]
-} 
+[Reachable X Y] :- [Link X Z],[Reachable Z Y] 
 */
+// const Rule3_products = new Set();
+
 const Rule3 =
 {
   name : 'Rule3',
 
-  fire(deltaPos, deltaTuples)
+  fire(deltaPos, deltaTuples) // TODO: make this fire_xxx function
   {
     const newTuples = new Set();
 
     
-      // atom link[X,Z] [no conditions]
-      for (const tuple0 of (deltaPos === 0 ? deltaTuples : link_.members))
+      // atom [Link X Z] [no conditions]
+      for (const tuple0 of (deltaPos === 0 ? deltaTuples : Link_members))
       {
         const X = tuple0.t0;
         const Z = tuple0.t1;
         
-      // atom reachable[Z,Y] [conditions]
-      for (const tuple1 of (deltaPos === 1 ? deltaTuples : reachable_.members))
+      // atom [Reachable Z Y] [conditions]
+      for (const tuple1 of (deltaPos === 1 ? deltaTuples : Reachable_members))
       {
         if (tuple1.t0 === Z)
         {
           const Y = tuple1.t1;
           
-      // updates for reachable[X,Y]
+      // updates for [Reachable X Y]
       const ptuples = new Set([tuple0, tuple1]);
-      const resultTuple = reachable(X, Y);
-      const product = new Product(Rule3, ptuples);
-      if (product._outtuple !== resultTuple) // checks for fresh product
+      const existing_Reachable_tuple = get_Reachable(X, Y);
+      if (existing_Reachable_tuple === null)
       {
+        const new_Reachable_tuple = new Reachable(X, Y);
+        newTuples.add(new_Reachable_tuple);
+        Reachable_members.add(new_Reachable_tuple);
+        const product = new Product(Rule3, ptuples);
         tuple0._outproducts.add(product);
         tuple1._outproducts.add(product);
-        product._outtuple = resultTuple;
-        resultTuple._inproducts.add(product);
-        newTuples.add(resultTuple);
+        product._outtuple = new_Reachable_tuple;
+        new_Reachable_tuple._inproducts.add(product);
+      }
+      else
+      {
+        const product = new Product(Rule3, ptuples);
+        tuple0._outproducts.add(product);
+        tuple1._outproducts.add(product);
+        product._outtuple = existing_Reachable_tuple;
+        existing_Reachable_tuple._inproducts.add(product);
       }
     
         }
@@ -150,147 +224,83 @@ const Rule3 =
 
   
 
-function* tuples()
+export function add_tuples(edbTuples)
 {
-  yield* reachable_.members;
-  yield* link_.members;
-}
-
-function* edbTuples()
-{
-  yield* link_.members;
-}
-
-function* groupbys()
-{
-  
-}  
-
-function rules()
-{
-  return [Rule2, Rule3];
-}
-  
-
-  export function* edbTuples() 
-  {
-    yield* link_.members;
-  }  
-
-  export function tuples()
-  {
-    const tuples = new Set();
-    const wl = [...edbTuples()]; 
-
-    while (wl.length > 0)
-    {
-      const tuple = wl.pop();
-      if (!tuples.has(tuple))
-      {
-        tuples.add(tuple);
-        for (const outproduct of tuple._outproducts)
-        {
-          wl.push(outproduct._outtuple);
-        }
-        for (const outproductgb of tuple._outproductsgb)
-        {
-          wl.push(outproductgb._outgb._outtuple);
-        }
-      }
-    }
-    return tuples;
-  }
-  
-
-export function addTuples(freshEdbTuples)
-{
-  const partition = new TuplePartition();
-  for (const edbTuple of freshEdbTuples)
-  {
-    if (!edbTuples_.has(edbTuple))
-    {
-      edbTuples_.add(edbTuple);
-      partition.add(edbTuple);  
-    }
-  }
-  
+  const edbTuplesMap = new Map(edbTuples);
   
     // stratum 0
-    // preds: link
+    // preds: Link
     // non-recursive rules: 
     // recursive rules: 
 
-    const linktuples = partition.get(link_) || new Set();
+    const Link_tuples = delta_add_Link_tuples(edbTuplesMap.get(Link) || new Set());
   
 
     // stratum 1
-    // preds: reachable
+    // preds: Reachable
     // non-recursive rules: Rule2
     // recursive rules: Rule3
 
-    const reachabletuples = new Set();
+    const Reachable_tuples = new Set();
 
     /* Rule2 [nonRecursive]
-reachable[X,Y]
-{
-	link[X,Y]
-}
+[Reachable X Y] :- [Link X Y]
     */
     
-      // atom 0 link[X,Y]
-      const Rule2tuples0 = Rule2.fire(0, linktuples);
-      MutableSets.addAll(reachabletuples, Rule2tuples0);
+      // atom 0 [Link X Y]
+      const Rule2_tuples0 = Rule2.fire(0, Link_tuples);
+      MutableSets.addAll(Reachable_tuples, Rule2_tuples0);
     
   
 
     // recursive rules: Rule3
-    // produce: reachable
+    // produce: Reachable
 
     
-    let localreachable = reachabletuples;
+    let local_Reachable = Reachable_tuples;
   
-    while (localreachable.size > 0)
+    while (local_Reachable.size > 0)
     {
       
-    const newreachable = new Set();
+    const new_Reachable = new Set();
   
       
     /* Rule3 [recursive]
-reachable[X,Y]
-{
-	link[X,Z],reachable[Z,Y]
-}
+[Reachable X Y] :- [Link X Z],[Reachable Z Y]
     */
     
-        // atom 1 reachable[Z,Y]
-        if (localreachable.size > 0)
+        // atom 1 [Reachable Z Y]
+        if (local_Reachable.size > 0)
         {
-          const reachabletuples1 = Rule3.fire(1, localreachable);
-          MutableSets.addAll(reachabletuples, reachabletuples1);  
-          MutableSets.addAll(newreachable, reachabletuples1);
+          const Reachable_tuples_1 = Rule3.fire(1, local_Reachable);
+          MutableSets.addAll(new_Reachable, Reachable_tuples_1);
+          MutableSets.addAll(Reachable_tuples, Reachable_tuples_1); // not reqd for rdb
         }    
       
   
   
       
-    localreachable = newreachable
+    local_Reachable = new_Reachable;
   
     }
-
   
   
+  return null; 
 }
   
 
-export function removeTuples(edbTuples)
+// only forward (so, in essence, only edb tuples supported) 
+export function remove_tuples(tuples)
 {
-  const wl = [...edbTuples];
+  const wl = [...tuples];
 
   function removeProduct(product)
   {
     for (const intuple of product.tuples)
     {
-      intuple._outproducts.delete(product); 
+      intuple._outproducts.delete(product);
+      // remember: it's not because a tuple's outproducts is empty,
+      // that it cannot in the future play a role in other products 
     }
     const outtuple = product._outtuple;
     outtuple._inproducts.delete(product);
@@ -298,14 +308,13 @@ export function removeTuples(edbTuples)
     {
       wl.push(outtuple);
     }
-    product._outtuple = null;
+    // product._outtuple = null;
   }
 
   while (wl.length > 0)
   {
     const tuple = wl.pop();
-    tuple.constructor.members.delete(tuple);
-
+    tuple._remove();
     for (const product of tuple._outproducts)
     {
       removeProduct(product);     
@@ -314,89 +323,32 @@ export function removeTuples(edbTuples)
 }
 
 
-export function reset()
+// from membership
+export function* tuples() 
 {
-  reachable_.members.clear();
-  link_.members.clear(); 
+  yield* Link_members;
+  yield* Reachable_members;
+}
+
+export function* edbTuples() 
+{
+  yield* Link_members;
+}
+
+function* groupbys()
+{
+  
+}  
+
+// function rules()
+// {
+//   return [Rule2, Rule3];
+// }
   
 
-  Product.members = [];
-  ProductGB.members = [];
+export function clear()
+{
+  remove_tuples(Link_members);
 }  
   
 
-export function toDot()
-{
-  const tuples = [];
-  function tupleTag(tuple)
-  {
-    let id = tuples.indexOf(tuple);
-    if (id === -1)
-    {
-      id = tuples.length;
-      tuples.push(tuple);
-    }
-    return tuple.constructor.name + id;
-  }
-
-  function productTag(product)
-  {
-    return "p" + product._id;
-  }
-
-  function productGBTag(product)
-  {
-    return "pgb" + product._id;
-  }
-
-  function groupbyTag(gb)
-  {
-    return gb.rule().name + "gb" + gb._id;
-  }
-  
-  let sb = "digraph G {\nnode [style=filled,fontname=\"Roboto Condensed\"];\n";
-
-  for (const tuple of tuples_())
-  {
-    const t = tupleTag(tuple);
-    sb += `${t} [shape=box label="${tuple}"];\n`;
-    for (const product of tuple._outproducts)
-    {
-      sb += `${t} -> ${productTag(product)};\n`;    
-    }
-    for (const productGB of tuple._outproductsgb)
-    {
-      sb += `${t} -> ${productGBTag(productGB)};\n`;    
-    }
-  }
-
-  for (const product of products())
-  {
-    const p = productTag(product);
-    sb += `${p} [label="${product.rule.name}"];\n`;
-    if (product._outtuple !== null)
-    {
-      sb += `${p} -> ${tupleTag(product._outtuple)};\n`;    
-    }
-  }
-
-  for (const productGB of productsGB())
-  {
-    const p = productGBTag(productGB);
-    sb += `${p} [label="${productGB.rule.name} ${productGB.value}"];\n`;
-    sb += `${p} -> ${groupbyTag(productGB._outgb)};\n`;    
-  }
-
-  for (const groupby of groupbys())
-  {
-    const gb = groupbyTag(groupby);
-    sb += `${gb} [shape=diamond label="${groupby}"];\n`;
-    const tuple = groupby._outtuple;
-    if (tuple)
-    {
-      sb += `${gb} -> ${tupleTag(tuple)};\n`;
-    }
-  }
-  sb += "}";
-  return sb;
-}

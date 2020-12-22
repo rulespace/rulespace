@@ -11,10 +11,11 @@ const IMM_EMPTY_COLLECTION = Object.freeze([]);
 
 
 //////////////////////////////////////////////////
-// ebd pred Link (arity: 2)
+// ebd pred Link(2)
 // precedes: Reachable
 // posDependsOn: 
 // negDependsOn: 
+// negated: false
     
 
 const Link_members = new Set();
@@ -28,6 +29,7 @@ export function Link(t0, t1)
 }
 Link.prototype.toString = function () {return atomString("Link", this.t0, this.t1)};  
 Link.prototype.get = function () {return get_Link(this.t0, this.t1)};  // public API only 
+Link.prototype._remove = function () {Link_members.delete(this)};
 
 function get_Link(t0, t1)
 {
@@ -59,10 +61,11 @@ function delta_add_Link_tuples(proposedEdbTuples)
   
 
 //////////////////////////////////////////////////
-// idb pred Reachable (arity: 2)
+// idb pred Reachable(2)
 // precedes: Reachable
 // posDependsOn: Link,Reachable
 // negDependsOn: 
+// negated: false
     
 
 const Reachable_members = new Set();
@@ -76,6 +79,7 @@ export function Reachable(t0, t1)
 }
 Reachable.prototype.toString = function () {return atomString("Reachable", this.t0, this.t1)};  
 Reachable.prototype.get = function () {return get_Reachable(this.t0, this.t1)};  // public API only 
+Reachable.prototype._remove = function () {Reachable_members.delete(this)};
 
 function get_Reachable(t0, t1)
 {
@@ -105,27 +109,29 @@ function delta_add_Reachable_tuples(proposedEdbTuples)
   return Reachable_tuples;
 }
   
-/* [Reachable X,Y] :- [Link X,Y] */
+/* [Reachable X Y] :- [Link X Y] */
 
 /* rule [no aggregates] 
-[Reachable X,Y] :- [Link X,Y] 
+[Reachable X Y] :- [Link X Y] 
 */
+// const Rule0_products = new Set();
+
 const Rule0 =
 {
   name : 'Rule0',
 
-  fire(deltaPos, deltaTuples)
+  fire(deltaPos, deltaTuples) // TODO: make this fire_xxx function
   {
     const newTuples = new Set();
 
     
-      // atom [Link X,Y] [no conditions]
+      // atom [Link X Y] [no conditions]
       for (const tuple0 of (deltaPos === 0 ? deltaTuples : Link_members))
       {
         const X = tuple0.t0;
         const Y = tuple0.t1;
         
-      // updates for [Reachable X,Y]
+      // updates for [Reachable X Y]
       const ptuples = new Set([tuple0]);
       const existing_Reachable_tuple = get_Reachable(X, Y);
       if (existing_Reachable_tuple === null)
@@ -154,34 +160,36 @@ const Rule0 =
 } // end Rule0
 
   
-/* [Reachable X,Y] :- [Reachable X,Z],[Link Z,Y] */
+/* [Reachable X Y] :- [Reachable X Z],[Link Z Y] */
 
 /* rule [no aggregates] 
-[Reachable X,Y] :- [Reachable X,Z],[Link Z,Y] 
+[Reachable X Y] :- [Reachable X Z],[Link Z Y] 
 */
+// const Rule1_products = new Set();
+
 const Rule1 =
 {
   name : 'Rule1',
 
-  fire(deltaPos, deltaTuples)
+  fire(deltaPos, deltaTuples) // TODO: make this fire_xxx function
   {
     const newTuples = new Set();
 
     
-      // atom [Reachable X,Z] [no conditions]
+      // atom [Reachable X Z] [no conditions]
       for (const tuple0 of (deltaPos === 0 ? deltaTuples : Reachable_members))
       {
         const X = tuple0.t0;
         const Z = tuple0.t1;
         
-      // atom [Link Z,Y] [conditions]
+      // atom [Link Z Y] [conditions]
       for (const tuple1 of (deltaPos === 1 ? deltaTuples : Link_members))
       {
         if (tuple1.t0 === Z)
         {
           const Y = tuple1.t1;
           
-      // updates for [Reachable X,Y]
+      // updates for [Reachable X Y]
       const ptuples = new Set([tuple0, tuple1]);
       const existing_Reachable_tuple = get_Reachable(X, Y);
       if (existing_Reachable_tuple === null)
@@ -236,10 +244,10 @@ export function add_tuples(edbTuples)
     const Reachable_tuples = new Set();
 
     /* Rule0 [nonRecursive]
-[Reachable X,Y] :- [Link X,Y]
+[Reachable X Y] :- [Link X Y]
     */
     
-      // atom 0 [Link X,Y]
+      // atom 0 [Link X Y]
       const Rule0_tuples0 = Rule0.fire(0, Link_tuples);
       MutableSets.addAll(Reachable_tuples, Rule0_tuples0);
     
@@ -258,10 +266,10 @@ export function add_tuples(edbTuples)
   
       
     /* Rule1 [recursive]
-[Reachable X,Y] :- [Reachable X,Z],[Link Z,Y]
+[Reachable X Y] :- [Reachable X Z],[Link Z Y]
     */
     
-        // atom 0 [Reachable X,Z]
+        // atom 0 [Reachable X Z]
         if (local_Reachable.size > 0)
         {
           const Reachable_tuples_0 = Rule1.fire(0, local_Reachable);
@@ -290,7 +298,9 @@ export function remove_tuples(tuples)
   {
     for (const intuple of product.tuples)
     {
-      intuple._outproducts.delete(product); 
+      intuple._outproducts.delete(product);
+      // remember: it's not because a tuple's outproducts is empty,
+      // that it cannot in the future play a role in other products 
     }
     const outtuple = product._outtuple;
     outtuple._inproducts.delete(product);
@@ -298,12 +308,13 @@ export function remove_tuples(tuples)
     {
       wl.push(outtuple);
     }
-    product._outtuple = null;
+    // product._outtuple = null;
   }
 
   while (wl.length > 0)
   {
     const tuple = wl.pop();
+    tuple._remove();
     for (const product of tuple._outproducts)
     {
       removeProduct(product);     

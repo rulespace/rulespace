@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { assertTrue } from './common.mjs';
 import { SchemeParser  } from './parser.mjs';
-import { analyzeProgram, Atom, Var, Lit } from './analyzer.mjs';
+import { analyzeProgram, Atom, Var, Lit, Neg } from './analyzer.mjs';
 
 export function compileFile(name)
 {
@@ -29,10 +29,11 @@ export function compile(src)
   {
     sb.push(`
 //////////////////////////////////////////////////
-// ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name} (arity: ${pred.arity})
+// ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
 // precedes: ${[...pred.precedes].join(',')}
 // posDependsOn: ${[...pred.posDependsOn].join(',')}
 // negDependsOn: ${[...pred.negDependsOn].join(',')}
+// negated: ${pred.negated}
     `);
 
     sb.push(emitTupleObject(pred));
@@ -93,13 +94,12 @@ const IMM_EMPTY_COLLECTION = Object.freeze([]);
 function emitTupleObject(pred)
 {
   const tn = termNames(pred);
-  // const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
-  // const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
+  const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
 
 
-  return `
+  let sb = `
 const ${pred}_members = new Set();
 export function ${pred}(${tn.join(', ')})
 {
@@ -110,12 +110,13 @@ export function ${pred}(${tn.join(', ')})
 }
 ${pred}.prototype.toString = function () {return atomString("${pred}", ${termFields.join(', ')})};  
 ${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};  // public API only 
+${pred}.prototype._remove = function () {${pred}_members.delete(this)};
 
 function get_${pred}(${tn.join(', ')})
 {
   for (const member of ${pred}_members)
   {
-    if (Object.is(member.t0, t0) && Object.is(member.t1, t1))
+    if (${termEqualities.join(' && ')})
     {
       return member;
     }
@@ -123,6 +124,34 @@ function get_${pred}(${tn.join(', ')})
   return null;
 }
 `;
+
+  if (pred.negated)
+  {
+    sb += `
+const NOT_${pred}_members = new Set();
+export function NOT_${pred}(${tn.join(', ')})
+{
+  ${termAssignments.join('\n  ')}  
+  this._outproducts = new Set();
+}        
+NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${termFields.join(', ')})};  
+NOT_${pred}.prototype._remove = function () {NOT_${pred}_members.delete(this)};
+
+function get_or_create_NOT_${pred}(${tn.join(', ')})
+{
+  for (const member of NOT_${pred}_members)
+  {
+    if (${termEqualities.join(' && ')})
+    {
+      return member;
+    }
+  }
+  return new NOT_${pred}(${tn.join(', ')});
+}
+    `;
+  }
+
+  return sb;
 }
 
 
@@ -294,7 +323,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       {
         continue;
       }
-      const NOT_${tuple} = NOT_${pred}(${natom.terms.join(', ')});
+      const NOT_${tuple} = get_or_create_NOT_${pred}(${natom.terms.join(', ')});
       ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
       `;  
     }
@@ -334,11 +363,13 @@ function emitRuleObject(rule)
 /* rule [no aggregates] 
 ${rule} 
 */
+// const ${ruleName}_products = new Set();
+
 const ${ruleName} =
 {
   name : '${ruleName}',
 
-  fire(deltaPos, deltaTuples)
+  fire(deltaPos, deltaTuples) // TODO: make this fire_xxx function
   {
     const newTuples = new Set();
 
@@ -844,7 +875,9 @@ export function remove_tuples(tuples)
   {
     for (const intuple of product.tuples)
     {
-      intuple._outproducts.delete(product); 
+      intuple._outproducts.delete(product);
+      // remember: it's not because a tuple's outproducts is empty,
+      // that it cannot in the future play a role in other products 
     }
     const outtuple = product._outtuple;
     outtuple._inproducts.delete(product);
@@ -852,12 +885,13 @@ export function remove_tuples(tuples)
     {
       wl.push(outtuple);
     }
-    product._outtuple = null;
+    // product._outtuple = null;
   }
 
   while (wl.length > 0)
   {
     const tuple = wl.pop();
+    tuple._remove();
     for (const product of tuple._outproducts)
     {
       removeProduct(product);     

@@ -9,7 +9,30 @@ export function Product(rule, tuples)
   this.rule = rule;
   this.tuples = tuples;
   this._outtuple = null;
+  // console.log("product created: " + this);
 }
+Product.prototype.toString =
+  function ()
+  {
+    return this.rule.name + ":" + [...this.tuples].join('.');
+  }
+Product.prototype.equals =
+  function (x)
+  {
+    if (this.rule !== x.rule
+      || this.tuples.length !== x.tuples.length)
+    {
+      return false;
+    }
+    for (let i = 0; i < this.tuples.length; i++)
+    {
+      if (this.tuples[i] !== x.tuples[i])
+      {
+        return false;
+      }
+    }
+    return true;
+  }
 
 export function ProductGB(rule, tuples, value)
 {
@@ -98,11 +121,31 @@ export function reachableTuples(tuples)
   return seen;
 }
 
+
 export function sanityCheck(module)
 {
   const tuples = new Set(module.tuples());
   const rtuples = reachableTuples(module.edbTuples());
-  assertTrue(Sets.equals(tuples, rtuples));
+  const sameTuples = Sets.equals(tuples, rtuples);
+  if (!sameTuples)
+  {
+    console.log(`
+    member tuples   : ${[...tuples].join(', ')}
+    reachable tuples: ${[...rtuples].join(', ')}
+    `);
+  }
+  assertTrue(sameTuples);
+
+  // const products = new Set();
+  // for (const tuple of tuples)
+  // {
+  //   for (const product of tuple._outproducts)
+  //   {
+  //     products.add(product);
+  //   }
+  // }
+
+
 }
 
 
@@ -123,6 +166,12 @@ export function toDot(tuples_)
   function productTag(product)
   {
     return "p_" + product.rule.name + "_" + [...product.tuples].map(tupleTag).join('_');
+  }
+
+  function productLabel(product)
+  {
+    return product;
+    // return product;
   }
 
   function productGBTag(product)
@@ -162,7 +211,7 @@ export function toDot(tuples_)
       }
       seenProducts.add(product);
       const p = productTag(product);
-      sb += `${p} [label="${product.rule.name}"];\n`;
+      sb += `${p} [label="${productLabel(product)}"];\n`;
       const tuple = product._outtuple;
       if (tuple !== null)
       {

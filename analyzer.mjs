@@ -1,5 +1,5 @@
-import { MutableMaps } from './common.mjs';
-import { Sym, Tuple } from './parser.mjs';
+import { assertTrue } from './common.mjs';
+import { Sym, Tuple, Pair } from './parser.mjs';
 
 export class Lit
 {
@@ -47,7 +47,7 @@ export class Atom
 
   toString()
   {
-    return `[${this.pred} ${this.terms.join()}]`;
+    return `[${this.pred} ${this.terms.join(' ')}]`;
   }
 }
 
@@ -178,6 +178,15 @@ export function structuralAnalysis(exp)
       return analyzeAtom(exp);
     }
 
+    if (exp instanceof Pair)
+    {
+      const rator = exp.car;
+      assertTrue(rator instanceof Sym)
+      assertTrue(rator.name === 'not')
+      const negated = analyzeTerm(exp.cdr.car);
+      return new Neg(negated);
+    }
+
     return new Lit(exp.valueOf()); // TODO: valueOf needed?
   }
   
@@ -245,24 +254,26 @@ function topoSort(predicates)
   return rsccs;
 }
  
-function Pred(name, arity)
+class Pred
 {
-  this.name = name;
-  this.arity = arity;
-  this.edb = true;
-  this.idb = false;
-  this.rules = new Set();
-  this.posDependsOn = new Set();
-  this.negDependsOn = new Set();
-  this.precedes = new Set();
-}
+  constructor(name, arity)
+  {
+    this.name = name;
+    this.arity = arity;
+    this.edb = true;
+    this.idb = false;
+    this.rules = new Set();
+    this.posDependsOn = new Set();
+    this.negDependsOn = new Set();
+    this.precedes = new Set();
+    this.negated = false;
+  }
 
-Pred.prototype.toString =
-  function ()
+  toString()
   {
     return this.name;
   }
-
+}
 
 function collect(program)
 {
@@ -308,6 +319,7 @@ function collect(program)
         const pred = handleAtom(atom);
         pred.precedes.add(headPred);
         headPred.negDependsOn.add(pred);
+        pred.negated = true;
       }
     }
   }

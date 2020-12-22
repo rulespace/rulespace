@@ -4,7 +4,8 @@ const parser = new SchemeParser();
 
 const result = parser.parse(`
 
-(define [E #:avg x] [D x] [E v])
+(define [Unreachable X Y]
+  [Node X] [Node Y] (not [Reachable X Y]))
 
 `);
 

@@ -3,5 +3,3 @@
 (define [E x] [D x])
 (define [C x] [E x])
 
-
-
