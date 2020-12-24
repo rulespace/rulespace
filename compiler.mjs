@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { assertTrue } from './common.mjs';
 import { SchemeParser  } from './parser.mjs';
-import { analyzeProgram, Atom, Var, Lit, Neg } from './analyzer.mjs';
+import { analyzeProgram, Atom, Var, Lit, Neg, Agg } from './analyzer.mjs';
 
 export function compileFile(name)
 {
@@ -146,7 +146,9 @@ function get_or_create_NOT_${pred}(${tn.join(', ')})
       return member;
     }
   }
-  return new NOT_${pred}(${tn.join(', ')});
+  const tuple = new NOT_${pred}(${tn.join(', ')});
+  NOT_${pred}_members.add(tuple);
+  return tuple;
 }
     `;
   }
@@ -323,7 +325,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       {
         continue;
       }
-      const NOT_${tuple} = get_or_create_NOT_${pred}(${natom.terms.join(', ')});
+      const NOT_${tuple} = get_or_create_NOT_${pred}(${natom.terms.join(', ')}); // TODO: not added to members
       ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
       `;  
     }
@@ -396,7 +398,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
       // updates for ${head}
       const ptuples = new Set([${ptuples.join()}]);
       const productGB = new ProductGB(${ruleName}, ptuples, ${aggregand});
-      const groupby = new ${ruleName}GB(${gb.join()});
+      const groupby = get_or_create_${ruleName}GB(${gb.join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -567,6 +569,7 @@ const ${ruleName} =
       {
         groupby._outtuple = updatedResultTuple;
         newTuples.add(updatedResultTuple);
+        ${pred}_members.add(updatedResultTuple);
       }
     }
     return newTuples;
@@ -581,42 +584,34 @@ ${GBclass}
 function emitRuleGBClass(rule, ruleName)
 {
   const numGbTerms = rule.head.terms.length - 1;
-  const termNames = Array.from(Array(numGbTerms), (_, i) => "t" + i);
-  const termEqualities = termNames.map(t => `Object.is(member.${t}, ${t})`);
-  const termAssignments = termNames.map(t => `this.${t} = ${t}`);
-  const termToStrings = termNames.map(t => `this.${t}`);
+  const tn = Array.from(Array(numGbTerms), (_, i) => "t" + i);
+  const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
+  const termAssignments = tn.map(t => `this.${t} = ${t}`);
+  const termToStrings = tn.map(t => `this.${t}`);
   const aggTerm = rule.head.terms[rule.head.terms.length - 1];
   return `
-class ${ruleName}GB
+const ${ruleName}GB_members = new Set();
+function ${ruleName}GB(${tn.join(', ')})
 {
-  static members = [];
-  _outtuple = null;
-
-  constructor(${termNames.join(', ')})
-  {
-    for (const member of ${ruleName}GB.members)
-    {
-      if (${termEqualities.join(' && ')})
-      {
-        return member;
-      }
-    }
-    ${termAssignments.join('; ')};
-    this._id = ${ruleName}GB.members.length;
-    ${ruleName}GB.members.push(this);
-  }
-
-  rule()
-  {
-    return ${ruleName};
-  }
-
-  toString()
-  {
-    return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"}));
-  }
+  ${termAssignments.join('; ')};
+  this._outtuple = null;
 }
+${ruleName}GB.prototype.toString = function () { return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"})) };
+${ruleName}GB.prototype.rule = function () { return ${ruleName}};
 
+function get_or_create_${ruleName}GB(${tn.join(', ')})
+{
+  for (const member of ${ruleName}GB_members)
+  {
+    if (${termEqualities.join(' && ')})
+    {
+      return member;
+    }
+  }
+  const gb = new ${ruleName}GB(${tn.join(', ')});
+  ${ruleName}GB_members.add(gb);
+  return gb;
+}
   `;
 }
 

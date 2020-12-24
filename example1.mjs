@@ -109,10 +109,10 @@ function delta_add_Reachable_tuples(proposedEdbTuples)
   return Reachable_tuples;
 }
   
-/* [Reachable X Y] :- [Link X Y] */
+/* [Reachable x y] :- [Link x y] */
 
 /* rule [no aggregates] 
-[Reachable X Y] :- [Link X Y] 
+[Reachable x y] :- [Link x y] 
 */
 // const Rule0_products = new Set();
 
@@ -125,18 +125,18 @@ const Rule0 =
     const newTuples = new Set();
 
     
-      // atom [Link X Y] [no conditions]
+      // atom [Link x y] [no conditions]
       for (const tuple0 of (deltaPos === 0 ? deltaTuples : Link_members))
       {
-        const X = tuple0.t0;
-        const Y = tuple0.t1;
+        const x = tuple0.t0;
+        const y = tuple0.t1;
         
-      // updates for [Reachable X Y]
+      // updates for [Reachable x y]
       const ptuples = new Set([tuple0]);
-      const existing_Reachable_tuple = get_Reachable(X, Y);
+      const existing_Reachable_tuple = get_Reachable(x, y);
       if (existing_Reachable_tuple === null)
       {
-        const new_Reachable_tuple = new Reachable(X, Y);
+        const new_Reachable_tuple = new Reachable(x, y);
         newTuples.add(new_Reachable_tuple);
         Reachable_members.add(new_Reachable_tuple);
         const product = new Product(Rule0, ptuples);
@@ -160,10 +160,10 @@ const Rule0 =
 } // end Rule0
 
   
-/* [Reachable X Y] :- [Reachable X Z],[Link Z Y] */
+/* [Reachable x y] :- [Reachable x z],[Link z y] */
 
 /* rule [no aggregates] 
-[Reachable X Y] :- [Reachable X Z],[Link Z Y] 
+[Reachable x y] :- [Reachable x z],[Link z y] 
 */
 // const Rule1_products = new Set();
 
@@ -176,25 +176,25 @@ const Rule1 =
     const newTuples = new Set();
 
     
-      // atom [Reachable X Z] [no conditions]
+      // atom [Reachable x z] [no conditions]
       for (const tuple0 of (deltaPos === 0 ? deltaTuples : Reachable_members))
       {
-        const X = tuple0.t0;
-        const Z = tuple0.t1;
+        const x = tuple0.t0;
+        const z = tuple0.t1;
         
-      // atom [Link Z Y] [conditions]
+      // atom [Link z y] [conditions]
       for (const tuple1 of (deltaPos === 1 ? deltaTuples : Link_members))
       {
-        if (tuple1.t0 === Z)
+        if (tuple1.t0 === z)
         {
-          const Y = tuple1.t1;
+          const y = tuple1.t1;
           
-      // updates for [Reachable X Y]
+      // updates for [Reachable x y]
       const ptuples = new Set([tuple0, tuple1]);
-      const existing_Reachable_tuple = get_Reachable(X, Y);
+      const existing_Reachable_tuple = get_Reachable(x, y);
       if (existing_Reachable_tuple === null)
       {
-        const new_Reachable_tuple = new Reachable(X, Y);
+        const new_Reachable_tuple = new Reachable(x, y);
         newTuples.add(new_Reachable_tuple);
         Reachable_members.add(new_Reachable_tuple);
         const product = new Product(Rule1, ptuples);
@@ -244,10 +244,10 @@ export function add_tuples(edbTuples)
     const Reachable_tuples = new Set();
 
     /* Rule0 [nonRecursive]
-[Reachable X Y] :- [Link X Y]
+[Reachable x y] :- [Link x y]
     */
     
-      // atom 0 [Link X Y]
+      // atom 0 [Link x y]
       const Rule0_tuples0 = Rule0.fire(0, Link_tuples);
       MutableSets.addAll(Reachable_tuples, Rule0_tuples0);
     
@@ -266,10 +266,10 @@ export function add_tuples(edbTuples)
   
       
     /* Rule1 [recursive]
-[Reachable X Y] :- [Reachable X Z],[Link Z Y]
+[Reachable x y] :- [Reachable x z],[Link z y]
     */
     
-        // atom 0 [Reachable X Z]
+        // atom 0 [Reachable x z]
         if (local_Reachable.size > 0)
         {
           const Reachable_tuples_0 = Rule1.fire(0, local_Reachable);

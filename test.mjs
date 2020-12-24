@@ -132,17 +132,17 @@ test('example4', module => {
   testInitialSolve(module, edbTuples, expectedIdbTuples);
 });
 
-// compileFile('example5'); // rmax, rmin, rcount, rsum
-// test('example5', module => {
-//   const edbTuples = new Set([module.i('a', 10), module.i('a', 20), module.i('b', 33)]);
-//   const expectedIdbTuples = new Set([
-//     module.rsum('a', 30), module.rsum('b', 33),
-//     module.rmax('a', 20), module.rmax('b', 33),
-//     module.rmin('a', 10), module.rmin('b', 33),
-//     module.rcount('a', 2), module.rcount('b', 1),
-//   ]);
-//   testInitialSolve(module, edbTuples, expectedIdbTuples);
-// });
+compileFile('example5'); // rmax, rmin, rcount, rsum
+test('example5', module => {
+  const edbTuples = new Set([new module.I('a', 10), new module.I('a', 20), new module.I('b', 33)]);
+  const expectedIdbTuples = new Set([
+    new module.Rsum('a', 30), new module.Rsum('b', 33),
+    new module.Rmax('a', 20), new module.Rmax('b', 33),
+    new module.Rmin('a', 10), new module.Rmin('b', 33),
+    new module.Rcount('a', 2), new module.Rcount('b', 1),
+  ]);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
+});
 
 
 console.log(`${testCounter} tests`);

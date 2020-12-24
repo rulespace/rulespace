@@ -1,5 +1,5 @@
 import { assertTrue } from './common.mjs';
-import { Sym, Tuple, Pair } from './parser.mjs';
+import { Sym, Tuple, Pair, Keyword } from './parser.mjs';
 
 export class Lit
 {
@@ -153,16 +153,31 @@ export function structuralAnalysis(exp)
   function analyzeRule(ruleExp)
   {
     const headExp = ruleExp.cdr.car;
-    const bodyExp = ruleExp.cdr.cdr;
+    let bodyExps = ruleExp.cdr.cdr;
     const head = analyzeAtom(headExp);
-    const body = [...bodyExp].map(analyzeTerm);
+    const body = [...bodyExps].map(analyzeTerm);
     return new Rule(head, body);
   }
 
   function analyzeAtom(tuple)
   {
     const pred = tuple.pred.name;
-    const terms = tuple.terms.map(analyzeTerm);
+    const termExps = [...tuple.terms];
+    const terms = [];
+    while (termExps.length > 0)
+    {
+      const termExp = termExps.shift();
+      if (termExp instanceof Keyword)
+      {
+        const aggregator = termExp.name;
+        const aggregand = analyzeTerm(termExps.shift());
+        terms.push(new Agg(aggregator, aggregand));
+      }
+      else
+      {
+        terms.push(analyzeTerm(termExp));
+      }
+    }
     return new Atom(pred, terms);
   }
 

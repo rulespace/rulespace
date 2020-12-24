@@ -1,7 +1,7 @@
-(define [Reachable X Y]
-  [Link X Y])
+(define [Reachable x y]
+  [Link x y])
   
-(define [Reachable X Y]
-  [Link X Z] [Reachable Z Y])
+(define [Reachable x y]
+  [Link x z] [Reachable z y])
 
 

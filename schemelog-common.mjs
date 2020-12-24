@@ -230,8 +230,8 @@ export function toDot(tuples_)
       const p = productGBTag(productGB);
       sb += `${p} [label="${productGB.rule.name} ${productGB.value}"];\n`;
 
-      const groupBy = productGB._outgb;
-      sb += `${p} -> ${groupbyTag(groupBy)};\n`;      
+      const groupby = productGB._outgb;
+      sb += `${p} -> ${groupbyTag(groupby)};\n`;      
       const gb = groupbyTag(groupby);
       sb += `${gb} [shape=diamond label="${groupby}"];\n`;
       const tuple = groupby._outtuple;

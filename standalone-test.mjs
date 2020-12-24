@@ -1,5 +1,6 @@
 import { compileFile } from './compiler.mjs';
 import { assertTrue, Sets } from './common.mjs';
+import { toDot } from './schemelog-common.mjs';
 
 function test(fileName, moduleCb)
 {
@@ -9,11 +10,12 @@ function test(fileName, moduleCb)
   })
 }
 
-compileFile('example4');
-test('example4', module => {
+compileFile('example5');
+test('example5', module => {
   module.clear();
   module.add_tuples([
-    [module.Link, [new module.Link('a', 'b')]]
+    [module.I, [new module.I('a', 1), new module.I('a', 2), new module.I('a', 3)]]
   ]);
   console.log("tuples: " + [...module.tuples()]);
+  console.log(toDot(module.edbTuples()));
 });

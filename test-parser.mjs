@@ -4,8 +4,9 @@ const parser = new SchemeParser();
 
 const result = parser.parse(`
 
-(define [Unreachable X Y]
-  [Node X] [Node Y] (not [Reachable X Y]))
+(define [Rcount X #:count Y]
+  [I X Y])
+
 
 `);
 

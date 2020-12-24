@@ -12,10 +12,16 @@ Null.prototype.toString =
     return "()";
   }
 
-  export function Sym(name)
+Null.prototype.isNull =
+  function ()
   {
-    this.name = name;
-  }
+    return true;
+  }  
+
+export function Sym(name)
+{
+  this.name = name;
+}
   
 Sym.prototype.toString =
 function ()
@@ -59,6 +65,14 @@ Pair.prototype.toString =
     var ags = new Map();
     return this.toStringInternal(ags);
   }
+
+Pair.prototype.isNull =
+  function ()
+  {
+    return false;
+  }  
+
+
 
 Pair.prototype.toStringInternal =
   function (ags)

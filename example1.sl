@@ -1,5 +1,5 @@
-(define [Reachable X Y]
-  [Link X Y])
+(define [Reachable x y]
+  [Link x y])
   
-(define [Reachable X Y]
-  [Reachable X Z] [Link Z Y])
+(define [Reachable x y]
+  [Reachable x z] [Link z y])

@@ -263,7 +263,9 @@ function get_or_create_NOT_Reachable(t0, t1)
       return member;
     }
   }
-  return new NOT_Reachable(t0, t1);
+  const tuple = new NOT_Reachable(t0, t1);
+  NOT_Reachable_members.add(tuple);
+  return tuple;
 }
     
 
@@ -486,7 +488,7 @@ const Rule12 =
       {
         continue;
       }
-      const NOT_tuple2 = get_or_create_NOT_Reachable(X, Y);
+      const NOT_tuple2 = get_or_create_NOT_Reachable(X, Y); // TODO: not added to members
       
       // updates for [Unreachable X Y]
       const ptuples = new Set([tuple0, tuple1, NOT_tuple2]);
