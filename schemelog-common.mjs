@@ -41,6 +41,12 @@ export function ProductGB(rule, tuples, value)
   this.value = value;
   this._outtuple = null;
 }
+ProductGB.prototype.toString =
+  function ()
+  {
+    return this.rule.name + ":" + [...this.tuples].join('.') + "=" + this.value;
+  }
+
 
 // constructor(rule, tuples)
 // {
@@ -92,7 +98,6 @@ export function termString(termValue)
 
   return String(termValue);
 }
-
 
 
 /////
@@ -151,21 +156,10 @@ export function sanityCheck(module)
 
 export function toDot(tuples_)
 {
-  const tuples = [];
-  function tupleTag(tuple)
-  {
-    let id = tuples.indexOf(tuple);
-    if (id === -1)
-    {
-      id = tuples.length;
-      tuples.push(tuple);
-    }
-    return tuple.constructor.name + id;
-  }
 
-  function productTag(product)
+  function gbLabel(gb)
   {
-    return "p_" + product.rule.name + "_" + [...product.tuples].map(tupleTag).join('_');
+    return gb;
   }
 
   function productLabel(product)
@@ -174,71 +168,80 @@ export function toDot(tuples_)
     // return product;
   }
 
-  function productGBTag(product)
+  function productGBLabel(product)
   {
-    return "pgb_" + product.rule.name + "_" + [...product.tuples].map(tupleTag).join('_') + "_" + product.value;
+    return product;
   }
-
-  function groupbyTag(gb)
-  {
-    return gb.rule().name + "gb" + gb._id;
-  }
-  
 
   let sb = "digraph G {\nnode [style=filled,fontname=\"Roboto Condensed\"];\n";
 
   const wl = [...tuples_];
-  const seenTuples = new Set();
-  const seenProducts = new Set();
-  const seenProductsGB = new Set();
+  const seen = new Set();
+  const tagMap = new Map();
+  function getTag(obj)
+  {
+    let tag = tagMap.get(obj);
+    if (tag !== undefined)
+    {
+      return tag;
+    }
+    tag = tagMap.size;
+    tagMap.set(obj, tag);
+    return tag;
+  }
 
   while (wl.length > 0)
   {
     const tuple = wl.pop();
-    if (seenTuples.has(tuple))
+    if (seen.has(tuple))
     {
       continue;
     }
-    seenTuples.add(tuple);
-    const t = tupleTag(tuple);
+    seen.add(tuple);
+    const t = getTag(tuple);
     sb += `${t} [shape=box label="${tuple}"];\n`;
     for (const product of tuple._outproducts)
     {
       sb += `${t} -> ${productTag(product)};\n`;    
-      if (seenProducts.has(product))
+      if (seen.has(product))
       {
         continue;     
       }
-      seenProducts.add(product);
-      const p = productTag(product);
+      seen.add(product);
+      const p = getTag(product);
       sb += `${p} [label="${productLabel(product)}"];\n`;
       const tuple = product._outtuple;
       if (tuple !== null)
       {
-        sb += `${p} -> ${tupleTag(tuple)};\n`;
+        sb += `${p} -> ${getTag(tuple)};\n`;
         wl.push(tuple);
       }  
     }
     for (const productGB of tuple._outproductsgb)
     {
-      sb += `${t} -> ${productGBTag(productGB)};\n`;
-      if (seenProductsGB.has(productGB))
+      sb += `${t} -> ${getTag(productGB)};\n`;
+      if (seen.has(productGB))
       {
         continue;     
       }
-      seenProductsGB.add(productGB);  
-      const p = productGBTag(productGB);
-      sb += `${p} [label="${productGB.rule.name} ${productGB.value}"];\n`;
+      seen.add(productGB);  
+      const p = getTag(productGB);
+      sb += `${p} [label="${productLabel(productGB)}"];\n`;
 
       const groupby = productGB._outgb;
-      sb += `${p} -> ${groupbyTag(groupby)};\n`;      
-      const gb = groupbyTag(groupby);
-      sb += `${gb} [shape=diamond label="${groupby}"];\n`;
-      const tuple = groupby._outtuple;
-      if (tuple !== null)
+      const gb = getTag(groupby);
+      sb += `${p} -> ${gb};\n`;      
+
+      if (!seen.has(groupby))
       {
-        sb += `${gb} -> ${tupleTag(tuple)};\n`;
-        wl.push(tuple);
+        seen.add(groupby);
+        sb += `${gb} [shape=diamond label="${gbLabel(groupby)}"];\n`;
+        const tuple = groupby._outtuple;
+        if (tuple !== null)
+        {
+          sb += `${gb} -> ${getTag(tuple)};\n`;
+          wl.push(tuple);
+        }
       }
     }
   }
