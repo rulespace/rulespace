@@ -141,7 +141,7 @@ test('example5', module => {
     new module.Rmin('a', 10), new module.Rmin('b', 33),
     new module.Rcount('a', 2), new module.Rcount('b', 1),
   ]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples, true);
+  testInitialSolve(module, edbTuples, expectedIdbTuples);
 });
 
 

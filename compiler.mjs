@@ -22,7 +22,6 @@ export function compile(src)
 
   const sb = [];
 
-  sb.push(emitImports);
   sb.push(emitFirst);
 
   for (const pred of preds)
@@ -83,12 +82,6 @@ export function compile(src)
 
   return sb.join('\n');
 }
-
-const emitFirst = `
-
-const IMM_EMPTY_COLLECTION = Object.freeze([]);
-
-`;
 
 
 function emitTupleObject(pred)
@@ -672,13 +665,6 @@ function compileTerm(term)
 }
 
 
-const emitImports = `import {
-  MutableSets,
-  Product, ProductGB,
-  atomString,
-} from './schemelog-common.mjs';
-`;
-
 function emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred)
 {
 
@@ -895,12 +881,81 @@ export function remove_tuples(tuples)
 }
 `;
 
+const emitFirst = `
+
+const IMM_EMPTY_COLLECTION = Object.freeze([]);
+
+const MutableSets =
+{
+  addAll(x, y)
+  {
+    for (const elem of y)
+    {
+      x.add(elem);
+    }
+  }
+}
+
+function Product(rule, tuples)
+{
+  this.rule = rule;
+  this.tuples = tuples;
+  this._outtuple = null;
+  // console.log("product created: " + this);
+}
+Product.prototype.toString =
+  function ()
+  {
+    return this.rule.name + ":" + [...this.tuples].join('.');
+  }
+Product.prototype.equals =
+  function (x)
+  {
+    if (this.rule !== x.rule
+      || this.tuples.length !== x.tuples.length)
+    {
+      return false;
+    }
+    for (let i = 0; i < this.tuples.length; i++)
+    {
+      if (this.tuples[i] !== x.tuples[i])
+      {
+        return false;
+      }
+    }
+    return true;
+  }
+
+function ProductGB(rule, tuples, value)
+{
+  this.rule = rule;
+  this.tuples = tuples;
+  this.value = value;
+  this._outtuple = null;
+}
+ProductGB.prototype.toString =
+  function ()
+  {
+    return this.rule.name + ":" + [...this.tuples].join('.') + "=" + this.value;
+  }
+
+function atomString(predicateName, ...termValues)
+{
+  return predicateName + '(' + termValues.map(termString).join(' ') + ')';
+}
+
+function termString(termValue)
+{
+  if (typeof termValue === "string")
+  {
+    return "'" + termValue + "'";
+  }
+
+  return String(termValue);
+}
+
+`;
 
 const emitRest = `
 `;
-
-
-// const result = compileFile("example1");
-// console.log(String(result));
-// console.log("done");
 
