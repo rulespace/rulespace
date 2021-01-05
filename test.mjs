@@ -1,41 +1,35 @@
-import { compileFile } from './compiler.mjs';
-import { toTupleMap, toDot, sanityCheck } from './schemelog-common.mjs';
+import { compileToConstructor, compileToModule } from './test-common.mjs';
+import { toTupleMap, toDot, sanityCheck, constructTuples } from './schemelog-common.mjs';
 import { assertTrue, Sets } from './common.mjs';
 
-let testCounter = 0;
-
-function test(fileName, moduleCb)
-{
-  testCounter++;
-  import(`./${fileName}.mjs`).then(module => {
-    module.clear();
-    moduleCb(module);
-  })
-}
 
 function mapGet(tuples)
 {
   return new Set([...tuples].flatMap(tuple => tuple.get() === null ? [] : [tuple.get()]));
 }
 
-function testInitialSolve(module, edbTuples, expectedIdbTuples, dot)
+function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc, dot)
 {
+  const module = compileToConstructor(src)();
   sanityCheck(module);
+  const edbTuples = new Set(constructTuples(module, edbTuplesSrc));
   module.add_tuples(toTupleMap(edbTuples));
   if (dot) {console.log(toDot(module.edbTuples()))}; 
   sanityCheck(module);
   assertTrue(Sets.equals(new Set(module.edbTuples()), edbTuples));
-  expectedIdbTuples = mapGet(expectedIdbTuples);
+  const expectedIdbTuples = mapGet(constructTuples(module, expectedIdbTuplesSrc));
   const expectedTuples = Sets.union(edbTuples, expectedIdbTuples);
   assertTrue(Sets.equals(new Set(module.tuples()), expectedTuples));
 }
 
-function testRemoveEdb(module, edbTuples, removeEdbTuples, dot)
+function testRemoveEdb(src, edbTuplesSrc, removeEdbTuplesSrc, dot)
 {
-  edbTuples = mapGet(edbTuples);
-  removeEdbTuples = mapGet(removeEdbTuples);
-  const edbTuples2 = Sets.difference(edbTuples, removeEdbTuples);
+  const module = compileToConstructor(src)();
   sanityCheck(module);
+  const edbTuples = new Set(constructTuples(module, edbTuplesSrc));
+  const removeEdbTuples = mapGet(constructTuples(module, removeEdbTuplesSrc));
+  const edbTuples2 = Sets.difference(edbTuples, removeEdbTuples);
+
   module.add_tuples(edbTuples2);
   sanityCheck(module);
   const expectedTuples = module.tuples();
@@ -48,101 +42,147 @@ function testRemoveEdb(module, edbTuples, removeEdbTuples, dot)
   assertTrue(Sets.equals(module.tuples(), expectedTuples));
 }
 
-compileFile('example1'); // reachable: link, reachable
-test('example1', module => {
-  const edbTuples = new Set([new module.Link('a','b'), new module.Link('b','c')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example1', module => {  
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c')]);
-  const removeEdbTuples = new Set([new module.Link('b', 'c')]);
-  testRemoveEdb(module, edbTuples, removeEdbTuples);
-});
-
-compileFile('example2'); // reachable: link, reachable
-test('example2', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example2', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c'), new module.Link('c', 'c')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'), new module.Reachable('c', 'c')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example2', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c'), new module.Link('c', 'c'), new module.Link('c', 'd')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'), new module.Reachable('c', 'c'), new module.Reachable('c', 'd'), new module.Reachable('b', 'd'), new module.Reachable('a', 'd')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-
-compileFile('example3'); // reachable: link, reachable; node
-test('example3', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'),
-      new module.Node('a'), new module.Node('b'), new module.Node('c')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example3', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c'), new module.Link('c', 'c')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'), new module.Reachable('c', 'c'),
-      new module.Node('a'), new module.Node('b'), new module.Node('c')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example3', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c'), new module.Link('c', 'c'), new module.Link('c', 'd')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'), new module.Reachable('c', 'c'),
-      new module.Reachable('c', 'd'), new module.Reachable('b', 'd'), new module.Reachable('a', 'd'),
-      new module.Node('a'), new module.Node('b'), new module.Node('c'), new module.Node('d')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-
-compileFile('example4'); // reachable: link, reachable; node; unreachable
-test('example4', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'),
-      new module.Node('a'), new module.Node('b'), new module.Node('c'), 
-      new module.Unreachable('a', 'a'), new module.Unreachable('b', 'a'), new module.Unreachable('b', 'b'), new module.Unreachable('c', 'a'), new module.Unreachable('c', 'b'), new module.Unreachable('c', 'c')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example4', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c'), new module.Link('c', 'c')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'), new module.Reachable('c', 'c'),
-      new module.Node('a'), new module.Node('b'), new module.Node('c'), 
-      new module.Unreachable('a', 'a'), new module.Unreachable('b', 'a'), new module.Unreachable('b', 'b'), new module.Unreachable('c', 'a'), new module.Unreachable('c', 'b')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example4', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c'), new module.Link('c', 'c'), new module.Link('c', 'd')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'), new module.Reachable('c', 'c'), 
-      new module.Reachable('c', 'd'), new module.Reachable('b', 'd'), new module.Reachable('a', 'd'),
-      new module.Node('a'), new module.Node('b'), new module.Node('c'), new module.Node('d'),
-      new module.Unreachable('a', 'a'), new module.Unreachable('b', 'a'), new module.Unreachable('b', 'b'), new module.Unreachable('c', 'a'), new module.Unreachable('c', 'b'),
-      new module.Unreachable('d', 'd'), new module.Unreachable('d', 'c'), new module.Unreachable('d', 'b'), new module.Unreachable('d', 'a')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-test('example4', module => {
-  const edbTuples = new Set([new module.Link('a', 'b'), new module.Link('b', 'c'), new module.Link('c', 'c'), new module.Link('c', 'd'), new module.Link('c', 'b')]);
-  const expectedIdbTuples = new Set([new module.Reachable('a', 'b'), new module.Reachable('b', 'c'), new module.Reachable('a', 'c'), new module.Reachable('c', 'c'), 
-      new module.Reachable('c', 'd'), new module.Reachable('b', 'd'), new module.Reachable('a', 'd'), new module.Reachable('c', 'b'), new module.Reachable('b', 'b'),
-      new module.Node('a'), new module.Node('b'), new module.Node('c'), new module.Node('d'),
-      new module.Unreachable('a', 'a'), new module.Unreachable('b', 'a'), new module.Unreachable('c', 'a'),
-      new module.Unreachable('d', 'd'), new module.Unreachable('d', 'c'), new module.Unreachable('d', 'b'), new module.Unreachable('d', 'a')]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
-
-compileFile('example5'); // rmax, rmin, rcount, rsum
-test('example5', module => {
-  const edbTuples = new Set([new module.I('a', 10), new module.I('a', 20), new module.I('b', 33)]);
-  const expectedIdbTuples = new Set([
-    new module.Rsum('a', 30), new module.Rsum('b', 33),
-    new module.Rmax('a', 20), new module.Rmax('b', 33),
-    new module.Rmin('a', 10), new module.Rmin('b', 33),
-    new module.Rcount('a', 2), new module.Rcount('b', 1),
-  ]);
-  testInitialSolve(module, edbTuples, expectedIdbTuples);
-});
+const example1 = `
+(define [Reachable x y]
+  [Link x y])
+  
+(define [Reachable x y]
+  [Reachable x z] [Link z y])
+`;
+ 
+testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c]`, 
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
+testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'b 'c]`);
 
 
-console.log(`${testCounter} tests`);
+const example2 = `
+(define [Reachable x y]
+  [Link x y])
+  
+(define [Reachable x y]
+  [Link x z] [Reachable z y])
+`;
+
+testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
+
+testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]`);
+
+testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c] [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]`);
+
+  
+const example3 = `
+(define [Reachable x y]
+  [Link x y])
+  
+(define [Reachable x y]
+  [Link x z] [Reachable z y])
+
+(define [Node x]
+  [Link x _])
+  
+(define [Node y]
+  [Link _ y])
+`;
+
+testInitialSolve(example3, `[Link 'a 'b] [Link 'b 'c]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]
+   [Node 'a] [Node 'b] [Node 'c]`);
+
+testInitialSolve(example3, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
+   [Node 'a] [Node 'b] [Node 'c]`);
+
+testInitialSolve(example3, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c] [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]
+   [Node 'a] [Node 'b] [Node 'c] [Node 'd]`);
+
+
+const example4 = `
+(define [Reachable x y]
+  [Link x y])
+  
+(define [Reachable x y]
+  [Link x z] [Reachable z y])
+
+(define [Node x]
+  [Link x _])
+  
+(define [Node y]
+  [Link _ y])
+
+(define [Unreachable x y]
+  [Node x] [Node y] (not [Reachable x y]))
+`;
+
+testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]
+   [Node 'a] [Node 'b] [Node 'c]
+   [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]
+   [Unreachable 'c 'a] [Unreachable 'c 'b] [Unreachable 'c 'c]`);
+
+testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
+   [Node 'a] [Node 'b] [Node 'c]
+   [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]
+   [Unreachable 'c 'a] [Unreachable 'c 'b]`);
+  
+testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
+   [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]
+   [Node 'a] [Node 'b] [Node 'c] [Node 'd]
+   [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]
+   [Unreachable 'c 'a] [Unreachable 'c 'b]
+   [Unreachable 'd 'd] [Unreachable 'd 'c] [Unreachable 'd 'b] [Unreachable 'd 'a]`);
+      
+testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd] [Link 'c 'b]`,
+  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
+   [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd] [Reachable 'c 'b] [Reachable 'b 'b]
+   [Node 'a] [Node 'b] [Node 'c] [Node 'd]
+   [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'c 'a]
+   [Unreachable 'd 'd] [Unreachable 'd 'c] [Unreachable 'd 'b] [Unreachable 'd 'a]`);
+       
+const example5 = `
+(define [Rsum x #:sum y]
+  [I x y])
+
+(define [Rmax x #:max y]
+  [I x y])
+  
+(define [Rmin x #:min y]
+  [I x y])
+      
+(define [Rcount x #:count y]
+  [I x y])
+`;
+
+testInitialSolve(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
+  `[Rsum 'a 30] [Rsum 'b 33]
+   [Rmax 'a 20] [Rmax 'b 33]
+   [Rmin 'a 10] [Rmin 'b 33]
+   [Rcount 'a 2] [Rcount 'b 1]
+  `);
+
+
+const example6 = `
+(define [B x] [A x])
+(define [C x] [B x])
+(define [E x] [D x])
+(define [C x] [E x])
+`;
+
+testInitialSolve(example6, `[A 1] [A 2] [D 3] [D 4]`,
+  `[B 1] [B 2] [C 1] [C 2]
+   [E 3] [E 4] [C 3] [C 4]
+  `);
+
+testInitialSolve(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`,
+  `[B 1] [B 2] [B 3] [B 4]
+   [E 1] [E 2] [E 3] [E 4]
+   [C 1] [C 2] [C 3] [C 4]
+  `);
+
+
+console.log("done");

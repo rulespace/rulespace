@@ -6,13 +6,21 @@ export function Null()
 {
 }
 
+const NULL = new Null();
+
+Null.prototype.valueOf =
+  function ()
+  {
+    return NULL;
+  }
+
 Null.prototype.toString =
   function ()
   {
     return "()";
   }
 
-Null.prototype.isNull =
+  Null.prototype.isNull =
   function ()
   {
     return true;
@@ -22,6 +30,21 @@ export function Sym(name)
 {
   this.name = name;
 }
+
+const symbols = new Map();
+
+Sym.prototype.valueOf =
+  function ()
+  {
+    const name = this.name;
+    const current = symbols.get(name);
+    if (current === undefined)
+    {
+      symbols.set(name, this);
+      return this;
+    }
+    return current;
+  }
   
 Sym.prototype.toString =
 function ()
@@ -66,13 +89,11 @@ Pair.prototype.toString =
     return this.toStringInternal(ags);
   }
 
-Pair.prototype.isNull =
+  Pair.prototype.isNull =
   function ()
   {
     return false;
   }  
-
-
 
 Pair.prototype.toStringInternal =
   function (ags)

@@ -1,15 +1,9 @@
-import fs from 'fs';
 import { assertTrue } from './common.mjs';
 import { SchemeParser  } from './parser.mjs';
 import { analyzeProgram, Atom, Var, Lit, Neg, Agg } from './analyzer.mjs';
 
-export function compileFile(name)
-{
-  const compiled = compile(fs.readFileSync(`${name}.sl`, 'utf8'));
-  fs.writeFileSync(`${name}.mjs`, compiled, 'utf8');
-}
 
-export function compile(src)
+export function compile(src, options={})
 {
   const parser = new SchemeParser();
   const program = parser.parse(src);
@@ -20,7 +14,32 @@ export function compile(src)
   const edbPreds = preds.filter(pred => pred.edb);
   const rules = analysis.program.rules;
 
+  const OPT_module = options.module === true ? true : false;
+  const FLAG_compile_to_module = OPT_module;
+  const FLAG_compile_to_ctr = !OPT_module;
+  
+  const publicFunctions = [];
+
+  const emitters =
+  {
+    publicFunction(name)
+    {
+      publicFunctions.push(name);
+      return `${FLAG_compile_to_module ? 'export ' : ''}function ${name}`;
+    },
+    publicFunctionStar(name)
+    {
+      publicFunctions.push(name);
+      return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`;
+    }
+  }
+
   const sb = [];
+
+  if (FLAG_compile_to_ctr)
+  {
+    sb.push(`"use strict";`);
+  }
 
   sb.push(emitFirst);
 
@@ -35,7 +54,7 @@ export function compile(src)
 // negated: ${pred.negated}
     `);
 
-    sb.push(emitTupleObject(pred));
+    sb.push(emitTupleObject(pred, emitters));
     //sb.push(emitGetTuple(pred));
     sb.push(emitDeltaAddTuple(pred));
     // if (pred.edb)
@@ -72,19 +91,24 @@ export function compile(src)
   // }
 
 
-  sb.push(emitAddTuples(strata));
-  sb.push(emitRemoveTuples);
+  sb.push(emitAddTuples(strata, emitters));
+  sb.push(emitRemoveTuples(emitters));
   
-  sb.push(emitIterators(preds, edbPreds, rules));
-  sb.push(emitClear(edbPreds));
+  sb.push(emitIterators(preds, edbPreds, rules, emitters));
+  sb.push(emitClear(edbPreds, emitters));
 
   sb.push(emitRest);
+
+  if (FLAG_compile_to_ctr)
+  {
+    sb.push(`return {${publicFunctions.join(', ')}};`);
+  }
 
   return sb.join('\n');
 }
 
 
-function emitTupleObject(pred)
+function emitTupleObject(pred, emitters)
 {
   const tn = termNames(pred);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
@@ -94,7 +118,7 @@ function emitTupleObject(pred)
 
   let sb = `
 const ${pred}_members = new Set();
-export function ${pred}(${tn.join(', ')})
+${emitters.publicFunction(pred)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
   this._inproducts = ${pred.edb ? `IMM_EMPTY_COLLECTION` : `new Set()`};
@@ -122,7 +146,7 @@ function get_${pred}(${tn.join(', ')})
   {
     sb += `
 const NOT_${pred}_members = new Set();
-export function NOT_${pred}(${tn.join(', ')})
+function NOT_${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}  
   this._outproducts = new Set();
@@ -608,29 +632,29 @@ function get_or_create_${ruleName}GB(${tn.join(', ')})
   `;
 }
 
-function emitIterators(preds, edbPreds, rules)
+function emitIterators(preds, edbPreds, rules, emitters)
 {
   const tupleYielders = preds.map(pred => `yield* ${pred}_members;`);
   const edbTupleYielders = edbPreds.map(pred => `yield* ${pred}_members;`);
-  const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`yield* Rule${rule._id}GB.members;`] : []);
+  const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
   const ruleNames = rules.map(rule => `Rule${rule._id}`);
 
   return `
 // from membership
-export function* tuples() 
+${emitters.publicFunctionStar('tuples')}() 
 {
   ${tupleYielders.join('\n  ')}
 }
 
-export function* edbTuples() 
+${emitters.publicFunctionStar('edbTuples')}() 
 {
   ${edbTupleYielders.join('\n  ')}
 }
 
-function* groupbys()
-{
-  ${gbYielders.join('\n  ')}
-}  
+// function* groupbys()
+// {
+     ${gbYielders.join('\n  ')}
+// }  
 
 // function rules()
 // {
@@ -639,12 +663,12 @@ function* groupbys()
   `;
 }
 
-function emitClear(edbPreds)
+function emitClear(edbPreds, emitters)
 {
   const clearers = edbPreds.map(edbPred => `remove_tuples(${edbPred}_members);`);
 
   return `
-export function clear()
+${emitters.publicFunction('clear')}()
 {
   ${clearers.join('\n')}
 }  
@@ -821,7 +845,7 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   `
 }
 
-function emitAddTuples(strata) 
+function emitAddTuples(strata, emitters) 
 {
 
   const strataLogic = strata.map(stratum => {
@@ -837,7 +861,7 @@ function emitAddTuples(strata)
   });
 
   return `
-export function add_tuples(edbTuples)
+${emitters.publicFunction('add_tuples')}(edbTuples)
 {
   const edbTuplesMap = new Map(edbTuples);
   ${strataLogic.join('\n')}
@@ -846,9 +870,11 @@ export function add_tuples(edbTuples)
   `;
 }
 
-const emitRemoveTuples = `
+function emitRemoveTuples(emitters)
+{
+  return `
 // only forward (so, in essence, only edb tuples supported) 
-export function remove_tuples(tuples)
+${emitters.publicFunction('remove_tuples')}(tuples)
 {
   const wl = [...tuples];
 
@@ -878,8 +904,8 @@ export function remove_tuples(tuples)
       removeProduct(product);     
     }
   }
+}`;
 }
-`;
 
 const emitFirst = `
 
@@ -941,7 +967,7 @@ ProductGB.prototype.toString =
 
 function atomString(predicateName, ...termValues)
 {
-  return predicateName + '(' + termValues.map(termString).join(' ') + ')';
+  return '[' + predicateName + ' ' + termValues.map(termString).join(' ') + ']';
 }
 
 function termString(termValue)

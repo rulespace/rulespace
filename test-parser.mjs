@@ -4,9 +4,7 @@ const parser = new SchemeParser();
 
 const result = parser.parse(`
 
-(define [Rcount X #:count Y]
-  [I X Y])
-
+'a
 
 `);
 

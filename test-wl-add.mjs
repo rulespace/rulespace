@@ -1,8 +1,21 @@
 import { performance } from 'perf_hooks';
-import {link, addTuples, tuples, toDot} from './example2.mjs';
+import { compileToConstructor } from './test-common.mjs';
+import { toDot, toTupleMap } from './schemelog-common.mjs';
+
+const src = `
+(define [Reachable x y]
+  [Link x y])
+  
+(define [Reachable x y]
+  [Link x z] [Reachable z y])
+`;
+
+const module = compileToConstructor(src)();
+
+const link = (x, y) => new module.Link(x, y);
 
 const edbTuples = new Set([link('a', 'b'), link('b', 'c'), link('c', 'c'), link('c', 'd')]);
-addTuples(edbTuples);
+module.add_tuples(toTupleMap(edbTuples));
 const add_wl = [
   link('d', 'e'),
   link('e', 'f'),
@@ -31,14 +44,9 @@ const add_wl = [
 const start = performance.now();
 for (const tuple of add_wl)
 {
-  addTuples([tuple]);
+  module.add_tuples(new Map([[module.Link, [tuple]]]));
 }
 const duration = performance.now() - start;
-
-
-console.log(tuples())
-
-console.log(toDot());
 
 console.log("done: " + duration + "ms");
 

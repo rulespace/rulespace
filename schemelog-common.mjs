@@ -1,4 +1,5 @@
 import { Sets, assertTrue } from './common.mjs';
+import { SchemeParser, Pair  } from './parser.mjs';
 
 export function reachableTuples(tuples)
 {
@@ -100,7 +101,7 @@ export function toDot(tuples_)
     sb += `${t} [shape=box label="${tuple}"];\n`;
     for (const product of tuple._outproducts)
     {
-      sb += `${t} -> ${productTag(product)};\n`;    
+      sb += `${t} -> ${getTag(product)};\n`;    
       if (seen.has(product))
       {
         continue;     
@@ -124,7 +125,7 @@ export function toDot(tuples_)
       }
       seen.add(productGB);  
       const p = getTag(productGB);
-      sb += `${p} [label="${productLabel(productGB)}"];\n`;
+      sb += `${p} [label="${productGBLabel(productGB)}"];\n`;
 
       const groupby = productGB._outgb;
       const gb = getTag(groupby);
@@ -149,6 +150,28 @@ export function toDot(tuples_)
 }
 
 ////// 
+
+// in: sequence of ground atoms, out: list of tuple propositions
+export function constructTuples(module, tupleSequenceSrc)
+{
+
+  function toValue(exp)
+  {
+    if (exp instanceof Pair)
+    {
+      if (exp.car.name === 'quote')
+      {
+        return exp.cdr.car.valueOf();
+      }
+    }
+    return exp.valueOf(); // Number, String, ...
+  }
+
+  const parser = new SchemeParser();
+  const seq = parser.parse(tupleSequenceSrc);
+  return [...seq].map(tuple => Reflect.construct(module[tuple.pred.name], tuple.terms.map(toValue)));
+}
+
 
 export function toTupleMap(tuples)
 {

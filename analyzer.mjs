@@ -3,19 +3,19 @@ import { Sym, Tuple, Pair, Keyword } from './parser.mjs';
 
 export class Lit
 {
-  constructor(x)
+  constructor(value)
   {
-    this.x = x;
+    this.value = value;
   }
 
   toString()
   {
-    const x = this.x;
-    if (typeof x === "string")
+    const value = this.value;
+    if (typeof value === "string")
     {
-      return "'" + x + "'";
+      return "'" + value + "'";
     }
-    return String(x);
+    return String(value);
   }
 }
 
@@ -147,64 +147,87 @@ export class Bin
   }
 }
 
-export function structuralAnalysis(exp)
+/// structural analysis
+
+function analyzeRule(ruleExp)
 {
+  const headExp = ruleExp.cdr.car;
+  let bodyExps = ruleExp.cdr.cdr;
+  const head = analyzeAtom(headExp);
+  const body = [...bodyExps].map(analyzeTerm);
+  return new Rule(head, body);
+}
 
-  function analyzeRule(ruleExp)
+function analyzeAtom(tuple)
+{
+  const pred = tuple.pred.name;
+  const termExps = [...tuple.terms];
+  const terms = [];
+  while (termExps.length > 0)
   {
-    const headExp = ruleExp.cdr.car;
-    let bodyExps = ruleExp.cdr.cdr;
-    const head = analyzeAtom(headExp);
-    const body = [...bodyExps].map(analyzeTerm);
-    return new Rule(head, body);
+    const termExp = termExps.shift();
+    if (termExp instanceof Keyword)
+    {
+      const aggregator = termExp.name;
+      const aggregand = analyzeTerm(termExps.shift());
+      terms.push(new Agg(aggregator, aggregand));
+    }
+    else
+    {
+      terms.push(analyzeTerm(termExp));
+    }
+  }
+  return new Atom(pred, terms);
+}
+
+const symbols = new Map();
+
+export function analyzeTerm(exp)
+{
+  if (exp instanceof Sym)
+  {
+    return new Var(exp.name);
   }
 
-  function analyzeAtom(tuple)
+  if (exp instanceof Tuple)
   {
-    const pred = tuple.pred.name;
-    const termExps = [...tuple.terms];
-    const terms = [];
-    while (termExps.length > 0)
+    return analyzeAtom(exp);
+  }
+
+  if (exp instanceof Pair)
+  {
+    const rator = exp.car;
+    assertTrue(rator instanceof Sym)
+    switch (rator.name)
     {
-      const termExp = termExps.shift();
-      if (termExp instanceof Keyword)
+      case 'quote':
       {
-        const aggregator = termExp.name;
-        const aggregand = analyzeTerm(termExps.shift());
-        terms.push(new Agg(aggregator, aggregand));
+        const quoted = exp.cdr.car;
+        const name = quoted.name; // assert Sym
+        const current = symbols.get(name);
+        if (current === undefined)
+        {
+          symbols.set(name, quoted);
+          console.log("returning new " + quoted);
+          return quoted;
+        }
+        console.log("returning existing " + current);
+        return current;
       }
-      else
+      case 'not':       
       {
-        terms.push(analyzeTerm(termExp));
+        const negated = analyzeTerm(exp.cdr.car);
+        return new Neg(negated);    
       }
+      default: throw new Error("cannot handle " + exp);
     }
-    return new Atom(pred, terms);
   }
 
-  function analyzeTerm(exp)
-  {
-    if (exp instanceof Sym)
-    {
-      return new Var(exp.name);
-    }
+  return new Lit(exp.valueOf()); // TODO: valueOf needed?
+}
 
-    if (exp instanceof Tuple)
-    {
-      return analyzeAtom(exp);
-    }
-
-    if (exp instanceof Pair)
-    {
-      const rator = exp.car;
-      assertTrue(rator instanceof Sym)
-      assertTrue(rator.name === 'not')
-      const negated = analyzeTerm(exp.cdr.car);
-      return new Neg(negated);
-    }
-
-    return new Lit(exp.valueOf()); // TODO: valueOf needed?
-  }
-  
+function structuralAnalysis(exp)
+{  
   const rules = [];
   for (const rule of exp)
   {
@@ -213,6 +236,9 @@ export function structuralAnalysis(exp)
 
   return new Program(rules);
 }
+
+
+//^^^ structural analysis
  
 function topoSort(predicates)
 {
