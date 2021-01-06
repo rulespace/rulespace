@@ -1,9 +1,27 @@
 import { compileToConstructor, compileToModule } from './test-common.mjs';
 import { toTupleMap, toDot, sanityCheck, constructTuples } from './schemelog-common.mjs';
-import { assertTrue, Sets } from './common.mjs';
+import { assertTrue, Sets, equals } from './common.mjs';
 
+const uniques = new Set();
+function uniquify(x)
+{
+  for (const y of uniques)
+  {
+    if (equals(x, y))
+    {
+      return y;
+    }
+  }
+  uniques.add(x);
+  return x;
+}
 
-function mapGet(tuples)
+function uSet(items)
+{
+  return new Set([...items].map(uniquify));
+}
+
+function getModuleTuples(tuples)
 {
   return new Set([...tuples].flatMap(tuple => tuple.get() === null ? [] : [tuple.get()]));
 }
@@ -12,34 +30,34 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc, dot)
 {
   const module = compileToConstructor(src)();
   sanityCheck(module);
-  const edbTuples = new Set(constructTuples(module, edbTuplesSrc));
+  const edbTuples = uSet(constructTuples(module, edbTuplesSrc)); 
   module.add_tuples(toTupleMap(edbTuples));
   if (dot) {console.log(toDot(module.edbTuples()))}; 
   sanityCheck(module);
-  assertTrue(Sets.equals(new Set(module.edbTuples()), edbTuples));
-  const expectedIdbTuples = mapGet(constructTuples(module, expectedIdbTuplesSrc));
+  assertTrue(Sets.equals(uSet(module.edbTuples()), edbTuples));
+  const expectedIdbTuples = uSet(constructTuples(module, expectedIdbTuplesSrc));
   const expectedTuples = Sets.union(edbTuples, expectedIdbTuples);
-  assertTrue(Sets.equals(new Set(module.tuples()), expectedTuples));
+  assertTrue(Sets.equals(uSet(module.tuples()), expectedTuples));
 }
 
 function testRemoveEdb(src, edbTuplesSrc, removeEdbTuplesSrc, dot)
 {
   const module = compileToConstructor(src)();
   sanityCheck(module);
-  const edbTuples = new Set(constructTuples(module, edbTuplesSrc));
-  const removeEdbTuples = mapGet(constructTuples(module, removeEdbTuplesSrc));
+  const edbTuples = uSet(constructTuples(module, edbTuplesSrc));
+  const removeEdbTuples = uSet(constructTuples(module, removeEdbTuplesSrc));
   const edbTuples2 = Sets.difference(edbTuples, removeEdbTuples);
 
-  module.add_tuples(edbTuples2);
+  module.add_tuples(toTupleMap(edbTuples2));
   sanityCheck(module);
-  const expectedTuples = module.tuples();
+  const expectedTuples = uSet(module.tuples());
 
-  module.add_tuples(removeEdbTuples);
+  module.add_tuples(toTupleMap(removeEdbTuples));
   sanityCheck(module);
-  module.remove_tuples(removeEdbTuples);
+  module.remove_tuples(getModuleTuples(removeEdbTuples));
   if (dot) {console.log(toDot(module.edbTuples()))}; 
   sanityCheck(module);
-  assertTrue(Sets.equals(module.tuples(), expectedTuples));
+  assertTrue(Sets.equals(uSet(module.tuples()), expectedTuples));
 }
 
 const example1 = `
@@ -53,6 +71,7 @@ const example1 = `
 testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c]`, 
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
 testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'b 'c]`);
+testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'a 'b] [Link 'b 'c]`);
 
 
 const example2 = `
