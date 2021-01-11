@@ -17,6 +17,7 @@ export function compile(src, options={})
   const OPT_module = options.module === true ? true : false;
   const FLAG_compile_to_module = OPT_module;
   const FLAG_compile_to_ctr = !OPT_module;
+  const FLAG_debug = options.debug === true ? true : false;
   
   const publicFunctions = [];
 
@@ -31,6 +32,10 @@ export function compile(src, options={})
     {
       publicFunctions.push(name);
       return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`;
+    },
+    debug(str)
+    {
+      return FLAG_debug ? `console.log(${str})` : ``;
     }
   }
 
@@ -41,7 +46,7 @@ export function compile(src, options={})
     sb.push(`"use strict";`);
   }
 
-  sb.push(emitFirst);
+  sb.push(emitFirst(emitters));
 
   for (const pred of preds)
   {
@@ -125,8 +130,10 @@ ${emitters.publicFunction(pred)}(${tn.join(', ')})
   this._outproducts = new Set();
   this._outproductsgb = new Set();
 }
-${pred}.prototype.toString = function () {return atomString("${pred}", ${termFields.join(', ')})};  
-${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};  // public API only 
+// public API (only)
+${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};
+//
+${pred}.prototype.toString = function () {return atomString("${pred}", ${termFields.join(', ')})};
 ${pred}.prototype._remove = function () {${pred}_members.delete(this)};
 
 function get_${pred}(${tn.join(', ')})
@@ -206,6 +213,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
   {
     const pred = head.pred;
     const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
+    const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
     return `
       // updates for ${head}
       const ptuples = new Set([${ptuples.join(', ')}]);
@@ -220,7 +228,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
         product._outtuple = new_${pred}_tuple;
         new_${pred}_tuple._inproducts.add(product);
       }
-      else
+      else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
       {
         const product = new Product(${ruleName}, ptuples);
         ${t2ps.join('\n        ')}
@@ -726,14 +734,23 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
     if (recursivePreds.has(pred))
     {
       return [`
-        // atom ${i} ${atom}
-        if (local_${pred}.size > 0)
-        {
+        // atom ${i} ${atom} (recursive)
+        //if (local_${pred}.size > 0)
+        //{
           const ${producesPred}_tuples_${i} = ${ruleName}.fire(${i}, local_${pred});
           MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
           MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
-        }    
+        //}    
       `];  
+    }
+    else
+    {
+      return [`
+        // atom ${i} ${atom} (non-recursive)
+        const ${producesPred}_tuples_${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
+        MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
+        MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
+      `];        
     }
   }
   return [];
@@ -861,7 +878,7 @@ function emitAddTuples(strata, emitters)
   });
 
   return `
-${emitters.publicFunction('add_tuples')}(edbTuples)
+${emitters.publicFunction('add_tuple_map')}(edbTuples)
 {
   const edbTuplesMap = new Map(edbTuples);
   ${strataLogic.join('\n')}
@@ -876,20 +893,27 @@ function emitRemoveTuples(emitters)
 // only forward (so, in essence, only edb tuples supported) 
 ${emitters.publicFunction('remove_tuples')}(tuples)
 {
+  ${emitters.debug('"remove_tuples " + tuples')}
+
   const wl = [...tuples];
 
   function removeProduct(product)
   {
+    ${emitters.debug('"remove product " + product')}
+
     for (const intuple of product.tuples)
     {
       intuple._outproducts.delete(product);
+      ${emitters.debug('"deleted outproduct " + product + " in " + intuple')}
       // remember: it's not because a tuple's outproducts is empty,
       // that it cannot in the future play a role in other products 
     }
     const outtuple = product._outtuple;
     outtuple._inproducts.delete(product);
+    ${emitters.debug('"deleted inproduct " + product + " in " + outtuple + ", leaving " + outtuple._inproducts.size + " inproducts"')}
     if (outtuple._inproducts.size === 0)
     {
+      ${emitters.debug('outtuple + " has no more inproducts, will be deleted"')}
       wl.push(outtuple);
     }
     // product._outtuple = null;
@@ -898,6 +922,7 @@ ${emitters.publicFunction('remove_tuples')}(tuples)
   while (wl.length > 0)
   {
     const tuple = wl.pop();
+    ${emitters.debug('"remove tuple " + tuple')}
     tuple._remove();
     for (const product of tuple._outproducts)
     {
@@ -907,7 +932,9 @@ ${emitters.publicFunction('remove_tuples')}(tuples)
 }`;
 }
 
-const emitFirst = `
+function emitFirst(emitters)
+{
+  return `
 
 const IMM_EMPTY_COLLECTION = Object.freeze([]);
 
@@ -980,7 +1007,32 @@ function termString(termValue)
   return String(termValue);
 }
 
-`;
+function toTupleMap(tuples)
+{
+  const map = new Map();
+
+  function add(tuple)
+  {
+    const key = tuple.constructor;
+    const currentValue = map.get(key);
+    if (currentValue === undefined)
+    {
+      map.set(key, [tuple]);
+    }
+    else
+    {
+      currentValue.push(tuple);
+    }
+  }
+  [...tuples].forEach(add);
+  return map;
+}
+
+${emitters.publicFunction('add_tuples')}(edbTuples)
+{
+  return add_tuple_map(toTupleMap(edbTuples));
+}
+`} // emitFirst
 
 const emitRest = `
 `;

@@ -1,7 +1,7 @@
 import fs from 'fs';
-import { compileToModule, compileToConstructor } from './test-common.mjs';
+import { compileToModule, constructTuples } from './test-common.mjs';
 import { assertTrue, Sets } from './common.mjs';
-import { toDot, constructTuples, toTupleMap } from './schemelog-common.mjs';
+import { toDot } from './schemelog-common.mjs';
 
 const src =
 `
@@ -9,18 +9,14 @@ const src =
   [Link x y])
   
 (define [Reachable x y]
-  [Link x z] [Reachable z y])
+  [Reachable x z] [Link z y])
 `;
 
-//const module = compileToConstructor(src)();
+compileToModule(src, 'standalone', {debug:true}).then(module => {
 
-compileToModule(src, 'standalone').then(module => {
-module.clear();
-
-// const edbTuples = constructTuples(module, `[I 'a 1] [I 'a 2]`);
-// const tupleMap = toTupleMap(edbTuples);
-
-// module.add_tuples(tupleMap);
-// console.log("tuples: " + [...module.tuples()]);
-// console.log(toDot(module.edbTuples()));
+const edbTuples = constructTuples(module, `[Link "c" "d"] [Link "c" "c"] [Link "b" "c"] [Link "a" "b"]`);
+module.add_tuples(edbTuples);
+console.log(toDot(module.edbTuples()));
+module.remove_tuples([edbTuples[3], edbTuples[2]]);
+console.log("tuples: " + [...module.tuples()]);
 })

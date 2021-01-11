@@ -1,5 +1,4 @@
 import { Sets, assertTrue } from './common.mjs';
-import { SchemeParser, Pair  } from './parser.mjs';
 
 export function reachableTuples(tuples)
 {
@@ -151,45 +150,3 @@ export function toDot(tuples_)
 
 ////// 
 
-// in: sequence of ground atoms, out: list of tuple propositions
-export function constructTuples(module, tupleSequenceSrc)
-{
-
-  function toValue(exp)
-  {
-    if (exp instanceof Pair)
-    {
-      if (exp.car.name === 'quote')
-      {
-        return exp.cdr.car.valueOf();
-      }
-    }
-    return exp.valueOf(); // Number, String, ...
-  }
-
-  const parser = new SchemeParser();
-  const seq = parser.parse(tupleSequenceSrc);
-  return [...seq].map(tuple => Reflect.construct(module[tuple.pred.name], tuple.terms.map(toValue)));
-}
-
-
-export function toTupleMap(tuples)
-{
-  const map = new Map();
-
-  function add(tuple)
-  {
-    const key = tuple.constructor;
-    const currentValue = map.get(key);
-    if (currentValue === undefined)
-    {
-      map.set(key, [tuple]);
-    }
-    else
-    {
-      currentValue.push(tuple);
-    }
-  }
-  tuples.forEach(add);
-  return map;
-}
