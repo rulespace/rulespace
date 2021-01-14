@@ -1,5 +1,5 @@
 import { assertTrue, Sets } from './common.mjs';
-import { compileToConstructor, constructTuples, Unique } from './test-common.mjs';
+import { compileToConstructor, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './test-common.mjs';
 import { toDot, sanityCheck } from './schemelog-common.mjs';
 
 function getModuleTuples(tuples)
@@ -7,69 +7,115 @@ function getModuleTuples(tuples)
   return new Set([...tuples].flatMap(tuple => tuple.get() === null ? [] : [tuple.get()]));
 }
 
-function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc, dot)
+function permutations(s)
 {
-  const unique = new Unique();
-  const module = compileToConstructor(src)();
-  sanityCheck(module);
-  const edbTuples = unique.set(constructTuples(module, edbTuplesSrc)); 
-  module.add_tuples(edbTuples);
-  if (dot) {console.log(toDot(module.edbTuples()))}; 
-  sanityCheck(module);
-  assertTrue(Sets.equals(unique.set(module.edbTuples()), edbTuples));
-  const expectedIdbTuples = unique.set(constructTuples(module, expectedIdbTuplesSrc));
-  const expectedTuples = Sets.union(edbTuples, expectedIdbTuples);
-  assertTrue(Sets.equals(unique.set(module.tuples()), expectedTuples));
+  if (s.length === 0)
+  {
+    return [[]];
+  }
+  return s.flatMap(x => permutations(remove(x, s)).map(p => [x, ...p]));
 }
 
-function testIncrementalAdd(src, edbTuplesSrc, dot)
+function selections(tuples)
+{
+  const result = [];
+  for (let i=0; i<tuples.length; i++)
+  {
+    for (let j=i+1; j<=tuples.length; j++)
+    {
+      result.push(tuples.slice(i, j));
+    }
+  }
+  return result;
+}
+
+// function combinations(tuples, comb=[], result=[comb])
+// {
+//   for (let i=0; i<tuples.length; i++)
+//   {
+//     result = result.concat(combinations(tuples.slice(0,i).concat(tuples.slice(i+1)), comb.concat(tuples[i])));
+//   }
+//   return result;
+// }
+
+function remove(item, seq)
+{
+  return [...seq].filter(x => x !== item);
+}
+
+function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
 {
   const unique = new Unique();
   const ctr = compileToConstructor(src);
-  const nimodule = ctr();
-  sanityCheck(nimodule);
-  const niEdbTuples = constructTuples(nimodule, edbTuplesSrc); 
-  nimodule.add_tuples(niEdbTuples);
-  sanityCheck(nimodule);
-  
-  const imodule = ctr();
-  sanityCheck(imodule);
-  const iEdbTuples = constructTuples(imodule, edbTuplesSrc); 
-  for (const t of iEdbTuples)
+  const edbTuples = parseTuples(edbTuplesSrc);
+  const expectedIdbTuples = parseTuples(expectedIdbTuplesSrc);
+  for (const p of permutations(edbTuples))
   {
-    imodule.add_tuples([t]);
-    sanityCheck(imodule);
+    const module = ctr();
+    sanityCheck(module);
+    module.add_tuples(p.map(toModuleTupleFor(module)));  
+    sanityCheck(module);
+    assertTrue(Sets.equals(unique.set(module.edbTuples()), unique.set(p)));
+    const expectedTuples = Sets.union(unique.set(p), unique.set(expectedIdbTuples));
+    assertTrue(Sets.equals(unique.set(module.tuples()), expectedTuples));
   }
-  if (dot)
-  {
-    console.log("ni");
-    console.log(toDot(nimodule.edbTuples()))
-    console.log("i");
-    console.log(toDot(imodule.edbTuples()))
-  }; 
-  assertTrue(Sets.equals(unique.set(nimodule.tuples()), unique.set(imodule.tuples())));
+  // if (dot) {console.log(toDot(module.edbTuples()))}; 
 }
 
-function testRemoveEdb(src, edbTuplesSrc, removeEdbTuplesSrc, dot)
+function testIncrementalAdd(src, edbTuplesSrc)
 {
   const unique = new Unique();
-  const module = compileToConstructor(src)();
-  sanityCheck(module);
-  const edbTuples = unique.set(constructTuples(module, edbTuplesSrc));
-  const removeEdbTuples = unique.set(constructTuples(module, removeEdbTuplesSrc));
-  const edbTuples2 = Sets.difference(edbTuples, removeEdbTuples);
+  const ctr = compileToConstructor(src);
+  const edbTuples = parseTuples(edbTuplesSrc);
 
-  module.add_tuples(edbTuples2);
-  sanityCheck(module);
-  const expectedTuples = unique.set(module.tuples());
-  if (dot) {console.log(toDot(module.edbTuples()))}; 
+  for (const s of selections(edbTuples))
+  {
+    const nimodule = ctr();
+    nimodule.add_tuples(s.map(toModuleTupleFor(nimodule)));
+    sanityCheck(nimodule);
+  
+    for (const p of permutations(s))
+    {
+      const imodule = ctr();
+      for (const t of p)
+      {
+        imodule.add_tuples([t].map(toModuleTupleFor(imodule)));
+        sanityCheck(imodule);
+      }
+      assertTrue(Sets.equals(unique.set(nimodule.tuples()), unique.set(imodule.tuples())));  
+    }
+  }
+}
 
-  module.add_tuples(removeEdbTuples);
-  sanityCheck(module);
-  module.remove_tuples(getModuleTuples(removeEdbTuples));
-  if (dot) {console.log(toDot(module.edbTuples()))}; 
-  sanityCheck(module);
-  assertTrue(Sets.equals(unique.set(module.tuples()), expectedTuples));
+function testRemoveEdb(src, edbTuplesSrc)
+{
+  const unique = new Unique();
+  const ctr = compileToConstructor(src);
+  const edbTuples = parseTuples(edbTuplesSrc);
+  
+  for (const s of selections(edbTuples))
+  {
+    const remainingEdbs = Sets.difference(unique.set(edbTuples), unique.set(s));
+    const nimodule = ctr();
+    nimodule.add_tuples([...remainingEdbs].map(toModuleTupleFor(nimodule)));
+    sanityCheck(nimodule);
+
+    const imodule = ctr();
+    imodule.add_tuples([...edbTuples].map(toModuleTupleFor(imodule)));
+    sanityCheck(imodule);
+    imodule.remove_tuples([...s].map(toModuleTupleFor(imodule)).map(t => t.get()));
+    sanityCheck(imodule);
+
+    if (!Sets.equals(unique.set(nimodule.tuples()), unique.set(imodule.tuples())))
+    {
+      console.log("edbTuples: " + edbTuples.join());
+      console.log("selection: " + s.join());
+      console.log("remaining  " + [...remainingEdbs].join());
+      console.log("ni tuples: " + [...nimodule.tuples()]);
+      console.log("i tuples:  " + [...imodule.tuples()]);
+      throw new Error("assertion failed");
+    }
+  }
 }
 
 const example1 = `
@@ -82,23 +128,15 @@ const example1 = `
  
 testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c]`, 
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
-testInitialSolve(example1, `[Link 'b 'c] [Link 'a 'b]`, 
-  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
 testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]`);
 testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c] [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]`);
 
-testIncrementalAdd(example1, `[Link 'a 'b] [Link 'b 'c]`);
-testIncrementalAdd(example1, `[Link 'b 'c] [Link 'a 'b]`);
 testIncrementalAdd(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`);
-testIncrementalAdd(example1, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`);
 
-testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'a 'b]`);
-testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'b 'c]`);
-testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'a 'b] [Link 'b 'c]`);
-testRemoveEdb(example1, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`, `[Link 'a 'b] [Link 'b 'c]`);
-testRemoveEdb(example1, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`, `[Link 'c 'c]`);
+testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`);
+testRemoveEdb(example1, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`);
 
 const example2 = `
 (define [Reachable x y]
@@ -110,23 +148,15 @@ const example2 = `
 
 testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
-testInitialSolve(example2, `[Link 'b 'c] [Link 'a 'b]`, 
-  `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
 testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]`);
 testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c] [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]`);
 
-testIncrementalAdd(example2, `[Link 'b 'c] [Link 'a 'b]`);
-testIncrementalAdd(example2, `[Link 'b 'c] [Link 'a 'b]`);
 testIncrementalAdd(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`);
-testIncrementalAdd(example2, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`);
 
 testRemoveEdb(example2, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'a 'b]`);
-testRemoveEdb(example2, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'b 'c]`);
-testRemoveEdb(example2, `[Link 'a 'b] [Link 'b 'c]`, `[Link 'a 'b] [Link 'b 'c]`);
-testRemoveEdb(example2, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`, `[Link 'a 'b] [Link 'b 'c]`);
-testRemoveEdb(example2, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`, `[Link 'c 'c]`);
+testRemoveEdb(example2, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b]`);
 
 const example3 = `
 (define [Reachable x y]
@@ -240,8 +270,8 @@ testInitialSolve(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`,
    [C 1] [C 2] [C 3] [C 4]
   `);
 
-testRemoveEdb(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`, `[A 1]`);
-testRemoveEdb(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`, `[D 1]`);
-testRemoveEdb(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`, `[A 1] [D 1]`);
+testIncrementalAdd(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
+
+testRemoveEdb(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
 
 console.log("done");

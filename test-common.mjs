@@ -53,23 +53,27 @@ export function toModuleTuple(module, x)
   return new module[x.constructor.name](...Object.values(x));
 }
 
-export function toGenericTuple(moduleTuple)
+export function toGenericTuple(tuple)
 {
-  const x = [moduleTuple.constructor.name];
-  for (const name of Object.keys(moduleTuple))
+  if (Array.isArray(tuple))
+  {
+    return tuple;
+  }
+  const x = [tuple.constructor.name];
+  for (const name of Object.keys(tuple))
   {
     if (!name.startsWith('_'))
     {
-      x.push(moduleTuple[name]);
+      x.push(tuple[name]);
     }
   }
   return x;
 }
 
-export function tupleEquals(x, y)
+function genericTupleEquals(t1, t2)
 {
-  const t1 = toGenericTuple(x);
-  const t2 = toGenericTuple(y);
+  // const t1 = toGenericTuple(x);
+  // const t2 = toGenericTuple(y);
   if (t1.length !== t2.length)
   {
     return false;
@@ -97,15 +101,16 @@ export class Unique
 
   tuple(x)
   {
+    const xx = toGenericTuple(x);
     for (const y of this.uniques)
     {
-      if (tupleEquals(x, y))
+      if (genericTupleEquals(xx, y))
       {
         return y;
       }
     }
-    this.uniques.add(x);
-    return x;
+    this.uniques.add(xx);
+    return xx;
   }
   
   set(tuples)
@@ -114,8 +119,8 @@ export class Unique
   }
 }
 
-// in: sequence of ground atoms, out: list of tuple propositions
-export function constructTuples(module, tupleSequenceSrc)
+// in: sequence of ground atoms, out: list of generic tuples
+export function parseTuples(tupleSequenceSrc)
 {
 
   function toValue(exp)
@@ -132,7 +137,7 @@ export function constructTuples(module, tupleSequenceSrc)
 
   const parser = new SchemeParser();
   const seq = parser.parse(tupleSequenceSrc);
-  return [...seq].map(tuple => Reflect.construct(module[tuple.pred.name], tuple.terms.map(toValue)));
+  return [...seq].map(tuple => [tuple.pred.name, ...tuple.terms.map(toValue)]);
 }
 
 
