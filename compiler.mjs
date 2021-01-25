@@ -33,7 +33,7 @@ export function compile(src, options={})
       publicFunctions.push(name);
       return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`;
     },
-    debug(str)
+    logDebug(str)
     {
       return FLAG_debug ? `console.log(${str})` : ``;
     }
@@ -98,6 +98,7 @@ export function compile(src, options={})
 
   sb.push(emitAddTuples(strata, emitters));
   sb.push(emitRemoveTuples(emitters));
+  sb.push(emitPutBackTuples(strata, emitters));
   
   sb.push(emitIterators(preds, edbPreds, rules, emitters));
   sb.push(emitClear(edbPreds, emitters));
@@ -126,7 +127,7 @@ const ${pred}_members = new Set();
 ${emitters.publicFunction(pred)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
-  this._inproducts = ${pred.edb ? `IMM_EMPTY_COLLECTION` : `new Set()`};
+  this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
   this._outproducts = new Set();
   this._outproductsgb = new Set();
 }
@@ -156,10 +157,24 @@ const NOT_${pred}_members = new Set();
 function NOT_${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}  
+  this._inproducts = new Set(); // TODO: invariant: no inproducts?
   this._outproducts = new Set();
 }        
 NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${termFields.join(', ')})};  
 NOT_${pred}.prototype._remove = function () {NOT_${pred}_members.delete(this)};
+
+function get_NOT_${pred}(${tn.join(', ')})
+{
+  for (const member of NOT_${pred}_members)
+  {
+    if (${termEqualities.join(' && ')})
+    {
+      return member;
+    }
+  }
+  return null;
+}
+
 
 function get_or_create_NOT_${pred}(${tn.join(', ')})
 {
@@ -813,32 +828,6 @@ function termToString(x)
   return String(x); // ???
 }
 
-function stratumLogic(stratum)
-{
-  const sb = [];
-  if (stratum.recursiveRules.size === 0 && stratum.nonRecursiveRules.size === 0)
-  {
-    assertTrue(stratum.preds.length === 1);
-    const pred = stratum.preds[0];
-    assertTrue(pred.edb);
-    return `const ${pred}_tuples = delta_add_${pred}_tuples(edbTuplesMap.get(${pred}) || new Set());`;
-  }
-
-  const tupleIntroductions = stratum.preds.map(pred => `const ${pred}_tuples = new Set();`);
-  sb.push(tupleIntroductions.join('\n    '));
-
-  const nonRecursiveRules = [...stratum.nonRecursiveRules].map(emitNonRecursiveRule);
-  sb.push(nonRecursiveRules.join('\n    '));
-
-  if (stratum.recursiveRules.size > 0)
-  {
-    const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], new Set(stratum.preds.map(pred => pred.name)));
-    sb.push(recursiveRules);
-  }
-
-  return sb.join('\n');
-}
-
 
 function emitDeltaAddTuple(pred)
 {
@@ -865,6 +854,68 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
 function emitAddTuples(strata, emitters) 
 {
 
+  function stratumLogic(stratum)
+  {
+    const sb = [];
+  
+    function removeLoop(pred)
+    {
+      const tn = termNames(pred);
+      const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);
+  
+      return `
+      for (const added_${pred}_tuple of ${pred}_tuples)
+      {
+        const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
+        if (NOT_${pred}_tuple !== null)
+        {
+          tuples_to_remove.push(NOT_${pred}_tuple);
+        }
+      }`;
+    }
+  
+    if (stratum.negDependsOn.size > 0)
+    {
+      const removeLoops = [...stratum.negDependsOn].map(removeLoop);
+  
+      sb.push(`
+    // neg deps: ${[...stratum.negDependsOn].join()}
+    
+    // idb tuple removal due to addition of edb tuples with neg deps
+    const tuples_to_remove = [];
+    ${removeLoops.join('\n')}
+  
+    ${emitters.logDebug('"* add_tuple_map: remove " + tuples_to_remove.join()')}
+    if (tuples_to_remove.length > 0)
+    {
+      remove_tuples(tuples_to_remove);
+    }
+      `);
+    }
+  
+    if (stratum.recursiveRules.size === 0 && stratum.nonRecursiveRules.size === 0)
+    {
+      assertTrue(stratum.preds.length === 1);
+      const pred = stratum.preds[0];
+      assertTrue(pred.edb);
+      return `const ${pred}_tuples = delta_add_${pred}_tuples(edbTuplesMap.get(${pred}) || new Set());`;
+    }
+  
+    const tupleIntroductions = stratum.preds.map(pred => `const ${pred}_tuples = new Set();`);
+    sb.push(tupleIntroductions.join('\n    '));
+  
+    const nonRecursiveRules = [...stratum.nonRecursiveRules].map(emitNonRecursiveRule);
+    sb.push(nonRecursiveRules.join('\n    '));
+  
+    if (stratum.recursiveRules.size > 0)
+    {
+      const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], new Set(stratum.preds.map(pred => pred.name)));
+      sb.push(recursiveRules);
+    }
+  
+    return sb.join('\n');
+  }
+  
   const strataLogic = strata.map(stratum => {
 
     return `
@@ -881,53 +932,163 @@ function emitAddTuples(strata, emitters)
 ${emitters.publicFunction('add_tuple_map')}(edbTuples)
 {
   const edbTuplesMap = new Map(edbTuples);
+  ${emitters.logDebug('"add_tuple_map " + [...edbTuplesMap.values()]')}
   ${strataLogic.join('\n')}
   return null; 
 }
   `;
 }
 
+function emitPutBackTuples(strata, emitters)
+{
+
+  function stratumLogic(stratum)
+  {
+    for (const [pred, negDeps] of stratum.pred2negDeps)
+    {
+      for (const {rule, i} of negDeps)
+      {
+        return `
+        // pred: ${pred}
+        // rule: ${rule}
+        // atom pos: ${i} 
+  
+        const Rule${rule._id}_tuples${i} = Rule${rule._id}.fire(${i}, tuples.get(${pred}));
+        MutableSets.addAll(addedTuples, Rule${rule._id}_tuples${i});
+        `  
+      }
+    }
+  }
+
+  const strataLogic = strata.map(stratum => {
+
+    return `
+    // stratum ${stratum.id}
+    // neg deps: ${[...stratum.pred2negDeps.keys()].join()}
+
+    ${stratumLogic(stratum)}
+  `;
+  });
+
+  return `
+function put_back_tuple_map(tuples)
+{
+  const tuplesMap = new Map(tuples);
+  ${emitters.logDebug('"put_back_tuple_map " + [...tuplesMap.values()]')}
+  const addedTuples = new Set();
+  ${strataLogic.join('\n')}
+  ${emitters.logDebug('"* put_back_tuple_map: add_tuples " + [...addedTuples].join()')}
+  if (addedTuples.size > 0)
+  {
+    return add_tuple_map(toTupleMap(addedTuples)); // TODO should be tupleMap 
+  }
+} // put_back
+  `;  
+}
+
 function emitRemoveTuples(emitters)
 {
   return `
+
 // only forward (so, in essence, only edb tuples supported) 
 ${emitters.publicFunction('remove_tuples')}(tuples)
 {
-  ${emitters.debug('"remove_tuples " + tuples')}
+  ${emitters.logDebug('"remove_tuples " + tuples')}
 
-  const wl = [...tuples];
+  const wl = [...tuples]; // TODO: because this is not a set, same tuples can be scheduled multiple times
 
   function removeProduct(product)
   {
-    ${emitters.debug('"remove product " + product')}
+    ${emitters.logDebug('"remove product " + product')}
 
     for (const intuple of product.tuples)
     {
       intuple._outproducts.delete(product);
-      ${emitters.debug('"deleted outproduct " + product + " in " + intuple')}
+      ${emitters.logDebug('"deleted " + intuple + " --> " + product')}
       // remember: it's not because a tuple's outproducts is empty,
       // that it cannot in the future play a role in other products 
     }
     const outtuple = product._outtuple;
     outtuple._inproducts.delete(product);
-    ${emitters.debug('"deleted inproduct " + product + " in " + outtuple + ", leaving " + outtuple._inproducts.size + " inproducts"')}
+    ${emitters.logDebug('"deleted " + product + " --> " + outtuple + " (leaving " + outtuple._inproducts.size + " inproducts)"')}
     if (outtuple._inproducts.size === 0)
     {
-      ${emitters.debug('outtuple + " has no more inproducts, will be deleted"')}
+      ${emitters.logDebug('"scheduled for removal: " + outtuple')}
       wl.push(outtuple);
+    }
+    else
+    {
+      ${emitters.logDebug('"grounded? " + outtuple')}
+      checkGrounded(outtuple);
+      // TODO: check for recursive pred/rule (only then a cycle is poss?)
     }
     // product._outtuple = null;
   }
 
+  function checkGrounded(tuple)
+  {
+    const seen = new Set();
+
+    function groundedTuple(tuple)
+    {
+      if (tuple._inproducts.size === 0)
+      {
+        return true;
+      }
+      if (seen.has(tuple))
+      {
+        return false;
+      }
+      seen.add(tuple);
+      for (const inproduct of tuple._inproducts)
+      {
+        if (groundedProduct(inproduct))
+        {
+          return true;
+        }
+      }  
+      ${emitters.logDebug('"no grounded products, not grounded, scheduled for removal: " + tuple')}
+      wl.push(tuple);
+      return false;
+    }
+
+    function groundedProduct(product)
+    {
+      for (const tuple of product.tuples)
+      {
+        if (!groundedTuple(tuple))
+        {
+          // TODO: immediately remove product here?
+          return false;
+        }
+      }
+      return true;
+    }
+
+    groundedTuple(tuple);
+  }
+
+  const removedTuples = new Set();
   while (wl.length > 0)
   {
     const tuple = wl.pop();
-    ${emitters.debug('"remove tuple " + tuple')}
+    if (removedTuples.has(tuple))
+    {
+      continue;
+    }
+    removedTuples.add(tuple);
+    ${emitters.logDebug('"==\\nremove tuple " + tuple')}
     tuple._remove();
     for (const product of tuple._outproducts)
     {
       removeProduct(product);     
     }
+  }
+
+  ${emitters.logDebug('"* remove_tuples: put back " + [...removedTuples].join()')}
+  if (removedTuples.size > 0)
+  {
+    put_back_tuple_map(toTupleMap(removedTuples));
   }
 }`;
 }
@@ -936,7 +1097,7 @@ function emitFirst(emitters)
 {
   return `
 
-const IMM_EMPTY_COLLECTION = Object.freeze([]);
+//const IMM_EMPTY_COLLECTION = Object.freeze([]);
 
 const MutableSets =
 {
@@ -961,23 +1122,23 @@ Product.prototype.toString =
   {
     return this.rule.name + ":" + [...this.tuples].join('.');
   }
-Product.prototype.equals =
-  function (x)
-  {
-    if (this.rule !== x.rule
-      || this.tuples.length !== x.tuples.length)
-    {
-      return false;
-    }
-    for (let i = 0; i < this.tuples.length; i++)
-    {
-      if (this.tuples[i] !== x.tuples[i])
-      {
-        return false;
-      }
-    }
-    return true;
-  }
+// Product.prototype.equals =
+//   function (x)
+//   {
+//     if (this.rule !== x.rule
+//       || this.tuples.length !== x.tuples.length)
+//     {
+//       return false;
+//     }
+//     for (let i = 0; i < this.tuples.length; i++)
+//     {
+//       if (this.tuples[i] !== x.tuples[i])
+//       {
+//         return false;
+//       }
+//     }
+//     return true;
+//   }
 
 function ProductGB(rule, tuples, value)
 {

@@ -1,4 +1,4 @@
-import { assertTrue } from './common.mjs';
+import { assertTrue, MutableSets, MutableMaps } from './common.mjs';
 import { Sym, Tuple, Pair, Keyword } from './parser.mjs';
 
 export class Lit
@@ -91,11 +91,6 @@ export class Rule
   aggregates()
   {
     return this.head.terms[this.head.terms.length - 1] instanceof Agg;
-  }
-
-  bodyAtoms()
-  {
-    return this.body.filter(term => term instanceof Atom);
   }
 
   toString()
@@ -368,42 +363,74 @@ function collect(program)
   return { name2pred };
 }
 
-function Stratum(id, preds)
+class Stratum
 {
-  this.id = id;
-  this.preds = preds;
-  this.dependsOnPreds = new Set();
-  this.nonRecursiveRules = new Set();
-  this.recursiveRules = new Set();
-}
+  constructor(id, preds)
+  {
+    this.id = id;
+    this.preds = preds;
+    this.nonRecursiveRules = new Set();    
+    this.recursiveRules = new Set();
 
-Stratum.prototype.toString =
-  function ()
+    // pred -> [{rule, atompos}]
+    this.pred2negDeps = new Map();
+
+    this.posDependsOn = new Set(); // derived from this.preds
+    this.negDependsOn = new Set(); // derived from this.preds
+  }
+  toString()
   {
     return `{stratum id:${this.id} preds:${this.preds.join(",")}}`;
   }
+}
+
 
 function makeStratum(name2pred)
 {
+
+  function isStratumRecursiveRule(rule, scPreds)
+  {
+    for (const atom of rule.body)
+    {
+      if (atom instanceof Atom) // only pos deps can result in recursive rule
+      {
+        const bodyPred = name2pred.get(atom.pred);
+        if (scPreds.includes(bodyPred))
+        {
+          return true;
+        }  
+      }
+    }
+    return false;
+  }
+
   return function (scPreds, id)
   {
     const stratum = new Stratum(id, scPreds);
     for (const pred of scPreds)
     {
       pred.stratum = stratum;
-      outer: for (const rule of pred.rules)
+      MutableSets.addAll(stratum.posDependsOn, pred.posDependsOn);
+      MutableSets.addAll(stratum.negDependsOn, pred.negDependsOn);
+      for (const rule of pred.rules)
       {
-        for (const atom of rule.bodyAtoms())
+        if (isStratumRecursiveRule(rule, scPreds))
         {
-          const bodyPred = name2pred.get(atom.pred);
-          stratum.dependsOnPreds.add(bodyPred);
-          if (scPreds.includes(bodyPred))
+          stratum.recursiveRules.add(rule);
+        }
+        else
+        {
+          stratum.nonRecursiveRules.add(rule);
+        }
+
+        for (let i = 0; i < rule.body.length; i++)
+        {
+          const b = rule.body[i];
+          if (b instanceof Neg)
           {
-            stratum.recursiveRules.add(rule);
-            continue outer;
+            MutableMaps.putPushArray(stratum.pred2negDeps, b.atom.pred, {rule, i});
           }
         }
-        stratum.nonRecursiveRules.add(rule);
       }
     }
     return stratum;
