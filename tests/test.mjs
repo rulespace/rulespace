@@ -1,6 +1,7 @@
-import { assertTrue, Sets } from './common.mjs';
+import { performance } from 'perf_hooks';
+import { assertTrue, Sets } from '../common.mjs';
 import { compileToConstructor, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './test-common.mjs';
-import { toDot, sanityCheck } from './schemelog-common.mjs';
+import { toDot, sanityCheck } from '../schemelog-common.mjs';
 
 function permutations(s)
 {
@@ -131,6 +132,8 @@ function testRemoveEdb(src, edbTuplesSrc)
     }
   }
 }
+
+const start = performance.now();
 
 const example1 = `
 (define [Reachable x y]
@@ -346,4 +349,4 @@ testIncrementalAdd(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
 
 testRemoveEdb(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
 
-console.log("done");
+console.log("done: " + (performance.now() - start) + "ms");

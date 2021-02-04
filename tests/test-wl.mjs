@@ -1,5 +1,5 @@
 import { performance } from 'perf_hooks';
-import { assertTrue, Sets } from './common.mjs';
+import { assertTrue, Sets } from '../common.mjs';
 import { compileToConstructor, Unique, toModuleTuple, toModuleTupleFor } from './test-common.mjs';
 
 
@@ -26,6 +26,17 @@ class RemoveTuple
   constructor(tuple)
   {
     this.tuple = tuple;
+  }
+
+  applyToModule(module)
+  {
+    const mTuple = toModuleTuple(module, this.tuple);
+    module.remove_tuples([mTuple]);
+  }
+
+  applyToSet(set)
+  {
+    set.delete(this.tuple);
   }
 }
 

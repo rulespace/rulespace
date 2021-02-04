@@ -1,7 +1,7 @@
 import fs from 'fs';
-import { assertTrue } from './common.mjs';
-import { SchemeParser,  } from './parser.mjs';
-import { analyzeProgram } from './analyzer.mjs';
+import { assertTrue } from '../common.mjs';
+import { SchemeParser,  } from '../parser.mjs';
+import { analyzeProgram } from '../analyzer.mjs';
 
 const file = fs.readFileSync('example5.sl', 'utf8');
 const parser = new SchemeParser();

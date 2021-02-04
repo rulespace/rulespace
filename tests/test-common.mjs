@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { SchemeParser, Pair  } from './parser.mjs';
-import { compile } from './compiler.mjs';
+import { SchemeParser, Pair  } from '../parser.mjs';
+import { compile } from '../compiler.mjs';
 
 export function compileToConstructor(src, options)
 {

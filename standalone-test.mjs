@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { compileToModule, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './test-common.mjs';
+import { compileToModule, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './tests/test-common.mjs';
 import { assertTrue, Sets } from './common.mjs';
 import { toDot } from './schemelog-common.mjs';
 

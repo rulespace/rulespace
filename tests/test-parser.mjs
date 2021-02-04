@@ -1,4 +1,4 @@
-import {SchemeParser, Pair } from './parser.mjs';
+import {SchemeParser, Pair } from '../parser.mjs';
 
 const parser = new SchemeParser();
 
