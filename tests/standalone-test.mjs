@@ -1,7 +1,7 @@
 import fs from 'fs';
-import { compileToModule, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './tests/test-common.mjs';
-import { assertTrue, Sets } from './common.mjs';
-import { toDot } from './schemelog-common.mjs';
+import { assertTrue, Sets } from '../common.mjs';
+import { toDot } from '../schemelog-common.mjs';
+import { compileToModule, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './test-common.mjs';
 
 const src =
 `
@@ -27,7 +27,7 @@ compileToModule(src, 'standalone', {debug:true}).then(module => {
 const edbTuples = parseTuples(`[Link "a" "b"] [Link "b" "c"] [Link "c" "b"] [Link "c" "c"] [Link "c" "d"]`);
 module.add_tuples(edbTuples.map(toModuleTupleFor(module)));
 module.remove_tuples(parseTuples(`[Link "c" "c"] [Link "c" "d"] [Link "b" "c"]`).map(toModuleTupleFor(module)).map(t => t.get()));
-console.log(toDot(module.edbTuples()));
+// console.log(toDot(module.edbTuples()));
 console.log("tuples: " + [...module.tuples()]);
 })
 

@@ -75,7 +75,7 @@ export function compile(src, options={})
       }
       else
       {
-        sb.push(emitRuleObject(rule));
+        sb.push(emitRuleObject(rule, emitters));
       }
     }
   }
@@ -396,7 +396,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
 }
 
 // (Reachable x y) :- (Reachable x z) (Link z y)
-function emitRuleObject(rule)
+function emitRuleObject(rule, emitters)
 {
   const ruleName = "Rule" + rule._id;
   const compileEnv = new Set();
@@ -413,10 +413,14 @@ const ${ruleName} =
 
   fire(deltaPos, deltaTuples) // TODO: make this fire_xxx function
   {
+    ${emitters.logDebug(`"fire ${rule}"`)}
+    ${emitters.logDebug('`deltaPos ${deltaPos}`')}
+    ${emitters.logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
     const newTuples = new Set();
 
     ${compileRuleFireBody(ruleName, rule.head, rule.body, 0, compileEnv, [])}
 
+    ${emitters.logDebug('`=> newTuples ${[...newTuples].join()}`')}
     return newTuples;
   }
 } // end ${ruleName}
@@ -856,7 +860,7 @@ function emitAddTuples(strata, emitters)
 
   function stratumLogic(stratum)
   {
-    const sb = [];
+    const sb = [`${emitters.logDebug(`"\\n=======\\nstratum ${stratum}"`)}`];
   
     function removeLoop(pred)
     {
@@ -1110,35 +1114,60 @@ const MutableSets =
   }
 }
 
+const Sets = 
+{
+  equals(x, y)
+  {
+    if (x === y)
+    {
+      return true;
+    }
+    if (x.size !== y.size)
+    {
+      return false;
+    }
+    for (const xvalue of x)
+    {
+      if (!y.has(xvalue))
+      {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
 function Product(rule, tuples)
 {
   this.rule = rule;
   this.tuples = tuples;
   this._outtuple = null;
-  // console.log("product created: " + this);
+  // for (const existingP of products)
+  // {
+  //   if (existingP.equals(this))
+  //   {
+  //     console.log("existing product created: " + this);
+  //     return this;
+  //   }
+  // }
+  // console.log("fresh product created: " + this);
+  // products.push(this);
+  // return this;
 }
 Product.prototype.toString =
   function ()
   {
     return this.rule.name + ":" + [...this.tuples].join('.');
   }
-// Product.prototype.equals =
-//   function (x)
-//   {
-//     if (this.rule !== x.rule
-//       || this.tuples.length !== x.tuples.length)
-//     {
-//       return false;
-//     }
-//     for (let i = 0; i < this.tuples.length; i++)
-//     {
-//       if (this.tuples[i] !== x.tuples[i])
-//       {
-//         return false;
-//       }
-//     }
-//     return true;
-//   }
+Product.prototype.equals =
+  function (x)
+  {
+    if (this.rule !== x.rule)
+    {
+      return false;
+    }
+    return Sets.equals(this.tuples, x.tuples);
+  }
 
 function ProductGB(rule, tuples, value)
 {

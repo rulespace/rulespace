@@ -12,7 +12,7 @@ export function compileToModule(src, name, options)
 {
   name === undefined ? 'run' : name;
   const compiled = compile(src, {...options, module:true});
-  fs.writeFileSync(`compiled/${name}.mjs`, compiled, 'utf8');
+  fs.writeFileSync(`./compiled/${name}.mjs`, compiled, 'utf8');
   return import(`./compiled/${name}.mjs`);
 }
 
