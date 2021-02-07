@@ -1,4 +1,4 @@
-import { assertTrue } from './common.mjs';
+import { Sets, assertTrue } from './common.mjs';
 import { SchemeParser  } from './parser.mjs';
 import { analyzeProgram, Atom, Var, Lit, Neg, Agg } from './analyzer.mjs';
 
@@ -716,29 +716,61 @@ function compileTerm(term)
 }
 
 
-function emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred)
+// function emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred)
+// {
+
+//   if (atom instanceof Atom)
+//   {
+//     const pred = atom.pred;
+//     return [`
+//       // atom ${i} ${atom}
+//       const ${ruleName}_tuples${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
+//       MutableSets.addAll(${producesPred}_tuples, ${ruleName}_tuples${i});
+//     `];
+//   }
+//   return [];
+// }
+
+// function emitNonRecursiveRule(rule)
+// {
+//   const ruleName = "Rule" + rule._id;
+//   const producesPred = rule.head.pred;
+//   const atoms = rule.body.flatMap((atom, i) => emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred));
+
+//   return `
+//     /* ${ruleName} [nonRecursive]
+// ${rule}
+//     */
+//     ${atoms.join('\n    ')}
+//   `;
+// }
+
+function emitEdbAtom(atom, i, ruleName, producesPred, stratum)
 {
 
   if (atom instanceof Atom)
   {
     const pred = atom.pred;
-    return [`
-      // atom ${i} ${atom}
+    if (!stratum.isStratumPredName(atom.pred)) // non-stratum = edb, because of toposort
+    {
+      return [`
+      // atom ${i} ${atom} (edb)
       const ${ruleName}_tuples${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
       MutableSets.addAll(${producesPred}_tuples, ${ruleName}_tuples${i});
     `];
+    }
   }
   return [];
 }
 
-function emitNonRecursiveRule(rule)
+function emitDeltaEdbForRule(rule, stratum)
 {
   const ruleName = "Rule" + rule._id;
   const producesPred = rule.head.pred;
-  const atoms = rule.body.flatMap((atom, i) => emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred));
+  const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, ruleName, producesPred, stratum));
 
   return `
-    /* ${ruleName} [nonRecursive]
+    /* ${ruleName}
 ${rule}
     */
     ${atoms.join('\n    ')}
@@ -764,12 +796,13 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
     }
     else
     {
-      return [`
-        // atom ${i} ${atom} (non-recursive)
-        const ${producesPred}_tuples_${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
-        MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
-        MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
-      `];        
+      return [];
+      // return [`
+      //   // // atom ${i} ${atom} (non-recursive)
+      //   // const ${producesPred}_tuples_${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
+      //   // MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
+      //   // MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
+      // `];        
     }
   }
   return [];
@@ -907,10 +940,18 @@ function emitAddTuples(strata, emitters)
   
     const tupleIntroductions = stratum.preds.map(pred => `const ${pred}_tuples = new Set();`);
     sb.push(tupleIntroductions.join('\n    '));
+
+
+     sb.push(`// firing with delta edb tuples`); 
+    for (const rule of Sets.union(stratum.nonRecursiveRules, stratum.recursiveRules))
+    {
+      sb.push(emitDeltaEdbForRule(rule, stratum));
+    }
   
-    const nonRecursiveRules = [...stratum.nonRecursiveRules].map(emitNonRecursiveRule);
-    sb.push(nonRecursiveRules.join('\n    '));
+    // const nonRecursiveRules = [...stratum.nonRecursiveRules].map(emitNonRecursiveRule);
+    // sb.push(nonRecursiveRules.join('\n    '));
   
+    sb.push(`// firing with recursive delta idb tuples`); 
     if (stratum.recursiveRules.size > 0)
     {
       const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], new Set(stratum.preds.map(pred => pred.name)));

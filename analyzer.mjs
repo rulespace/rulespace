@@ -378,6 +378,17 @@ class Stratum
     this.posDependsOn = new Set(); // derived from this.preds
     this.negDependsOn = new Set(); // derived from this.preds
   }
+  isStratumPredName(predName)
+  {
+    for (const pred of this.preds)
+    {
+      if (pred.name === predName)
+      {
+        return true;
+      }
+    }
+    return false;
+  }
   toString()
   {
     return `{stratum id:${this.id} preds:${this.preds.join(",")}}`;

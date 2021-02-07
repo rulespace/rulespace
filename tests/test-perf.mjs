@@ -26,7 +26,7 @@ console.log("test id: " + TEST_ID);
 performTest(lrnu100);
 performTest(lrnunegaddrem);
 
-// performTest(lrnu1000);
+performTest(lrnu1000);
 
 function zeroPad(n)
 {
