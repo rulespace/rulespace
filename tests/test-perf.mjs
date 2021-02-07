@@ -19,14 +19,16 @@ const TEST_TIME_STRING = zeroPad(TEST_DATE.getHours()) + zeroPad(TEST_DATE.getMi
 import { wl as lrnu100 } from './wl-lrnu100.mjs';
 import { wl as lrnu1000 } from './wl-lrnu1000.mjs';
 import { wl as lrnunegaddrem } from './wl-lrnunegaddrem.mjs';
+import { wl as lrnu500 } from './wl-lrnu500.mjs';
 
 const COMMENT = '';
 
 console.log("test id: " + TEST_ID);
-performTest(lrnu100);
 performTest(lrnunegaddrem);
+performTest(lrnu100);
+performTest(lrnu500);
 
-performTest(lrnu1000);
+//performTest(lrnu1000);
 
 function zeroPad(n)
 {
