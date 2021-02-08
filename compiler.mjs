@@ -157,7 +157,7 @@ export function compile(src, options={})
         }
         else
         {
-          sb.push(emitRuleObject(rule));
+          sb.push(emitRule(rule));
         }
       }
     }
@@ -375,7 +375,7 @@ function emitAssertTrue(condition)
   return `assertTrue(${condition})`;
 }
 
-function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
+function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
 {
   if (i === body.length)
   {
@@ -390,14 +390,14 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       {
         const new_${pred}_tuple = add_get_${pred}(${head.terms.join(', ')});
         newTuples.add(new_${pred}_tuple);
-        const product = new Product(${ruleName}, ptuples);
+        const product = new Product(${rule._id}, ptuples);
         ${t2ps.join('\n        ')}
         product._outtuple = new_${pred}_tuple;
         new_${pred}_tuple._inproducts.add(product);
       }
       else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
       {
-        const product = new Product(${ruleName}, ptuples);
+        const product = new Product(${rule._id}, ptuples);
         ${t2ps.join('\n        ')}
         product._outtuple = existing_${pred}_tuple;
         existing_${pred}_tuple._inproducts.add(product);
@@ -445,7 +445,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         ${bindUnboundVars.join('\n        ')}
-        ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+        ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
       }
       `;  
     }
@@ -458,7 +458,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
         if (${conditions.join(' && ')})
         {
           ${bindUnboundVars.join('\n       ')}
-          ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+          ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
         }
       }
       `;  
@@ -502,7 +502,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       continue;
     }
     const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.join(', ')});
-    ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+    ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
     `;  
   }// Neg
 
@@ -523,7 +523,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       // assign ${atom}
       const ${left} = ${right};
 
-      ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+      ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
     `;
   }
 
@@ -531,47 +531,39 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
 }
 
 // (Reachable x y) :- (Reachable x z) (Link z y)
-function emitRuleObject(rule)
+function emitRule(rule)
 {
-  const ruleName = "Rule" + rule._id;
   const compileEnv = new Set();
 
   return `
 /* rule [no aggregates] 
 ${rule} 
 */
-// const ${ruleName}_products = new Set();
 
-const ${ruleName} =
+function fireRule${rule._id}(deltaPos, deltaTuples)
 {
-  name : '${ruleName}',
+  ${emitters.logDebug(`"fire ${rule}"`)}
+  ${emitters.logDebug('`deltaPos ${deltaPos}`')}
+  ${emitters.logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
 
-  fire(deltaPos, deltaTuples) // TODO: make this fire_xxx function
-  {
-    ${emitters.logDebug(`"fire ${rule}"`)}
-    ${emitters.logDebug('`deltaPos ${deltaPos}`')}
-    ${emitters.logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
+  ${emitters.profileStart(`fireRule${rule._id}`)}
 
-    ${emitters.profileStart(`fire${ruleName}`)}
+  const newTuples = new Set();
 
-    const newTuples = new Set();
+  ${compileRuleFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
 
-    ${compileRuleFireBody(ruleName, rule.head, rule.body, 0, compileEnv, [])}
+  ${emitters.profileEnd(`fireRule${rule._id}`)}
 
-    ${emitters.profileEnd(`fire${ruleName}`)}
+  ${emitters.logDebug('`=> newTuples ${[...newTuples].join()}`')}
 
-    ${emitters.logDebug('`=> newTuples ${[...newTuples].join()}`')}
-
-    return newTuples;
-  }
-} // end ${ruleName}
-
+  return newTuples;
+} // end fireRule${rule._id}
   `;
 }
 
 
 
-function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
+function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
 {
   if (i === body.length)
   {
@@ -582,8 +574,8 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
     return `
       // updates for ${head}
       const ptuples = new Set([${ptuples.join()}]);
-      const productGB = new ProductGB(${ruleName}, ptuples, ${aggregand});
-      const groupby = add_get_${ruleName}GB(${gb.join()});
+      const productGB = new ProductGB(${rule._id}, ptuples, ${aggregand});
+      const groupby = add_get_Rule${rule._id}GB(${gb.join()}); // TODO!!!!
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -649,7 +641,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         ${bindUnboundVars.join('\n        ')}
-        ${compileRuleGBFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+        ${compileRuleGBFireBody(rule, head, body, i+1, compileEnv, ptuples)}
       }
       `;  
     }
@@ -662,7 +654,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
         if (${conditions.join('&&')})
         {
           ${bindUnboundVars.join('\n        ')}
-          ${compileRuleGBFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+          ${compileRuleGBFireBody(rule, head, body, i+1, compileEnv, ptuples)}
         }
       }
       `;  
@@ -685,7 +677,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
       // assign ${atom}
       const ${left} = ${right};
 
-      ${compileRuleGBFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+      ${compileRuleGBFireBody(rule, head, body, i+1, compileEnv, ptuples)}
     `;
   }
 
@@ -696,7 +688,6 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
 function emitRuleGBObject(rule)
 {
   const pred = rule.head.pred;
-  const ruleName = "Rule" + rule._id;
   const compileEnv = new Set();
   const gbNames = Array.from(Array(rule.head.terms.length - 1), (_, i) => "groupby.t"+i);
   const aggregandName ="t" + (rule.head.terms.length - 1);
@@ -727,45 +718,40 @@ function emitRuleGBObject(rule)
     throw new Error("No update operation for aggregator: " + aggregator)
   }
 
-  const GBclass = emitRuleGBClass(rule, ruleName);
+  const GBclass = emitRuleGBClass(rule);
 
   return `
 /* rule [aggregates] 
 ${rule} 
 */
-const ${ruleName} =
+function fireRule${rule._id}(deltaPos, deltaTuples)
 {
-  name : '${ruleName}',
+  const newTuples = new Set();
+  const updates = new Map(); // groupby -> additionalValues
 
-  fire(deltaPos, deltaTuples)
+  ${compileRuleGBFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
+  
+  // bind head ${rule.head}
+  for (const [groupby, additionalValues] of updates)
   {
-    const newTuples = new Set();
-    const updates = new Map(); // groupby -> additionalValues
-
-    ${compileRuleGBFireBody(ruleName, rule.head, rule.body, 0, compileEnv, [])}
-    
-    // bind head ${rule.head}
-    for (const [groupby, additionalValues] of updates)
+    const currentResultTuple = groupby._outtuple;
+    const updatedValue = ${updateOperation};
+    const updatedResultTuple = add_get_${pred}(${gbNames.join()}, updatedValue);  
+    if (groupby._outtuple !== updatedResultTuple)
     {
-      const currentResultTuple = groupby._outtuple;
-      const updatedValue = ${updateOperation};
-      const updatedResultTuple = add_get_${pred}(${gbNames.join()}, updatedValue);  
-      if (groupby._outtuple !== updatedResultTuple)
-      {
-        groupby._outtuple = updatedResultTuple;
-        newTuples.add(updatedResultTuple);
-      }
+      groupby._outtuple = updatedResultTuple;
+      newTuples.add(updatedResultTuple);
     }
-    return newTuples;
   }
-} // end ${ruleName}
+  return newTuples;
+} // end fireRule${rule._id}
 
 ${GBclass}
 
   `;
 }
 
-function emitRuleGBClass(rule, ruleName)
+function emitRuleGBClass(rule)
 {
   const numGbTerms = rule.head.terms.length - 1;
   const tn = Array.from(Array(numGbTerms), (_, i) => "t" + i);
@@ -774,26 +760,26 @@ function emitRuleGBClass(rule, ruleName)
   const termToStrings = tn.map(t => `this.${t}`);
   const aggTerm = rule.head.terms[rule.head.terms.length - 1];
   return `
-const ${ruleName}GB_members = new Set();
-function ${ruleName}GB(${tn.join(', ')})
+const Rule${rule._id}GB_members = new Set();
+function Rule${rule._id}GB(${tn.join(', ')})
 {
   ${termAssignments.join('; ')};
   this._outtuple = null;
 }
-${ruleName}GB.prototype.toString = function () { return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"})) };
-${ruleName}GB.prototype.rule = function () { return ${ruleName}};
+Rule${rule._id}GB.prototype.toString = function () { return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"})) };
+Rule${rule._id}GB.prototype.rule = function () { return 'Rule${rule._id}'};
 
-function add_get_${ruleName}GB(${tn.join(', ')})
+function add_get_Rule${rule._id}GB(${tn.join(', ')})
 {
-  for (const member of ${ruleName}GB_members)
+  for (const member of Rule${rule._id}GB_members)
   {
     if (${termEqualities.join(' && ')})
     {
       return member;
     }
   }
-  const gb = new ${ruleName}GB(${tn.join(', ')});
-  ${ruleName}GB_members.add(gb);
+  const gb = new Rule${rule._id}GB(${tn.join(', ')});
+  Rule${rule._id}GB_members.add(gb);
   return gb;
 }
   `;
@@ -804,7 +790,6 @@ function emitIterators(preds, edbPreds, rules)
   const tupleYielders = preds.map(pred => `yield* select_${pred}();`);
   const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}();`);
   const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
-  const ruleNames = rules.map(rule => `Rule${rule._id}`);
 
   return `
 // from membership
@@ -823,11 +808,7 @@ ${emitters.publicFunctionStar('edbTuples')}()
      ${gbYielders.join('\n  ')}
 // }  
 
-// function rules()
-// {
-//   return [${ruleNames.join(', ')}];
-// }
-  `;
+`;
 }
 
 function emitClear(edbPreds)
@@ -855,37 +836,7 @@ function compileTerm(term)
   throw new Error("compile term error: " + term);
 }
 
-
-// function emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred)
-// {
-
-//   if (atom instanceof Atom)
-//   {
-//     const pred = atom.pred;
-//     return [`
-//       // atom ${i} ${atom}
-//       const ${ruleName}_tuples${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
-//       MutableSets.addAll(${producesPred}_tuples, ${ruleName}_tuples${i});
-//     `];
-//   }
-//   return [];
-// }
-
-// function emitNonRecursiveRule(rule)
-// {
-//   const ruleName = "Rule" + rule._id;
-//   const producesPred = rule.head.pred;
-//   const atoms = rule.body.flatMap((atom, i) => emitNonRecursiveRuleAtom(atom, i, ruleName, producesPred));
-
-//   return `
-//     /* ${ruleName} [nonRecursive]
-// ${rule}
-//     */
-//     ${atoms.join('\n    ')}
-//   `;
-// }
-
-function emitEdbAtom(atom, i, ruleName, producesPred, stratum)
+function emitEdbAtom(atom, i, rule, producesPred, stratum)
 {
 
   if (atom instanceof Atom)
@@ -895,8 +846,8 @@ function emitEdbAtom(atom, i, ruleName, producesPred, stratum)
     {
       return [`
       // atom ${i} ${atom} (edb)
-      const ${ruleName}_tuples${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
-      MutableSets.addAll(${producesPred}_tuples, ${ruleName}_tuples${i});
+      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, ${pred}_tuples);
+      MutableSets.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});
     `];
     }
   }
@@ -905,19 +856,18 @@ function emitEdbAtom(atom, i, ruleName, producesPred, stratum)
 
 function emitDeltaEdbForRule(rule, stratum)
 {
-  const ruleName = "Rule" + rule._id;
   const producesPred = rule.head.pred;
-  const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, ruleName, producesPred, stratum));
+  const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, rule, producesPred, stratum));
 
   return `
-    /* ${ruleName}
+    /* Rule${rule._id}
 ${rule}
     */
     ${atoms.join('\n    ')}
   `;
 }
 
-function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
+function emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred)
 {
   if (atom instanceof Atom)
   {
@@ -928,7 +878,7 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
         // atom ${i} ${atom} (recursive)
         //if (local_${pred}.size > 0)
         //{
-          const ${producesPred}_tuples_${i} = ${ruleName}.fire(${i}, local_${pred});
+          const ${producesPred}_tuples_${i} = fireRule${rule._id}(${i}, local_${pred});
           MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
           MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
         //}    
@@ -937,12 +887,6 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
     else
     {
       return [];
-      // return [`
-      //   // // atom ${i} ${atom} (non-recursive)
-      //   // const ${producesPred}_tuples_${i} = ${ruleName}.fire(${i}, ${pred}_tuples);
-      //   // MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
-      //   // MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
-      // `];        
     }
   }
   return [];
@@ -950,11 +894,10 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred)
 
 function emitRecursiveRule(rule, recursivePreds)
 {
-  const ruleName = "Rule" + rule._id;
   const producesPred = rule.head.pred;
-  const atoms = rule.body.flatMap((atom, i) => emitRecursiveRuleAtom(atom, i, recursivePreds, ruleName, producesPred));
+  const atoms = rule.body.flatMap((atom, i) => emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred));
   return `
-    /* ${ruleName} [recursive]
+    /* Rule${rule._id} [recursive]
 ${rule}
     */
     ${atoms.join('\n    ')}
@@ -1143,7 +1086,7 @@ function emitPutBackTuples(strata)
         // rule: ${rule}
         // atom pos: ${i} 
   
-        const Rule${rule._id}_tuples${i} = Rule${rule._id}.fire(${i}, tuples.get(${pred}));
+        const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, tuples.get(${pred}));
         MutableSets.addAll(addedTuples, Rule${rule._id}_tuples${i});
         `  
       }

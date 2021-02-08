@@ -16,8 +16,9 @@ const FILE_NAME = PERF_LOG_FILE_PREFIX + HOST_NAME + TEST_YEAR + TEST_MONTH + PE
 const TEST_DATE_STRING = TEST_YEAR + TEST_MONTH + zeroPad(TEST_DATE.getDate());
 const TEST_TIME_STRING = zeroPad(TEST_DATE.getHours()) + zeroPad(TEST_DATE.getMinutes());
 
-import { wl } from './wl-lrnu500.mjs';
+import { wl } from './wl-lrnu1000.mjs';
 
+// needed when compiling to ctr
 global.performance = performance;
 
 performProfiling(wl);
@@ -46,8 +47,8 @@ function performProfiling({name, src, moduleCb, wlCb})
 {
   console.log(name);
 
-  compileToModule(src, 'profile', {profile:true}).then(module => {
-  //import('./compiled/profile.mjs').then(module => {
+  //compileToModule(src, 'profile', {profile:true}).then(module => {
+  import('./compiled/profile.mjs').then(module => {
 
     const wlStart = performance.now();
     if (moduleCb)
