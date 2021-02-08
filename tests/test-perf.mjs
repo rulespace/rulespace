@@ -1,4 +1,3 @@
-import fs from 'fs';
 import os from 'os';
 import { performance } from 'perf_hooks';
 import { compileToConstructor, toModuleTupleFor } from './test-common.mjs';
@@ -23,12 +22,16 @@ import { wl as lrnu500 } from './wl-lrnu500.mjs';
 
 const COMMENT = '';
 
+const perfs = [];
+
 console.log("test id: " + TEST_ID);
 performTest(lrnunegaddrem);
 performTest(lrnu100);
 performTest(lrnu500);
+performTest(lrnu1000);
 
-//performTest(lrnu1000);
+console.log('\n\n=============');
+console.log(perfs.join('\n'));
 
 function zeroPad(n)
 {
@@ -51,9 +54,10 @@ function removeTuplesFor(module)
 
 function logPerf(testName, ...wlDuration)
 {
-  const testLine = [HOST_NAME, TEST_ID, TEST_DATE_STRING, TEST_TIME_STRING, COMMENT, testName, ...wlDuration].join(';');
-  console.log(testLine);
-  fs.appendFileSync(FILE_NAME, testLine + '\n');
+  const perfLine = [HOST_NAME, TEST_ID, TEST_DATE_STRING, TEST_TIME_STRING, COMMENT, testName, ...wlDuration].join(';');
+  console.log(perfLine);
+  perfs.push(perfLine);
+  //fs.appendFileSync(FILE_NAME, testLine + '\n');
 }
 
 function performTest({name, src, moduleCb, wlCb})
@@ -83,7 +87,7 @@ function performTest({name, src, moduleCb, wlCb})
       const addTuples = addTuplesFor(module);
       const removeTuples = removeTuplesFor(module);
       const wlStart = performance.now();
-      const wl = wlCb(addTuples, removeTuples);
+      wlCb(addTuples, removeTuples);
 
       wlDurations.push(Math.round(performance.now() - wlStart));    
     }

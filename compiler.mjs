@@ -2,6 +2,42 @@ import { Sets, assertTrue } from './common.mjs';
 import { SchemeParser  } from './parser.mjs';
 import { analyzeProgram, Atom, Var, Lit, Neg, Agg } from './analyzer.mjs';
 
+// class LineEmitter
+// {
+//   constructor()
+//   {
+//     this.lines = [];
+//   }
+//   add(line)
+//   {
+//     this.lines.push(line);
+//   }
+//   toString()
+//   {
+//     return this.lines.join('\n');
+//   }
+// }
+
+class DynamicVars
+{
+  constructor(initial)
+  {
+    this.initial = initial;
+    this.vars = new Set();
+  }
+  add(name)
+  {
+    this.vars.add(name);
+  }
+  names()
+  {
+    return [...this.vars];
+  }
+  toString()
+  {
+    return [...this.vars].map(name => `let ${name} = ${this.initial}`).join('\n');
+  }  
+}
 
 export function compile(src, options={})
 {
@@ -17,9 +53,14 @@ export function compile(src, options={})
   const OPT_module = options.module === true ? true : false;
   const FLAG_compile_to_module = OPT_module;
   const FLAG_compile_to_ctr = !OPT_module;
+  
   const FLAG_debug = options.debug === true ? true : false;
+
+  const FLAG_profile = options.profile === true ? true : false;
   
   const publicFunctions = [];
+
+  const profileVars = new DynamicVars("0");
 
   const emitters =
   {
@@ -36,49 +77,90 @@ export function compile(src, options={})
     logDebug(str)
     {
       return FLAG_debug ? `console.log(${str})` : ``;
-    }
-  }
-
-  const sb = [];
-
-  if (FLAG_compile_to_ctr)
-  {
-    sb.push(`"use strict";`);
-  }
-
-  sb.push(emitFirst(emitters));
-
-  for (const pred of preds)
-  {
-    sb.push(`
-//////////////////////////////////////////////////
-// ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
-// precedes: ${[...pred.precedes].join(',')}
-// posDependsOn: ${[...pred.posDependsOn].join(',')}
-// negDependsOn: ${[...pred.negDependsOn].join(',')}
-// negated: ${pred.negated}
-    `);
-
-    sb.push(emitTupleObject(pred, emitters));
-    //sb.push(emitGetTuple(pred));
-    sb.push(emitDeltaAddTuple(pred));
-    // if (pred.edb)
-    // {
-    //   sb.push(emitAddTuple(pred, strata));
-    // }
-    for (const rule of pred.rules)
+    },
+    profile(str)
     {
-      sb.push(`/* ${rule} */`);
-      if (rule.aggregates())
+      return FLAG_profile ? str : '';
+    },
+    profileStart(name)
+    {
+      if (FLAG_profile)
       {
-        sb.push(emitRuleGBObject(rule));
+        return `const ${name}Start = performance.now();`;
       }
-      else
+      return '';
+    },
+    profileEnd(name)
+    {
+      if (FLAG_profile)
       {
-        sb.push(emitRuleObject(rule, emitters));
+        profileVars.add(name + "Duration");
+        profileVars.add(name + "Calls");
+        return `
+        ${name}Duration += performance.now() - ${name}Start;
+        ${name}Calls++;
+        `;
       }
+      return '';
     }
   }
+
+  function main()
+  {
+
+    const sb = [profileVars];
+
+    if (FLAG_compile_to_ctr)
+    {
+      sb.push(`"use strict";`);
+    }
+
+    if (FLAG_compile_to_module && FLAG_profile)
+    {
+      sb.push(`import { performance } from 'perf_hooks'`);
+    }
+
+    // const dynamicEmitFirst = new LineEmitter();
+    // sb.push(dynamicEmitFirst);
+
+    if (FLAG_profile)
+    {
+      sb.push(`console.log("profiling on")`);
+    }
+
+    sb.push(emitFirst());
+
+    for (const pred of preds)
+    {
+      sb.push(`
+  //////////////////////////////////////////////////
+  // ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
+  // precedes: ${[...pred.precedes].join(',')}
+  // posDependsOn: ${[...pred.posDependsOn].join(',')}
+  // negDependsOn: ${[...pred.negDependsOn].join(',')}
+  // negated: ${pred.negated}
+      `);
+
+      sb.push(emitTupleObject(pred));
+      //sb.push(emitGetTuple(pred));
+      sb.push(emitDeltaAddTuple(pred));
+      // if (pred.edb)
+      // {
+      //   sb.push(emitAddTuple(pred, strata));
+      // }
+      for (const rule of pred.rules)
+      {
+        sb.push(`/* ${rule} */`);
+        if (rule.aggregates())
+        {
+          sb.push(emitRuleGBObject(rule));
+        }
+        else
+        {
+          sb.push(emitRuleObject(rule));
+        }
+      }
+    }
   
 //   for (const stratum of strata)
 //   {
@@ -96,14 +178,19 @@ export function compile(src, options={})
   // }
 
 
-  sb.push(emitAddTuples(strata, emitters));
-  sb.push(emitRemoveTuples(emitters));
-  sb.push(emitPutBackTuples(strata, emitters));
+  sb.push(emitAddTuples(strata));
+  sb.push(emitRemoveTuples());
+  sb.push(emitPutBackTuples(strata));
   
-  sb.push(emitIterators(preds, edbPreds, rules, emitters));
-  sb.push(emitClear(edbPreds, emitters));
+  sb.push(emitIterators(preds, edbPreds, rules));
+  sb.push(emitClear(edbPreds));
 
-  sb.push(emitRest);
+  sb.push(emitRest());
+
+  if (FLAG_profile)
+  {
+    sb.push(emitProfileResults());
+  }
 
   if (FLAG_compile_to_ctr)
   {
@@ -111,19 +198,132 @@ export function compile(src, options={})
   }
 
   return sb.join('\n');
+  } // main
+
+  function emitGet(pred, arity)
+  {
+    const tn = termNames2(arity);
+    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+    const sb = [`
+function get_${pred}(${tn.join(', ')})
+{
+    `];
+    for (let i = 0; i < arity; i++)
+    {
+      sb.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(t${i});
+      if (${maps[i+1]} === undefined)
+      {
+        return null;
+      }
+      `)
+    }
+    sb.push(`return ${maps[arity]};
 }
+    `);
+    return sb.join('\n');
+  }
+
+  
+  function emitAddGet(pred, arity)
+  {
+
+    function emitEntry(i)
+    {
+      if (i === arity)
+      {
+        return `tuple`;
+      }
+      return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
+    }
+
+    const tn = termNames2(arity);
+    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+    const sb = [`
+function add_get_${pred}(${tn.join(', ')})
+{
+    `];
+    for (let i = 0; i < arity; i++)
+    {
+      sb.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(t${i});
+      if (${maps[i+1]} === undefined)
+      {
+        const tuple = new ${pred}(${tn.join(', ')});
+        ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
+        return tuple;
+      }
+      `)
+    }
+    sb.push(`
+    return ${maps[arity]};
+}
+    `);
+    return sb.join('\n');
+  }
+
+  function emitRemove(pred, arity)
+  {
+    const tn = termNames2(arity);
+    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+    const sb = [`
+function remove_${pred}(${tn.join(', ')})
+{
+    `];
+    for (let i = 0; i < arity-1; i++)
+    {
+      sb.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(t${i});
+      `)
+    }
+    sb.push(`
+    ${maps[arity - 1]}.set(t${arity-1}, undefined);
+}
+    `);
+    return sb.join('\n');
+  }
 
 
-function emitTupleObject(pred, emitters)
+  function emitSelect(pred, arity)
+  {
+    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+
+    function emitLookup(i)
+    {
+      if (i === arity)
+      {
+        return `yield ${maps[arity]}`;
+      }
+      return `
+        for (const ${maps[i+1]} of ${maps[i]}.values())
+        {
+          if (${maps[i+1]} !== undefined)
+          {
+            ${emitLookup(i+1)}
+          }
+        }
+        `;
+    }
+    
+    return `
+function* select_${pred}()
+{
+    ${emitLookup(0)}
+}
+    `;
+  }
+
+
+
+function emitTupleObject(pred)
 {
   const tn = termNames(pred);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
   const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
 
-
   let sb = `
-const ${pred}_members = new Set();
+const ${pred}_members = new Map();
 ${emitters.publicFunction(pred)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
@@ -135,25 +335,21 @@ ${emitters.publicFunction(pred)}(${tn.join(', ')})
 ${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};
 //
 ${pred}.prototype.toString = function () {return atomString("${pred}", ${termFields.join(', ')})};
-${pred}.prototype._remove = function () {${pred}_members.delete(this)};
+${pred}.prototype._remove = function () {
+  remove_${pred}(${termFields.join(', ')});
+};
 
-function get_${pred}(${tn.join(', ')})
-{
-  for (const member of ${pred}_members)
-  {
-    if (${termEqualities.join(' && ')})
-    {
-      return member;
-    }
-  }
-  return null;
-}
+${emitGet(`${pred}`, pred.arity)}
+${emitAddGet(`${pred}`, pred.arity)}
+${emitRemove(`${pred}`, pred.arity)}
+${emitSelect(`${pred}`, pred.arity)}
+
 `;
 
   if (pred.negated)
   {
     sb += `
-const NOT_${pred}_members = new Set();
+const NOT_${pred}_members = new Map();
 function NOT_${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}  
@@ -161,61 +357,18 @@ function NOT_${pred}(${tn.join(', ')})
   this._outproducts = new Set();
 }        
 NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${termFields.join(', ')})};  
-NOT_${pred}.prototype._remove = function () {NOT_${pred}_members.delete(this)};
+NOT_${pred}.prototype._remove = function () {
+  remove_NOT_${pred}(${termFields.join(', ')});
+};
 
-function get_NOT_${pred}(${tn.join(', ')})
-{
-  for (const member of NOT_${pred}_members)
-  {
-    if (${termEqualities.join(' && ')})
-    {
-      return member;
-    }
-  }
-  return null;
-}
-
-
-function get_or_create_NOT_${pred}(${tn.join(', ')})
-{
-  for (const member of NOT_${pred}_members)
-  {
-    if (${termEqualities.join(' && ')})
-    {
-      return member;
-    }
-  }
-  const tuple = new NOT_${pred}(${tn.join(', ')});
-  NOT_${pred}_members.add(tuple);
-  return tuple;
-}
+${emitGet(`NOT_${pred}`, pred.arity)}
+${emitAddGet(`NOT_${pred}`, pred.arity)}
+${emitRemove(`NOT_${pred}`, pred.arity)}
     `;
   }
 
   return sb;
 }
-
-
-// function emitGetTuple(pred)
-// {
-//   const arity = pred.arity;
-
-//   const tn = termNames(pred);
-//   const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
-//   return `
-// export function get_${pred}_tuple(${tn.join(', ')})
-// {
-//   for (const member of ${pred}_members)
-//   {
-//     if (${termEqualities.join(' && ')})
-//     {
-//       return member;
-//     }
-//   }
-//   return null;
-// }
-//   `
-// }
 
 function emitAssertTrue(condition)
 {
@@ -235,9 +388,8 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       const existing_${pred}_tuple = get_${pred}(${head.terms.join(', ')});
       if (existing_${pred}_tuple === null)
       {
-        const new_${pred}_tuple = new ${pred}(${head.terms.join(', ')});
+        const new_${pred}_tuple = add_get_${pred}(${head.terms.join(', ')});
         newTuples.add(new_${pred}_tuple);
-        ${pred}_members.add(new_${pred}_tuple);
         const product = new Product(${ruleName}, ptuples);
         ${t2ps.join('\n        ')}
         product._outtuple = new_${pred}_tuple;
@@ -290,7 +442,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [no conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         ${bindUnboundVars.join('\n        ')}
         ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
@@ -301,7 +453,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         if (${conditions.join(' && ')})
         {
@@ -320,23 +472,22 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
     ptuples.push('NOT_' + tuple);
     const pred = natom.pred;
     //const bindUnboundVars = [];
-    const conditions = [];
+    const getValues = [];
     natom.terms.forEach((term, i) => {
       if (term instanceof Var)
       {
         if (compileEnv.has(term.name))
         {
-          conditions.push(`${tuple}.t${i} === ${term.name}`);
+          getValues.push(`${term.name}`);
         }
         else
         {
-          // bindUnboundVars.push(`const ${term.name} = ${tuple}.t${i};`);
-          compileEnv.add(term.name);
+          throw new Error("unbound var in negation: " + term.name);
         }
       }
       else if (term instanceof Lit)
       {
-        conditions.push(`${tuple}.t${i} === ${termToString(term.value)}`);
+        getValues.push(`${termToString(term.value)}`);
       }
       else
       {
@@ -344,31 +495,15 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
       }
     });
 
-    if (conditions.length === 0)
+    return `
+    // atom ${atom} [conditions]
+    if (get_${pred}(${getValues.join(', ')}) !== null)
     {
-      throw new Error("TODO");
+      continue;
     }
-    else
-    {
-      return `
-      // atom ${atom} [conditions]
-      let found${i} = false;
-      for (const ${tuple} of ${pred}_members)
-      {
-        if (${conditions.join(' && ')})
-        {
-          found${i} = true; // TODO solve with continue;
-          break;
-        }
-      }
-      if (found${i})
-      {
-        continue;
-      }
-      const NOT_${tuple} = get_or_create_NOT_${pred}(${natom.terms.join(', ')}); // TODO: not added to members
-      ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
-      `;  
-    }
+    const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.join(', ')});
+    ${compileRuleFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
+    `;  
   }// Neg
 
 
@@ -396,7 +531,7 @@ function compileRuleFireBody(ruleName, head, body, i, compileEnv, ptuples)
 }
 
 // (Reachable x y) :- (Reachable x z) (Link z y)
-function emitRuleObject(rule, emitters)
+function emitRuleObject(rule)
 {
   const ruleName = "Rule" + rule._id;
   const compileEnv = new Set();
@@ -416,11 +551,17 @@ const ${ruleName} =
     ${emitters.logDebug(`"fire ${rule}"`)}
     ${emitters.logDebug('`deltaPos ${deltaPos}`')}
     ${emitters.logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
+
+    ${emitters.profileStart(`fire${ruleName}`)}
+
     const newTuples = new Set();
 
     ${compileRuleFireBody(ruleName, rule.head, rule.body, 0, compileEnv, [])}
 
+    ${emitters.profileEnd(`fire${ruleName}`)}
+
     ${emitters.logDebug('`=> newTuples ${[...newTuples].join()}`')}
+
     return newTuples;
   }
 } // end ${ruleName}
@@ -442,7 +583,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
       // updates for ${head}
       const ptuples = new Set([${ptuples.join()}]);
       const productGB = new ProductGB(${ruleName}, ptuples, ${aggregand});
-      const groupby = get_or_create_${ruleName}GB(${gb.join()});
+      const groupby = add_get_${ruleName}GB(${gb.join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -505,7 +646,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [no conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         ${bindUnboundVars.join('\n        ')}
         ${compileRuleGBFireBody(ruleName, head, body, i+1, compileEnv, ptuples)}
@@ -516,7 +657,7 @@ function compileRuleGBFireBody(ruleName, head, body, i, compileEnv, ptuples)
     {
       return `
       // atom ${atom} [conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${pred}_members))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         if (${conditions.join('&&')})
         {
@@ -608,12 +749,11 @@ const ${ruleName} =
     {
       const currentResultTuple = groupby._outtuple;
       const updatedValue = ${updateOperation};
-      const updatedResultTuple = new ${pred}(${gbNames.join()}, updatedValue);  
+      const updatedResultTuple = add_get_${pred}(${gbNames.join()}, updatedValue);  
       if (groupby._outtuple !== updatedResultTuple)
       {
         groupby._outtuple = updatedResultTuple;
         newTuples.add(updatedResultTuple);
-        ${pred}_members.add(updatedResultTuple);
       }
     }
     return newTuples;
@@ -643,7 +783,7 @@ function ${ruleName}GB(${tn.join(', ')})
 ${ruleName}GB.prototype.toString = function () { return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"})) };
 ${ruleName}GB.prototype.rule = function () { return ${ruleName}};
 
-function get_or_create_${ruleName}GB(${tn.join(', ')})
+function add_get_${ruleName}GB(${tn.join(', ')})
 {
   for (const member of ${ruleName}GB_members)
   {
@@ -659,10 +799,10 @@ function get_or_create_${ruleName}GB(${tn.join(', ')})
   `;
 }
 
-function emitIterators(preds, edbPreds, rules, emitters)
+function emitIterators(preds, edbPreds, rules)
 {
-  const tupleYielders = preds.map(pred => `yield* ${pred}_members;`);
-  const edbTupleYielders = edbPreds.map(pred => `yield* ${pred}_members;`);
+  const tupleYielders = preds.map(pred => `yield* select_${pred}();`);
+  const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}();`);
   const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
   const ruleNames = rules.map(rule => `Rule${rule._id}`);
 
@@ -690,9 +830,9 @@ ${emitters.publicFunctionStar('edbTuples')}()
   `;
 }
 
-function emitClear(edbPreds, emitters)
+function emitClear(edbPreds)
 {
-  const clearers = edbPreds.map(edbPred => `remove_tuples(${edbPred}_members);`);
+  const clearers = edbPreds.map(edbPred => `remove_tuples(select_${edbPred}());`);
 
   return `
 ${emitters.publicFunction('clear')}()
@@ -860,6 +1000,11 @@ function termNames(pred)
   return Array.from(Array(pred.arity), (_, i) => "t" + i);
 }
 
+function termNames2(arity)
+{
+  return Array.from(Array(arity), (_, i) => "t" + i);
+}
+
 function termToString(x)
 {
   return String(x); // ???
@@ -879,8 +1024,8 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
     const actual = get_${pred}(${termProperties.join(', ')});
     if (actual === null)  
     {
-      ${pred}_tuples.push(proposed);
-      ${pred}_members.add(proposed);
+      const fresh = add_get_${pred}(${termProperties.join(', ')}); // TODO should be unconditional add
+      ${pred}_tuples.push(fresh);
     }
   }
   return ${pred}_tuples;
@@ -888,7 +1033,7 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   `
 }
 
-function emitAddTuples(strata, emitters) 
+function emitAddTuples(strata) 
 {
 
   function stratumLogic(stratum)
@@ -984,7 +1129,7 @@ ${emitters.publicFunction('add_tuple_map')}(edbTuples)
   `;
 }
 
-function emitPutBackTuples(strata, emitters)
+function emitPutBackTuples(strata)
 {
 
   function stratumLogic(stratum)
@@ -1031,7 +1176,7 @@ function put_back_tuple_map(tuples)
   `;  
 }
 
-function emitRemoveTuples(emitters)
+function emitRemoveTuples()
 {
   return `
 
@@ -1138,7 +1283,7 @@ ${emitters.publicFunction('remove_tuples')}(tuples)
 }`;
 }
 
-function emitFirst(emitters)
+function emitFirst()
 {
   return `
 
@@ -1265,6 +1410,22 @@ ${emitters.publicFunction('add_tuples')}(edbTuples)
 }
 `} // emitFirst
 
-const emitRest = `
-`;
+  function emitProfileResults()
+  {
+    const vars = profileVars.names().map(name => `${name}`);
+    return `    
+${emitters.publicFunction('profileResults')}()
+{
+  return { ${vars.join()} };
+}
+    `;
+  }
 
+  function emitRest()
+  {
+    return `// the end`;
+  }
+
+  return main();
+
+} // end compile

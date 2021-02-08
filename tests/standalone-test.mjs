@@ -22,13 +22,14 @@ const src =
 
 `;
 
-compileToModule(src, 'standalone', {debug:true}).then(module => {
+compileToModule(src, 'standalone', {profile:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
 const edbTuples = parseTuples(`[Link "a" "b"] [Link "b" "c"] [Link "c" "b"] [Link "c" "c"] [Link "c" "d"]`);
 module.add_tuples(edbTuples.map(toModuleTupleFor(module)));
 module.remove_tuples(parseTuples(`[Link "c" "c"] [Link "c" "d"] [Link "b" "c"]`).map(toModuleTupleFor(module)).map(t => t.get()));
 // console.log(toDot(module.edbTuples()));
 console.log("tuples: " + [...module.tuples()]);
+console.log("profile: ", module.profileResults());
 })
 
 // [Link a b],[Link c b],
