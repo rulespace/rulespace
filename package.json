@@ -1,14 +1,30 @@
 {
-  "name": "testlog",
-  "version": "1.0.0",
-  "description": "",
-  "main": "testo.mjs",
+  "name": "rulespace",
+  "version": "0.0.1",
+  "main": "TODO.mjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "cd tests && node test.mjs"
   },
   "author": "Jens Nicolay <jens.nicolay@gmail.com>",
   "license": "ISC",
   "dependencies": {
-    "esprima": "^4.0.1"
-  }
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jensnicolay/rulespace.git"
+  },
+  "keywords": [
+    "datalog",
+    "rules",
+    "facts",
+    "incremental"
+  ],
+  "bugs": {
+    "url": "https://github.com/jensnicolay/rulespace/issues"
+  },
+  "homepage": "https://github.com/jensnicolay/rulespace#readme",
+  "description": ""
 }
