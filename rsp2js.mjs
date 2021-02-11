@@ -1,6 +1,6 @@
 import { Sets, assertTrue } from './common.mjs';
-import { SchemeParser  } from './parser.mjs';
-import { analyzeProgram, Atom, Var, Lit, Neg, Agg } from './analyzer.mjs';
+import { Atom, Neg, Agg, Var } from './rsp.mjs';
+import { analyzeProgram } from './analyzer.mjs';
 
 // class LineEmitter
 // {
@@ -39,10 +39,10 @@ class DynamicVars
   }  
 }
 
-export function compile(src, options={})
+export function rsp2js(program, options={})
 {
-  const parser = new SchemeParser();
-  const program = parser.parse(src);
+  // const parser = new SchemeParser();
+  // const program = parser.parse(src);
 
   const analysis = analyzeProgram(program);
   const strata = analysis.strata;

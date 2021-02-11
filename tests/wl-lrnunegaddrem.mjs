@@ -3,19 +3,19 @@ export const wl = {
   name: 'lnrunegaddrem',
   src:
     `
-    (define [Reachable x y]
+    (rule [Reachable x y]
       [Link x y])
       
-    (define [Reachable x y]
+    (rule [Reachable x y]
       [Link x z] [Reachable z y])
     
-    (define [Node x]
+    (rule [Node x]
       [Link x _])
       
-    (define [Node y]
+    (rule [Node y]
       [Link _ y])
     
-    (define [Unreachable x y]
+    (rule [Unreachable x y]
       [Node x] [Node y] (not [Reachable x y]))
     
     `,

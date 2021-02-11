@@ -136,10 +136,10 @@ function testRemoveEdb(src, edbTuplesSrc)
 const start = performance.now();
 
 const example1 = `
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x y])
   
-(define [Reachable x y]
+(rule [Reachable x y]
   [Reachable x z] [Link z y])
 `;
  
@@ -157,10 +157,10 @@ testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`);
 testRemoveEdb(example1, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
 
 const example2 = `
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x y])
   
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x z] [Reachable z y])
 `;
 
@@ -176,16 +176,16 @@ testIncrementalAdd(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd
 testRemoveEdb(example2, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
 
 const example3 = `
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x y])
   
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x z] [Reachable z y])
 
-(define [Node x]
+(rule [Node x]
   [Link x _])
   
-(define [Node y]
+(rule [Node y]
   [Link _ y])
 `;
 
@@ -207,19 +207,19 @@ testRemoveEdb(example3, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Li
    
 
 const example4 = `
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x y])
   
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x z] [Reachable z y])
 
-(define [Node x]
+(rule [Node x]
   [Link x _])
   
-(define [Node y]
+(rule [Node y]
   [Link _ y])
 
-(define [Unreachable x y]
+(rule [Unreachable x y]
   [Node x] [Node y] (not [Reachable x y]))
 `;
 
@@ -256,19 +256,19 @@ testIncrementalAdd(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd
 testRemoveEdb(example4, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
       
 const example4b = `
-(define [Reachable x y]
+(rule [Reachable x y]
   [Link x y])
   
-(define [Reachable x y]
+(rule [Reachable x y]
   [Reachable x z] [Link z y])
 
-(define [Node x]
+(rule [Node x]
   [Link x _])
   
-(define [Node y]
+(rule [Node y]
   [Link _ y])
 
-(define [Unreachable x y]
+(rule [Unreachable x y]
   [Node x] [Node y] (not [Reachable x y]))
 `;
 
@@ -306,16 +306,16 @@ testRemoveEdb(example4b, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [L
       
 
 const example5 = `
-(define [Rsum x #:sum y]
+(rule [Rsum x #:sum y]
   [I x y])
 
-(define [Rmax x #:max y]
+(rule [Rmax x #:max y]
   [I x y])
   
-(define [Rmin x #:min y]
+(rule [Rmin x #:min y]
   [I x y])
       
-(define [Rcount x #:count y]
+(rule [Rcount x #:count y]
   [I x y])
 `;
 
@@ -328,10 +328,10 @@ testInitialSolve(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
 
 
 const example6 = `
-(define [B x] [A x])
-(define [C x] [B x])
-(define [E x] [D x])
-(define [C x] [E x])
+(rule [B x] [A x])
+(rule [C x] [B x])
+(rule [E x] [D x])
+(rule [C x] [E x])
 `;
 
 testInitialSolve(example6, `[A 1] [A 2] [D 3] [D 4]`,

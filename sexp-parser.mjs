@@ -196,98 +196,6 @@ Tuple.prototype.toString =
     return "[" + this.pred + " " + this.terms.join(' ') + "]";
   }
   
-
-export function freeVariables(node)
-{
-  function fv(node, env)
-  {
-    if (node instanceof Number || node instanceof Boolean || node instanceof String)
-    {
-      return [];
-    }
-    if (node instanceof Sym)
-    {
-      return env.contains(node.name) ? [] : [node.name];
-    }
-    if (node instanceof Pair)
-    {
-      var car = node.car;
-      if (car instanceof Sym)
-      {
-        var name = car.name;
-        if (name === "lambda")
-        {
-          var params = node.cdr.car;
-          var env2 = env;
-          while (!(params instanceof Null))
-          {
-            var param = params.car;
-            env2 = env2.add(param.name);
-            params = params.cdr;
-          }
-          var body = node.cdr.cdr.car;
-          return fv(body, env2);
-        }
-        if (name === "let")
-        {
-          var param = node.cdr.car.car.car;
-          var exp =  node.cdr.car.car.cdr.car;
-          var body = node.cdr.cdr.car;
-          var env2 = env.add(param.name);
-          return fv(exp, env).concat(fv(body, env2));
-        }
-        if (name === "letrec")
-        {
-          var param = node.cdr.car.car.car;
-          var exp =  node.cdr.car.car.cdr.car;
-          var body = node.cdr.cdr.car;
-          var env2 = env.add(param.name);
-          return fv(exp, env2).concat(fv(body, env2));
-        }
-        if (name === "if")
-        {
-          var cond = node.cdr.car;
-          var cons = node.cdr.cdr.car;
-          var alt = node.cdr.cdr.cdr.car;
-          return fv(cond, env).concat(fv(cons, env)).concat(fv(alt, env));
-        }
-  //        if (name === "begin")
-  //        {
-  //          return evalBegin(node, benv, store, kont);
-  //        }
-        if (name === "set!")
-        {
-          var name = node.cdr.car.name;
-          var exp = node.cdr.cdr.car;
-          return fv(exp, env).concat([name]);
-        }
-        if (name === "quote")
-        {
-          return [];
-        }
-        if (name === "and" || name === "or")
-        {
-          var exp1 = node.cdr.car;
-          var exp2 = node.cdr.cdr.car;
-          return fv(exp1, env).concat(fv(exp2, env));
-        }
-      }
-      var exps = node;
-      var free = [];
-      while (!(exps instanceof Null))
-      {
-        var exp = exps.car;
-        free = free.concat(fv(exp, env));
-        exps = exps.cdr;
-      }
-      return free;
-    }
-    throw new Error("cannot handle node " + node); 
-  }
-  
-  return fv(node, ArraySet.empty());
-}
-
 export function SchemeReader(str)
 {
   this.str = str;
@@ -330,19 +238,6 @@ SchemeReader.prototype.read =
 export function SchemeParser()
 {
 }
-
-SchemeParser.isSyntacticKeyword =
-  function (name)
-  {
-    return name === "lambda"
-      || name === "define"
-      || name === "let"
-      || name === "let*"
-      || name === "letrec"
-      || name === "if"
-      || name === "quote"
-      || name === "begin"
-  }
 
 SchemeParser.prototype.parse = // parseSequence
   function (str)
@@ -656,3 +551,110 @@ SchemeTokenizer.prototype.skipWhitespace =
     return c;
   }
 
+
+// following stuff is language- (Scheme-) specific
+
+// export function freeVariables(node)
+// {
+//   function fv(node, env)
+//   {
+//     if (node instanceof Number || node instanceof Boolean || node instanceof String)
+//     {
+//       return [];
+//     }
+//     if (node instanceof Sym)
+//     {
+//       return env.contains(node.name) ? [] : [node.name];
+//     }
+//     if (node instanceof Pair)
+//     {
+//       var car = node.car;
+//       if (car instanceof Sym)
+//       {
+//         var name = car.name;
+//         if (name === "lambda")
+//         {
+//           var params = node.cdr.car;
+//           var env2 = env;
+//           while (!(params instanceof Null))
+//           {
+//             var param = params.car;
+//             env2 = env2.add(param.name);
+//             params = params.cdr;
+//           }
+//           var body = node.cdr.cdr.car;
+//           return fv(body, env2);
+//         }
+//         if (name === "let")
+//         {
+//           var param = node.cdr.car.car.car;
+//           var exp =  node.cdr.car.car.cdr.car;
+//           var body = node.cdr.cdr.car;
+//           var env2 = env.add(param.name);
+//           return fv(exp, env).concat(fv(body, env2));
+//         }
+//         if (name === "letrec")
+//         {
+//           var param = node.cdr.car.car.car;
+//           var exp =  node.cdr.car.car.cdr.car;
+//           var body = node.cdr.cdr.car;
+//           var env2 = env.add(param.name);
+//           return fv(exp, env2).concat(fv(body, env2));
+//         }
+//         if (name === "if")
+//         {
+//           var cond = node.cdr.car;
+//           var cons = node.cdr.cdr.car;
+//           var alt = node.cdr.cdr.cdr.car;
+//           return fv(cond, env).concat(fv(cons, env)).concat(fv(alt, env));
+//         }
+//   //        if (name === "begin")
+//   //        {
+//   //          return evalBegin(node, benv, store, kont);
+//   //        }
+//         if (name === "set!")
+//         {
+//           var name = node.cdr.car.name;
+//           var exp = node.cdr.cdr.car;
+//           return fv(exp, env).concat([name]);
+//         }
+//         if (name === "quote")
+//         {
+//           return [];
+//         }
+//         if (name === "and" || name === "or")
+//         {
+//           var exp1 = node.cdr.car;
+//           var exp2 = node.cdr.cdr.car;
+//           return fv(exp1, env).concat(fv(exp2, env));
+//         }
+//       }
+//       var exps = node;
+//       var free = [];
+//       while (!(exps instanceof Null))
+//       {
+//         var exp = exps.car;
+//         free = free.concat(fv(exp, env));
+//         exps = exps.cdr;
+//       }
+//       return free;
+//     }
+//     throw new Error("cannot handle node " + node); 
+//   }
+  
+//   return fv(node, ArraySet.empty());
+// }
+
+
+// SchemeParser.isSyntacticKeyword =
+//   function (name)
+//   {
+//     return name === "lambda"
+//       || name === "define"
+//       || name === "let"
+//       || name === "let*"
+//       || name === "letrec"
+//       || name === "if"
+//       || name === "quote"
+//       || name === "begin"
+//   }

@@ -2,6 +2,11 @@ import { performance } from 'perf_hooks';
 import { assertTrue, Sets } from '../common.mjs';
 import { compileToConstructor, Unique, toModuleTuple, toModuleTupleFor } from './test-common.mjs';
 
+/**
+ * 
+ * TODO rewrite this into something that works on wl-....mjs that accept wlCb
+ * (maybe rewrite them all to use wlCb)
+ */
 
 class AddTuple
 {

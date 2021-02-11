@@ -1,18 +1,25 @@
 import fs from 'fs';
-import { SchemeParser, Pair  } from '../parser.mjs';
-import { compile } from '../compiler.mjs';
+import { SchemeParser, Pair  } from '../sexp-parser.mjs';
+import { sexp2rsp  } from '../sexp2rsp.mjs';
+import { rsp2js } from '../rsp2js.mjs';
 
 export function compileToConstructor(src, options)
 {
-  const compiled = compile(src,  {...options, module:false});
+  const parser = new SchemeParser();
+  const sexp = parser.parse(src);
+  const rsp = sexp2rsp(sexp);
+  const compiled = rsp2js(rsp,  {...options, module:false});
   return Function(compiled);
 }
 
 export function compileToModule(src, name, options)
 {
-  name === undefined ? 'run' : name;
-  const compiled = compile(src, {...options, module:true});
+  const parser = new SchemeParser();
+  const sexp = parser.parse(src);
+  const rsp = sexp2rsp(sexp);
+  const compiled = rsp2js(rsp, {...options, module:true});
   fs.writeFileSync(`./compiled/${name}.mjs`, compiled, 'utf8');
+  name === undefined ? 'run' : name;
   return import(`./compiled/${name}.mjs`);
 }
 
