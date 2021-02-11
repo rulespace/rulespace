@@ -1,7 +1,4 @@
-import fs from 'fs';
-import { assertTrue, Sets } from '../common.mjs';
-import { toDot } from '../schemelog-common.mjs';
-import { compileToModule, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './test-common.mjs';
+import { compileToModule, parseTuples, toModuleTupleFor } from './test-common.mjs';
 
 const src =
 `
