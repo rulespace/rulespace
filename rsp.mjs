@@ -66,15 +66,15 @@ export class Neg
 
 export class Agg
 {
-  constructor(aggregator, aggregand)
+  constructor(aggregator, aggregate)
   {
     this.aggregator = aggregator;
-    this.aggregand = aggregand;
+    this.aggregate = aggregate;
   }
 
   toString()
   {
-    return `{${this.aggregator}: ${this.aggregand}}`;
+    return `{${this.aggregator}: ${this.aggregate}}`;
   }
 }
 

@@ -1,5 +1,5 @@
 import { Sets, assertTrue } from './common.mjs';
-import { Atom, Neg, Agg, Var } from './rsp.mjs';
+import { Atom, Neg, Agg, Var, Lit } from './rsp.mjs';
 import { analyzeProgram } from './analyzer.mjs';
 
 // class LineEmitter
@@ -434,7 +434,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
       }
       else
       {
-        throw new Error();
+        throw new Error("cannot handle " + term);
       }
     });
 
@@ -569,12 +569,12 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
   {
     const agg = head.terms[head.terms.length - 1];
     assertTrue(agg instanceof Agg);
-    const aggregand = agg.aggregand;
+    const aggregate = agg.aggregate;
     const gb = head.terms.slice(0, head.terms.length - 1);
     return `
       // updates for ${head}
       const ptuples = new Set([${ptuples.join()}]);
-      const productGB = new ProductGB(${rule._id}, ptuples, ${aggregand});
+      const productGB = new ProductGB(${rule._id}, ptuples, ${aggregate});
       const groupby = add_get_Rule${rule._id}GB(${gb.join()}); // TODO!!!!
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
@@ -586,11 +586,11 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
         const currentAdditionalValues = updates.get(groupby);
         if (!currentAdditionalValues)
         {
-          updates.set(groupby, [${aggregand}]);
+          updates.set(groupby, [${aggregate}]);
         }
         else
         {
-          currentAdditionalValues.push(${aggregand});
+          currentAdditionalValues.push(${aggregate});
         }
         for (const tuple of ptuples)
         {
@@ -690,7 +690,7 @@ function emitRuleGBObject(rule)
   const pred = rule.head.pred;
   const compileEnv = new Set();
   const gbNames = Array.from(Array(rule.head.terms.length - 1), (_, i) => "groupby.t"+i);
-  const aggregandName ="t" + (rule.head.terms.length - 1);
+  const aggregateName ="t" + (rule.head.terms.length - 1);
 
   const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
   let joinOperation; // join semilattice
@@ -707,11 +707,11 @@ function emitRuleGBObject(rule)
   let updateOperation;
   if (joinOperation)
   {
-    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${joinOperation}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregandName})`
+    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${joinOperation}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregateName})`
   }
   else if (addOperation)
   {
-    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregandName})`
+    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregateName})`
   }
   else
   {

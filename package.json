@@ -1,7 +1,8 @@
 {
   "name": "rulespace",
   "version": "0.0.1",
-  "main": "TODO.mjs",
+  "main": "index.mjs",
+  "type": "module",
   "scripts": {
     "test": "cd tests && node test.mjs"
   },
