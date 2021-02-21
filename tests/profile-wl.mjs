@@ -47,8 +47,8 @@ function performProfiling({name, src, moduleCb, wlCb})
 {
   console.log(name);
 
-  //compileToModule(src, 'profile', {profile:true}).then(module => {
-  import('./compiled/profile.mjs').then(module => {
+  compileToModule(src, 'profile', {profile:true}).then(module => {
+  //import('./compiled/profile.mjs').then(module => {
 
     const wlStart = performance.now();
     if (moduleCb)

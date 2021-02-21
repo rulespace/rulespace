@@ -156,7 +156,6 @@ export function rsp2js(program, options={})
 
   sb.push(emitAddTuples(strata));
   sb.push(emitRemoveTuples());
-  sb.push(emitPutBackTuples(strata));
   
   sb.push(emitIterators(preds, edbPreds, rules));
   sb.push(emitClear(edbPreds));
@@ -820,10 +819,26 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
     {
       return [`
       // atom ${i} ${atom} (edb)
-      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, ${pred}_tuples);
-      MutableSets.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});
+      if (${pred}_tuples.size > 0)
+      {
+        const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, ${pred}_tuples);
+        MutableSets.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+      }
     `];
     }
+  }
+  else if (atom instanceof Neg)
+  {
+    const pred = atom.atom.pred; // always edb
+    return [`
+    // atom ${i} ${atom} (edb)
+    const removed_${pred}_tuples = [...globRemovedTuples].filter(t => t.constructor === ${pred});
+    if (removed_${pred}_tuples.length > 0)
+    {
+      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples);
+      MutableSets.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+    }
+  `];
   }
   return [];
 }
@@ -935,14 +950,14 @@ function emitDeltaAddTuple(pred)
   return `
 function delta_add_${pred}_tuples(proposedEdbTuples)
 {
-  const ${pred}_tuples = [];
+  const ${pred}_tuples = new Set();
   for (const proposed of proposedEdbTuples)
   {
     const actual = get_${pred}(${termProperties.join(', ')});
     if (actual === null)  
     {
       const fresh = add_get_${pred}(${termProperties.join(', ')}); // TODO should be unconditional add
-      ${pred}_tuples.push(fresh);
+      ${pred}_tuples.add(fresh);
     }
   }
   return ${pred}_tuples;
@@ -989,7 +1004,9 @@ function emitAddTuples(strata)
     {
       remove_tuples(tuples_to_remove);
     }
-    ${logDebug('"done removing tuples due to add"')}
+    const transRemovedTuples = remove_tuples_i(tuples_to_remove);
+    ${logDebug('`removed due to edb addition: ${[...transRemovedTuples].join()}`')}
+    MutableSets.addAll(globRemovedTuples, transRemovedTuples);
       `);
     }
   
@@ -1039,59 +1056,24 @@ function emitAddTuples(strata)
   return `
 ${publicFunction('add_tuple_map')}(edbTuples)
 {
+  return computeDelta(edbTuples, []);
+}
+
+${publicFunction('remove_tuples')}(removeTuples)
+{
+  return computeDelta(new Map(), removeTuples);
+} 
+
+function computeDelta(edbTuples, removeTuples)
+{
   const edbTuplesMap = new Map(edbTuples);
   ${logDebug('"add_tuple_map " + [...edbTuplesMap.values()]')}
+  const globRemovedTuples = new Set(remove_tuples_i(removeTuples));
+
   ${strataLogic.join('\n')}
   return null; 
 }
   `;
-}
-
-function emitPutBackTuples(strata)
-{
-
-  function stratumLogic(stratum)
-  {
-    for (const [pred, negDeps] of stratum.pred2negDeps)
-    {
-      for (const {rule, i} of negDeps)
-      {
-        return `
-        // pred: ${pred}
-        // rule: ${rule}
-        // atom pos: ${i} 
-  
-        const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, tuples.get(${pred}));
-        MutableSets.addAll(addedTuples, Rule${rule._id}_tuples${i});
-        `  
-      }
-    }
-  }
-
-  const strataLogic = strata.map(stratum => {
-
-    return `
-    // stratum ${stratum.id}
-    // neg deps: ${[...stratum.pred2negDeps.keys()].join()}
-
-    ${stratumLogic(stratum)}
-  `;
-  });
-
-  return `
-function put_back_tuple_map(tuples)
-{
-  const tuplesMap = new Map(tuples);
-  ${logDebug('"put_back_tuple_map " + [...tuplesMap.values()]')}
-  const addedTuples = new Set();
-  ${strataLogic.join('\n')}
-  ${logDebug('"\\n put_back_tuple_map: add_tuples " + [...addedTuples].join()')}
-  if (addedTuples.size > 0)
-  {
-    return add_tuple_map(toTupleMap(addedTuples)); // TODO should be tupleMap 
-  }
-} // put_back
-  `;  
 }
 
 function emitRemoveTuples()
@@ -1099,7 +1081,7 @@ function emitRemoveTuples()
   return `
 
 // only forward (so, in essence, only edb tuples supported) 
-${publicFunction('remove_tuples')}(tuples)
+function remove_tuples_i(tuples)
 {
   ${logDebug('"remove_tuples " + tuples')}
 
@@ -1193,12 +1175,9 @@ ${publicFunction('remove_tuples')}(tuples)
     }
   }
 
-  ${logDebug('"\\nremove_tuples: put back " + [...removedTuples].join()')}
-  if (removedTuples.size > 0)
-  {
-    put_back_tuple_map(toTupleMap(removedTuples));
-  }
-  ${logDebug('"done putting back"')}
+  ${logDebug('`removed ${[...removedTuples].join()}`')}
+  return removedTuples;
+
 }`;
 }
 
