@@ -62,48 +62,24 @@ export function rsp2js(program, options={})
 
   const profileVars = new DynamicVars("0");
 
-  const emitters =
-  {
-    publicFunction(name)
-    {
-      publicFunctions.push(name);
-      return `${FLAG_compile_to_module ? 'export ' : ''}function ${name}`;
-    },
-    publicFunctionStar(name)
-    {
-      publicFunctions.push(name);
-      return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`;
-    },
-    logDebug(str)
-    {
-      return FLAG_debug ? `console.log(${str})` : ``;
-    },
-    profile(str)
-    {
-      return FLAG_profile ? str : '';
-    },
-    profileStart(name)
-    {
-      if (FLAG_profile)
-      {
-        return `const ${name}Start = performance.now();`;
-      }
-      return '';
-    },
-    profileEnd(name)
-    {
-      if (FLAG_profile)
-      {
-        profileVars.add(name + "Duration");
-        profileVars.add(name + "Calls");
-        return `
+  // emitters
+  const publicFunction = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function ${name}`};
+  const publicFunctionStar = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`};
+
+  const logDebug = FLAG_debug ? str => `console.log(${str})` : () => ``;
+
+  const profile = FLAG_profile ? str => str : () => ``;
+  const profileStart = FLAG_profile ? name => `const ${name}Start = performance.now();` : () => ``;
+  const profileEnd = FLAG_profile ? name =>
+    { 
+      profileVars.add(name + "Duration");
+      profileVars.add(name + "Calls");
+      return `
         ${name}Duration += performance.now() - ${name}Start;
         ${name}Calls++;
         `;
-      }
-      return '';
-    }
-  }
+    } : () => ``;
+  // end emitters
 
   function main()
   {
@@ -324,7 +300,7 @@ function emitTupleObject(pred)
 
   let sb = `
 const ${pred}_members = new Map();
-${emitters.publicFunction(pred)}(${tn.join(', ')})
+${publicFunction(pred)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
   this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
@@ -542,26 +518,24 @@ ${rule}
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {
-  ${emitters.logDebug(`"fire ${rule}"`)}
-  ${emitters.logDebug('`deltaPos ${deltaPos}`')}
-  ${emitters.logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
+  ${logDebug(`"fire ${rule}"`)}
+  ${logDebug('`deltaPos ${deltaPos}`')}
+  ${logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
 
-  ${emitters.profileStart(`fireRule${rule._id}`)}
+  ${profileStart(`fireRule${rule._id}`)}
 
   const newTuples = new Set();
 
   ${compileRuleFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
 
-  ${emitters.profileEnd(`fireRule${rule._id}`)}
+  ${profileEnd(`fireRule${rule._id}`)}
 
-  ${emitters.logDebug('`=> newTuples ${[...newTuples].join()}`')}
+  ${logDebug('`=> newTuples ${[...newTuples].join()}`')}
 
   return newTuples;
 } // end fireRule${rule._id}
   `;
 }
-
-
 
 function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
 {
@@ -793,12 +767,12 @@ function emitIterators(preds, edbPreds, rules)
 
   return `
 // from membership
-${emitters.publicFunctionStar('tuples')}() 
+${publicFunctionStar('tuples')}() 
 {
   ${tupleYielders.join('\n  ')}
 }
 
-${emitters.publicFunctionStar('edbTuples')}() 
+${publicFunctionStar('edbTuples')}() 
 {
   ${edbTupleYielders.join('\n  ')}
 }
@@ -816,7 +790,7 @@ function emitClear(edbPreds)
   const clearers = edbPreds.map(edbPred => `remove_tuples(select_${edbPred}());`);
 
   return `
-${emitters.publicFunction('clear')}()
+${publicFunction('clear')}()
 {
   ${clearers.join('\n')}
 }  
@@ -981,7 +955,7 @@ function emitAddTuples(strata)
 
   function stratumLogic(stratum)
   {
-    const sb = [`${emitters.logDebug(`"\\n=======\\nstratum ${stratum}"`)}`];
+    const sb = [`${logDebug(`"\\n=======\\nstratum ${stratum}"`)}`];
   
     function removeLoop(pred)
     {
@@ -1010,11 +984,12 @@ function emitAddTuples(strata)
     const tuples_to_remove = [];
     ${removeLoops.join('\n')}
   
-    ${emitters.logDebug('"* add_tuple_map: remove " + tuples_to_remove.join()')}
+    ${logDebug('"\\nadd_tuple_map: remove_tuples " + tuples_to_remove.join()')}
     if (tuples_to_remove.length > 0)
     {
       remove_tuples(tuples_to_remove);
     }
+    ${logDebug('"done removing tuples due to add"')}
       `);
     }
   
@@ -1062,10 +1037,10 @@ function emitAddTuples(strata)
   });
 
   return `
-${emitters.publicFunction('add_tuple_map')}(edbTuples)
+${publicFunction('add_tuple_map')}(edbTuples)
 {
   const edbTuplesMap = new Map(edbTuples);
-  ${emitters.logDebug('"add_tuple_map " + [...edbTuplesMap.values()]')}
+  ${logDebug('"add_tuple_map " + [...edbTuplesMap.values()]')}
   ${strataLogic.join('\n')}
   return null; 
 }
@@ -1107,10 +1082,10 @@ function emitPutBackTuples(strata)
 function put_back_tuple_map(tuples)
 {
   const tuplesMap = new Map(tuples);
-  ${emitters.logDebug('"put_back_tuple_map " + [...tuplesMap.values()]')}
+  ${logDebug('"put_back_tuple_map " + [...tuplesMap.values()]')}
   const addedTuples = new Set();
   ${strataLogic.join('\n')}
-  ${emitters.logDebug('"* put_back_tuple_map: add_tuples " + [...addedTuples].join()')}
+  ${logDebug('"\\n put_back_tuple_map: add_tuples " + [...addedTuples].join()')}
   if (addedTuples.size > 0)
   {
     return add_tuple_map(toTupleMap(addedTuples)); // TODO should be tupleMap 
@@ -1124,34 +1099,34 @@ function emitRemoveTuples()
   return `
 
 // only forward (so, in essence, only edb tuples supported) 
-${emitters.publicFunction('remove_tuples')}(tuples)
+${publicFunction('remove_tuples')}(tuples)
 {
-  ${emitters.logDebug('"remove_tuples " + tuples')}
+  ${logDebug('"remove_tuples " + tuples')}
 
   const wl = [...tuples]; // TODO: because this is not a set, same tuples can be scheduled multiple times
 
   function removeProduct(product)
   {
-    ${emitters.logDebug('"remove product " + product')}
+    ${logDebug('"remove product " + product')}
 
     for (const intuple of product.tuples)
     {
       intuple._outproducts.delete(product);
-      ${emitters.logDebug('"deleted " + intuple + " --> " + product')}
+      ${logDebug('"deleted " + intuple + " --> " + product')}
       // remember: it's not because a tuple's outproducts is empty,
       // that it cannot in the future play a role in other products 
     }
     const outtuple = product._outtuple;
     outtuple._inproducts.delete(product);
-    ${emitters.logDebug('"deleted " + product + " --> " + outtuple + " (leaving " + outtuple._inproducts.size + " inproducts)"')}
+    ${logDebug('"deleted " + product + " --> " + outtuple + " (leaving " + outtuple._inproducts.size + " inproducts)"')}
     if (outtuple._inproducts.size === 0)
     {
-      ${emitters.logDebug('"scheduled for removal: " + outtuple')}
+      ${logDebug('"scheduled for removal: " + outtuple')}
       wl.push(outtuple);
     }
     else
     {
-      ${emitters.logDebug('"grounded? " + outtuple')}
+      ${logDebug('"grounded? " + outtuple')}
       checkGrounded(outtuple);
       // TODO: check for recursive pred/rule (only then a cycle is poss?)
     }
@@ -1180,7 +1155,7 @@ ${emitters.publicFunction('remove_tuples')}(tuples)
           return true;
         }
       }  
-      ${emitters.logDebug('"no grounded products, not grounded, scheduled for removal: " + tuple')}
+      ${logDebug('"no grounded products, not grounded, scheduled for removal: " + tuple')}
       wl.push(tuple);
       return false;
     }
@@ -1210,7 +1185,7 @@ ${emitters.publicFunction('remove_tuples')}(tuples)
       continue;
     }
     removedTuples.add(tuple);
-    ${emitters.logDebug('"==\\nremove tuple " + tuple')}
+    ${logDebug('"==\\nremove tuple " + tuple')}
     tuple._remove();
     for (const product of tuple._outproducts)
     {
@@ -1218,11 +1193,12 @@ ${emitters.publicFunction('remove_tuples')}(tuples)
     }
   }
 
-  ${emitters.logDebug('"* remove_tuples: put back " + [...removedTuples].join()')}
+  ${logDebug('"\\nremove_tuples: put back " + [...removedTuples].join()')}
   if (removedTuples.size > 0)
   {
     put_back_tuple_map(toTupleMap(removedTuples));
   }
+  ${logDebug('"done putting back"')}
 }`;
 }
 
@@ -1347,7 +1323,7 @@ function toTupleMap(tuples)
   return map;
 }
 
-${emitters.publicFunction('add_tuples')}(edbTuples)
+${publicFunction('add_tuples')}(edbTuples)
 {
   return add_tuple_map(toTupleMap(edbTuples));
 }
@@ -1357,7 +1333,7 @@ ${emitters.publicFunction('add_tuples')}(edbTuples)
   {
     const vars = profileVars.names().map(name => `${name}`);
     return `    
-${emitters.publicFunction('profileResults')}()
+${publicFunction('profileResults')}()
 {
   return { ${vars.join()} };
 }
