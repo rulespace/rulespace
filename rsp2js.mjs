@@ -154,7 +154,7 @@ export function rsp2js(program, options={})
   // }
 
 
-  sb.push(emitAddTuples(strata));
+  sb.push(emitAddTuples(strata, preds));
   sb.push(emitRemoveTuples());
   
   sb.push(emitIterators(preds, edbPreds, rules));
@@ -965,8 +965,10 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   `
 }
 
-function emitAddTuples(strata) 
+function emitAddTuples(strata, preds) 
 {
+
+  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', ${pred}_tuples]`);
 
   function stratumLogic(stratum)
   {
@@ -999,7 +1001,7 @@ function emitAddTuples(strata)
     const tuples_to_remove = [];
     ${removeLoops.join('\n')}
   
-    ${logDebug('"\\nadd_tuple_map: remove_tuples " + tuples_to_remove.join()')}
+    ${logDebug('"\\naddTupleMap: remove_tuples " + tuples_to_remove.join()')}
     if (tuples_to_remove.length > 0)
     {
       remove_tuples(tuples_to_remove);
@@ -1054,12 +1056,12 @@ function emitAddTuples(strata)
   });
 
   return `
-${publicFunction('add_tuple_map')}(edbTuples)
+${publicFunction('addTupleMap')}(edbTuples)
 {
   return computeDelta(edbTuples, []);
 }
 
-${publicFunction('remove_tuples')}(removeTuples)
+${publicFunction('removeTuples')}(removeTuples)
 {
   return computeDelta(new Map(), removeTuples);
 } 
@@ -1067,12 +1069,21 @@ ${publicFunction('remove_tuples')}(removeTuples)
 function computeDelta(edbTuples, removeTuples)
 {
   const edbTuplesMap = new Map(edbTuples);
-  ${logDebug('"add_tuple_map " + [...edbTuplesMap.values()]')}
+  ${logDebug('"addTupleMap " + [...edbTuplesMap.values()]')}
   const globRemovedTuples = new Set(remove_tuples_i(removeTuples));
 
   ${strataLogic.join('\n')}
-  return null; 
-}
+  
+  return {added: 
+    function ()
+    {
+      return new Map([${[...deltaAddedTuplesEntries]}]);
+    }
+    , removed: 
+    function ()
+    {
+      return toTupleMapStringKeys(globRemovedTuples);
+    }};}
   `;
 }
 
@@ -1241,7 +1252,7 @@ function Product(rule, tuples)
 Product.prototype.toString =
   function ()
   {
-    return this.rule.name + ":" + [...this.tuples].join('.');
+    return this.rule + ":" + [...this.tuples].join('.');
   }
 Product.prototype.equals =
   function (x)
@@ -1302,9 +1313,30 @@ function toTupleMap(tuples)
   return map;
 }
 
-${publicFunction('add_tuples')}(edbTuples)
+function toTupleMapStringKeys(tuples)  // bwek
 {
-  return add_tuple_map(toTupleMap(edbTuples));
+  const map = new Map();
+
+  function add(tuple)
+  {
+    const key = tuple.constructor.name; // !!!
+    const currentValue = map.get(key);
+    if (currentValue === undefined)
+    {
+      map.set(key, [tuple]);
+    }
+    else
+    {
+      currentValue.push(tuple);
+    }
+  }
+  [...tuples].forEach(add);
+  return map;
+}
+
+${publicFunction('addTuples')}(edbTuples)
+{
+  return addTupleMap(toTupleMap(edbTuples));
 }
 `} // emitFirst
 

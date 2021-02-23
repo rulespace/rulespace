@@ -49,7 +49,7 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
   {
     const module = ctr();
     sanityCheck(module);
-    module.add_tuples(p.map(toModuleTupleFor(module)));  
+    module.addTuples(p.map(toModuleTupleFor(module)));  
     sanityCheck(module);
     assertTrue(Sets.equals(unique.set(module.edbTuples()), unique.set(p)));
     const expectedTuples = Sets.union(unique.set(p), unique.set(expectedIdbTuples));
@@ -67,7 +67,7 @@ function testIncrementalAdd(src, edbTuplesSrc)
   for (const s of selections(edbTuples))
   {
     const nimodule = ctr();
-    nimodule.add_tuples(s.map(toModuleTupleFor(nimodule)));
+    nimodule.addTuples(s.map(toModuleTupleFor(nimodule)));
     sanityCheck(nimodule);
   
     let imodule;
@@ -79,7 +79,7 @@ function testIncrementalAdd(src, edbTuplesSrc)
         imodule = ctr();
         for (const t of p)
         {
-          imodule.add_tuples([t].map(toModuleTupleFor(imodule)));
+          imodule.addTuples([t].map(toModuleTupleFor(imodule)));
           sanityCheck(imodule);
         }
 
@@ -110,13 +110,13 @@ function testRemoveEdb(src, edbTuplesSrc)
     {
       remainingEdbs = Sets.difference(unique.set(edbTuples), unique.set(s));
       nimodule = ctr();
-      nimodule.add_tuples([...remainingEdbs].map(toModuleTupleFor(nimodule)));
+      nimodule.addTuples([...remainingEdbs].map(toModuleTupleFor(nimodule)));
       sanityCheck(nimodule);
   
       imodule = ctr();
-      imodule.add_tuples([...edbTuples].map(toModuleTupleFor(imodule)));
+      imodule.addTuples([...edbTuples].map(toModuleTupleFor(imodule)));
       sanityCheck(imodule);
-      imodule.remove_tuples([...s].map(toModuleTupleFor(imodule)).map(t => t.get()));
+      imodule.removeTuples([...s].map(toModuleTupleFor(imodule)).map(t => t.get()));
       sanityCheck(imodule);
   
       assertTrue(Sets.equals(unique.set(nimodule.tuples()), unique.set(imodule.tuples())));

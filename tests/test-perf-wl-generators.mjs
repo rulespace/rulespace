@@ -32,11 +32,11 @@ function lrnu100()
     {
       const delIndex = random(0, current.length - 1);
       const tnum = current.splice(delIndex, 1)[0];
-      console.log(`module.remove_tuples([t${tnum}]);`);
+      console.log(`module.removeTuples([t${tnum}]);`);
     }
     else
     {
-      console.log(`module.add_tuple_map(new Map([[module.Link, [t${j}]]]));`);
+      console.log(`module.addTupleMap(new Map([[module.Link, [t${j}]]]));`);
       current.push(j);
       j++;
     }
@@ -45,7 +45,7 @@ function lrnu100()
   while (current.length > 0)
   {
     const tnum = current.pop();
-    console.log(`module.remove_tuples([t${tnum}]);`);
+    console.log(`module.removeTuples([t${tnum}]);`);
   }
 }
 
@@ -78,11 +78,11 @@ function lrnu1000()
     {
       const delIndex = random(0, current.length - 1);
       const tnum = current.splice(delIndex, 1)[0];
-      console.log(`module.remove_tuples([t${tnum}]);`);
+      console.log(`module.removeTuples([t${tnum}]);`);
     }
     else
     {
-      console.log(`module.add_tuple_map(new Map([[module.Link, [t${j}]]]));`);
+      console.log(`module.addTupleMap(new Map([[module.Link, [t${j}]]]));`);
       current.push(j);
       j++;
     }
@@ -91,7 +91,7 @@ function lrnu1000()
   while (current.length > 0)
   {
     const tnum = current.pop();
-    console.log(`module.remove_tuples([t${tnum}]);`);
+    console.log(`module.removeTuples([t${tnum}]);`);
   }
 }
 
@@ -122,11 +122,11 @@ function lrnu500()
     {
       const delIndex = random(0, current.length - 1);
       const tnum = current.splice(delIndex, 1)[0];
-      console.log(`module.remove_tuples([t${tnum}]);`);
+      console.log(`module.removeTuples([t${tnum}]);`);
     }
     else
     {
-      console.log(`module.add_tuple_map(new Map([[module.Link, [t${j}]]]));`);
+      console.log(`module.addTupleMap(new Map([[module.Link, [t${j}]]]));`);
       current.push(j);
       j++;
     }
@@ -135,7 +135,7 @@ function lrnu500()
   while (current.length > 0)
   {
     const tnum = current.pop();
-    console.log(`module.remove_tuples([t${tnum}]);`);
+    console.log(`module.removeTuples([t${tnum}]);`);
   }
 }
 

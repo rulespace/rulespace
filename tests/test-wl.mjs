@@ -18,7 +18,7 @@ class AddTuple
   applyToModule(module)
   {
     const mTuple = toModuleTuple(module, this.tuple);
-    module.add_tuples([mTuple]);
+    module.addTuples([mTuple]);
   }
 
   applyToSet(set)
@@ -36,7 +36,7 @@ class RemoveTuple
   applyToModule(module)
   {
     const mTuple = toModuleTuple(module, this.tuple);
-    module.remove_tuples([mTuple]);
+    module.removeTuples([mTuple]);
   }
 
   applyToSet(set)
@@ -62,7 +62,7 @@ export function run(src, edbTuples, wl)
   const unique = new Unique();
   
   const imodule = ctr();
-  imodule.add_tuples(edbTuples.map(toModuleTupleFor(imodule)));
+  imodule.addTuples(edbTuples.map(toModuleTupleFor(imodule)));
   
   const nonincremental = new Set(edbTuples);
   
@@ -70,7 +70,7 @@ export function run(src, edbTuples, wl)
   {
     delta.applyToSet(nonincremental);
     const nimodule = ctr();
-    nimodule.add_tuples([...nonincremental].map(toModuleTupleFor(nimodule)));
+    nimodule.addTuples([...nonincremental].map(toModuleTupleFor(nimodule)));
     
     delta.applyToModule(imodule);
   

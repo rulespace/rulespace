@@ -44,12 +44,12 @@ function zeroPad(n)
 
 function addTuplesFor(module)
 {
-  return (...ts) => module.add_tuples(ts.map(toModuleTupleFor(module)));
+  return (...ts) => module.addTuples(ts.map(toModuleTupleFor(module)));
 }
 
 function removeTuplesFor(module)
 {
-  return (...ts) => module.remove_tuples(ts.map(toModuleTupleFor(module)));  
+  return (...ts) => module.removeTuples(ts.map(toModuleTupleFor(module)));  
 }
 
 function logPerf(testName, ...wlDuration)
