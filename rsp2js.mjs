@@ -786,7 +786,7 @@ ${publicFunctionStar('edbTuples')}()
 
 function emitClear(edbPreds)
 {
-  const clearers = edbPreds.map(edbPred => `remove_tuples(select_${edbPred}());`);
+  const clearers = edbPreds.map(edbPred => `removeTuples(select_${edbPred}());`);
 
   return `
 ${publicFunction('clear')}()
@@ -1001,10 +1001,10 @@ function emitAddTuples(strata, preds)
     const tuples_to_remove = [];
     ${removeLoops.join('\n')}
   
-    ${logDebug('"\\naddTupleMap: remove_tuples " + tuples_to_remove.join()')}
+    ${logDebug('"\\naddTupleMap: removeTuples " + tuples_to_remove.join()')}
     if (tuples_to_remove.length > 0)
     {
-      remove_tuples(tuples_to_remove);
+      removeTuples(tuples_to_remove);
     }
     const transRemovedTuples = remove_tuples_i(tuples_to_remove);
     ${logDebug('`removed due to edb addition: ${[...transRemovedTuples].join()}`')}
@@ -1061,16 +1061,16 @@ ${publicFunction('addTupleMap')}(edbTuples)
   return computeDelta(edbTuples, []);
 }
 
-${publicFunction('removeTuples')}(removeTuples)
+${publicFunction('removeTuples')}(remTuples)
 {
-  return computeDelta(new Map(), removeTuples);
+  return computeDelta(new Map(), remTuples);
 } 
 
-function computeDelta(edbTuples, removeTuples)
+function computeDelta(edbTuples, remTuples)
 {
   const edbTuplesMap = new Map(edbTuples);
   ${logDebug('"addTupleMap " + [...edbTuplesMap.values()]')}
-  const globRemovedTuples = new Set(remove_tuples_i(removeTuples));
+  const globRemovedTuples = new Set(remove_tuples_i(remTuples));
 
   ${strataLogic.join('\n')}
   
@@ -1094,7 +1094,7 @@ function emitRemoveTuples()
 // only forward (so, in essence, only edb tuples supported) 
 function remove_tuples_i(tuples)
 {
-  ${logDebug('"remove_tuples " + tuples')}
+  ${logDebug('"removeTuples " + tuples')}
 
   const wl = [...tuples]; // TODO: because this is not a set, same tuples can be scheduled multiple times
 
