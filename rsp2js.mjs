@@ -50,25 +50,21 @@ export function rsp2js(program, options={})
   const edbPreds = preds.filter(pred => pred.edb);
   const rules = analysis.program.rules;
 
+  // options + emitters
   const OPT_module = options.module === true ? true : false;
   const FLAG_compile_to_module = OPT_module;
   const FLAG_compile_to_ctr = !OPT_module;
-  
-  const FLAG_debug = options.debug === true ? true : false;
-
-  const FLAG_profile = options.profile === true ? true : false;
-  
   const publicFunctions = [];
-
-  const profileVars = new DynamicVars("0");
-
-  // emitters
   const publicFunction = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function ${name}`};
   const publicFunctionStar = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`};
 
+  
+  const FLAG_debug = options.debug === true ? true : false;
   const logDebug = FLAG_debug ? str => `console.log(${str})` : () => ``;
 
-  const profile = FLAG_profile ? str => str : () => ``;
+  const FLAG_profile = options.profile === true ? true : false;
+  const profileVars = new DynamicVars("0");
+  // const profile = FLAG_profile ? str => str : () => ``;
   const profileStart = FLAG_profile ? name => `const ${name}Start = performance.now();` : () => ``;
   const profileEnd = FLAG_profile ? name =>
     { 
@@ -79,7 +75,10 @@ export function rsp2js(program, options={})
         ${name}Calls++;
         `;
     } : () => ``;
-  // end emitters
+
+  const FLAG_assertions = options.assertions === true ? true : false;
+  const assert = FLAG_assertions ? (condition, display='"(?)"', explanation='assertion failed') => `if (!(${condition})) {throw new Error(${display} + ': ${explanation}')} ` : () => ``;
+  // end options + emitters
 
   function main()
   {
@@ -102,6 +101,10 @@ export function rsp2js(program, options={})
     if (FLAG_profile)
     {
       sb.push(`console.log("profiling on")`);
+    }
+    if (FLAG_assertions)
+    {
+      sb.push(`console.log("assertions on")`);
     }
 
     sb.push(emitFirst());
@@ -353,11 +356,6 @@ ${emitRemove(`NOT_${pred}`, pred.arity)}
   }
 
   return sb;
-}
-
-function emitAssertTrue(condition)
-{
-  return `assertTrue(${condition})`;
 }
 
 function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
@@ -873,6 +871,7 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
       {
         return [`
         // atom ${i} ${atom} (edb) (aggregating)
+        ${assert(`Array.isArray(${pred}_tuples)`)}
         if (${pred}_tuples.length > 0)
         {
           const [Rule${rule._id}_tuples${i}, tuplesToRemove] = fireRule${rule._id}(${i}, ${pred}_tuples);
@@ -884,6 +883,7 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
       }
       return [`
       // atom ${i} ${atom} (edb) (non-aggregating)
+      ${assert(`Array.isArray(${pred}_tuples)`)}
       if (${pred}_tuples.length > 0)
       {
         const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, ${pred}_tuples);
@@ -898,6 +898,7 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
     return [`
     // atom ${i} ${atom} (edb)
     const removed_${pred}_tuples = [...globRemovedTuples].filter(t => t.constructor === ${pred});
+    ${assert(`Array.isArray(removed_${pred}_tuples)`)}
     if (removed_${pred}_tuples.length > 0)
     {
       const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples);
@@ -929,13 +930,9 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred)
     if (recursivePreds.has(pred))
     {
       return [`
-        // atom ${i} ${atom} (recursive)
-        //if (local_${pred}.size > 0)
-        //{
-          const ${producesPred}_tuples_${i} = fireRule${rule._id}(${i}, local_${pred});
-          MutableArrays.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
-          MutableArrays.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
-        //}    
+        const ${producesPred}_tuples_${i} = fireRule${rule._id}(${i}, local_${pred});
+        MutableArrays.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
+        MutableArrays.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
       `];  
     }
     else
@@ -964,6 +961,7 @@ function emitRecursiveRules(rules, recursivePreds)
 
   // TODO these locals profit only in first step from addition that occurs within loop (cascade, through shared ref to general delta set)
   const locals = producedPreds.map(pred => `
+    ${assert(`Array.isArray(${pred}_tuples)`)}
     let local_${pred} = ${pred}_tuples;
   `);
   const news = producedPreds.map(pred => `
@@ -975,6 +973,7 @@ function emitRecursiveRules(rules, recursivePreds)
 
   const transfers = producedPreds.map(pred => `
     local_${pred} = new_${pred};
+    ${assert(`Array.isArray(local_${pred})`)}
   `);
 
   return `
@@ -1267,6 +1266,7 @@ const MutableArrays =
 {
   addAll(x, y)
   {
+    ${assert('Array.isArray(x)', 'x')}
     for (const elem of y)
     {
       x.push(elem);
@@ -1428,7 +1428,7 @@ ${publicFunction('addTuples')}(edbTuples)
     return `    
 ${publicFunction('profileResults')}()
 {
-  return { ${vars.join()} };
+  return { ${vars.join()}, ${rules.map(r => `Rule${r._id}:'${r.toString()}'`)} };
 }
     `;
   }
