@@ -137,30 +137,16 @@ export function rsp2js(program, options={})
         }
       }
     }
+
+    const pred2getters = preds.map(pred => `['${pred}', get_${pred}]`);
+    sb.push(`const pred2getter = new Map([${pred2getters.join()}])`);
   
-//   for (const stratum of strata)
-//   {
-//     sb.push(`
-// //////////////////////////////////////////////////
-// // stratum ${stratum.id}
-// // preds: ${stratum.preds.join(', ')}
-//     `);
-//   }
-
-  // for (const negatedPred of staticInfo.negatedPreds)
-  // {
-  //   const arity = staticInfo.pred2arity.get(negatedPred);
-  //   sb.push(emitTupleObject("NOT_" + negatedPred, arity));
-  // }
-
 
   sb.push(emitAddTuples(strata, preds));
   sb.push(emitRemoveTuples());
   
   sb.push(emitIterators(preds, edbPreds, rules));
   sb.push(emitClear(edbPreds));
-
-  sb.push(emitRest());
 
   if (FLAG_profile)
   {
@@ -171,6 +157,8 @@ export function rsp2js(program, options={})
   {
     sb.push(`return {${publicFunctions.join(', ')}};`);
   }
+
+  sb.push(`// the end`);
 
   return sb.join('\n');
   } // main
@@ -299,25 +287,36 @@ function emitTupleObject(pred)
 
   let sb = `
 const ${pred}_members = new Map();
-${publicFunction(pred)}(${tn.join(', ')})
+function ${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
   this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
   this._outproducts = new Set();
   this._outproductsgb = new Set();
+  this._generic = null;
 }
 // public API (only)
-${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};
+// ${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};
 //
 ${pred}.prototype.toString = function () {return atomString("${pred}", ${termFields.join(', ')})};
 ${pred}.prototype._remove = function () {
   remove_${pred}(${termFields.join(', ')});
+};
+${pred}.prototype.toGeneric = function () {
+  if (this._generic === null)
+  {
+    const generic = ['${pred}', ${termFields.join(', ')}];
+    this._generic = generic;
+    return generic;
+  }
+  return this._generic;
 };
 
 ${emitGet(`${pred}`, pred.arity)}
 ${emitAddGet(`${pred}`, pred.arity)}
 ${emitRemove(`${pred}`, pred.arity)}
 ${emitSelect(`${pred}`, pred.arity)}
+
 
 `;
 
@@ -330,11 +329,22 @@ function NOT_${pred}(${tn.join(', ')})
   ${termAssignments.join('\n  ')}  
   this._inproducts = new Set(); // TODO: invariant: no inproducts?
   this._outproducts = new Set();
+  this._generic = null;
 }        
 NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${termFields.join(', ')})};  
 NOT_${pred}.prototype._remove = function () {
   remove_NOT_${pred}(${termFields.join(', ')});
 };
+NOT_${pred}.prototype.toGeneric = function () {
+  if (this._generic === null)
+  {
+    const generic = ['!${pred}', ${termFields.join(', ')}];
+    this._generic = generic;
+    return generic;
+  }
+  return this._generic;
+};
+
 
 ${emitGet(`NOT_${pred}`, pred.arity)}
 ${emitAddGet(`NOT_${pred}`, pred.arity)}
@@ -684,7 +694,7 @@ function emitRuleGBObject(rule)
   }
   else if (addOperation)
   {
-    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregateName})`
+    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${addOperation}, currentResultTuple.${aggregateName})`
   }
   else
   {
@@ -699,7 +709,12 @@ ${rule}
 */
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {
+  ${logDebug(`"fire ${rule}"`)}
+  ${logDebug('`deltaPos ${deltaPos}`')}
+  ${logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
+
   const newTuples = new Set();
+  const tuplesToRemove = [];
   const updates = new Map(); // groupby -> additionalValues
 
   ${compileRuleGBFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
@@ -712,11 +727,17 @@ function fireRule${rule._id}(deltaPos, deltaTuples)
     const updatedResultTuple = add_get_${pred}(${gbNames.join()}, updatedValue);  
     if (groupby._outtuple !== updatedResultTuple)
     {
+      if (groupby._outtuple !== null)
+      { 
+        tuplesToRemove.push(groupby._outtuple);
+      }
       groupby._outtuple = updatedResultTuple;
       newTuples.add(updatedResultTuple);
     }
   }
-  return newTuples;
+
+  ${logDebug('`=> newTuples ${[...newTuples].join()}`')}
+  return [newTuples, tuplesToRemove];
 } // end fireRule${rule._id}
 
 ${GBclass}
@@ -760,9 +781,9 @@ function add_get_Rule${rule._id}GB(${tn.join(', ')})
 
 function emitIterators(preds, edbPreds, rules)
 {
-  const tupleYielders = preds.map(pred => `yield* select_${pred}();`);
-  const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}();`);
-  const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
+  const tupleYielders = preds.map(pred => `for (const t of select_${pred}()) {yield t.toGeneric()};`);
+  const edbTupleYielders = edbPreds.map(pred => `for (const t of select_${pred}()) {yield t.toGeneric()};`);
+  // const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
 
   return `
 // from membership
@@ -776,10 +797,41 @@ ${publicFunctionStar('edbTuples')}()
   ${edbTupleYielders.join('\n  ')}
 }
 
-// function* groupbys()
-// {
-     ${gbYielders.join('\n  ')}
-// }  
+${publicFunction('productsOut')}(tuple) 
+{
+  const mtuple = getMTuple(tuple);
+  const products = [];
+  for (const mp of mtuple._outproducts)
+  {
+    // TODO additional protection? (freezing, ...)
+    products.push({rule:mp.rule, tuples: [...mp.tuples].map(t => t.toGeneric()), tupleOut: mp._outtuple.toGeneric()});
+  }
+  return products;
+}
+
+${publicFunction('productsOutGb')}(tuple) // TODO: rename this
+{
+  const mtuple = getMTuple(tuple);
+  const products = [];
+  for (const mp of mtuple._outproductsgb)
+  {
+    // TODO additional protection? (freezing, ...)
+    products.push({rule:mp.rule, tuples: [...mp.tuples].map(t => t.toGeneric()), value: mtuple.value, groupByOut: {tupleOut: mp._outgb._outtuple.toGeneric()}});
+  }
+  return products;
+}
+
+${publicFunction('productsIn')}(tuple) 
+{
+  const mtuple = getMTuple(tuple);
+  const products = [];
+  for (const mp of mtuple.inproducts)
+  {
+    // TODO additional protection? (freezing, ...)
+    products.push({rule:mp.rule, tuples: [...mp.tuples].map(t => t.toGeneric())});
+  }
+  return products;
+}
 
 `;
 }
@@ -817,12 +869,25 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
     const pred = atom.pred;
     if (!stratum.isStratumPredName(atom.pred)) // non-stratum = edb, because of toposort
     {
+      if (rule.aggregates())
+      {
+        return [`
+        // atom ${i} ${atom} (edb) (aggregating)
+        if (${pred}_tuples.length > 0)
+        {
+          const [Rule${rule._id}_tuples${i}, tuplesToRemove] = fireRule${rule._id}(${i}, ${pred}_tuples);
+          MutableArrays.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+          const transRemovedTuples = remove_tuples_i(tuplesToRemove);
+          MutableSets.addAll(globRemovedTuples, transRemovedTuples);            
+        }
+      `];  
+      }
       return [`
-      // atom ${i} ${atom} (edb)
-      if (${pred}_tuples.size > 0)
+      // atom ${i} ${atom} (edb) (non-aggregating)
+      if (${pred}_tuples.length > 0)
       {
         const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, ${pred}_tuples);
-        MutableSets.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+        MutableArrays.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
       }
     `];
     }
@@ -836,7 +901,7 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
     if (removed_${pred}_tuples.length > 0)
     {
       const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples);
-      MutableSets.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+      MutableArrays.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
     }
   `];
   }
@@ -868,8 +933,8 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred)
         //if (local_${pred}.size > 0)
         //{
           const ${producesPred}_tuples_${i} = fireRule${rule._id}(${i}, local_${pred});
-          MutableSets.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
-          MutableSets.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
+          MutableArrays.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
+          MutableArrays.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
         //}    
       `];  
     }
@@ -902,9 +967,9 @@ function emitRecursiveRules(rules, recursivePreds)
     let local_${pred} = ${pred}_tuples;
   `);
   const news = producedPreds.map(pred => `
-    const new_${pred} = new Set();
+    const new_${pred} = [];
   `);
-  const localConditions = producedPreds.map(pred => `local_${pred}.size > 0`);
+  const localConditions = producedPreds.map(pred => `local_${pred}.length > 0`);
 
   const fireRules = rules.map(rule => emitRecursiveRule(rule, recursivePreds));
 
@@ -946,18 +1011,18 @@ function termToString(x)
 function emitDeltaAddTuple(pred)
 {
   const tn = termNames(pred);
-  const termProperties = tn.map(t => `proposed.${t}`);
+  const termProperties = Array.from(Array(pred.arity), (_, i) => `proposed[${i+1}]`);
   return `
 function delta_add_${pred}_tuples(proposedEdbTuples)
 {
-  const ${pred}_tuples = new Set();
+  const ${pred}_tuples = [];
   for (const proposed of proposedEdbTuples)
   {
     const actual = get_${pred}(${termProperties.join(', ')});
     if (actual === null)  
     {
       const fresh = add_get_${pred}(${termProperties.join(', ')}); // TODO should be unconditional add
-      ${pred}_tuples.add(fresh);
+      ${pred}_tuples.push(fresh);
     }
   }
   return ${pred}_tuples;
@@ -968,7 +1033,7 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
 function emitAddTuples(strata, preds) 
 {
 
-  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', ${pred}_tuples]`);
+  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', ${pred}_tuples.map(mt => mt.toGeneric())]`);
 
   function stratumLogic(stratum)
   {
@@ -1004,11 +1069,10 @@ function emitAddTuples(strata, preds)
     ${logDebug('"\\naddTupleMap: removeTuples " + tuples_to_remove.join()')}
     if (tuples_to_remove.length > 0)
     {
-      removeTuples(tuples_to_remove);
+      const transRemovedTuples = remove_tuples_i(tuples_to_remove);
+      MutableSets.addAll(globRemovedTuples, transRemovedTuples);
+      ${logDebug('`removed due to edb addition: ${[...transRemovedTuples].join()}`')}
     }
-    const transRemovedTuples = remove_tuples_i(tuples_to_remove);
-    ${logDebug('`removed due to edb addition: ${[...transRemovedTuples].join()}`')}
-    MutableSets.addAll(globRemovedTuples, transRemovedTuples);
       `);
     }
   
@@ -1017,10 +1081,10 @@ function emitAddTuples(strata, preds)
       assertTrue(stratum.preds.length === 1);
       const pred = stratum.preds[0];
       assertTrue(pred.edb);
-      return `const ${pred}_tuples = delta_add_${pred}_tuples(edbTuplesMap.get(${pred}) || new Set());`;
+      return `const ${pred}_tuples = delta_add_${pred}_tuples(edbTuplesMap.get('${pred}') || []);`;
     }
   
-    const tupleIntroductions = stratum.preds.map(pred => `const ${pred}_tuples = new Set();`);
+    const tupleIntroductions = stratum.preds.map(pred => `const ${pred}_tuples = [];`);
     sb.push(tupleIntroductions.join('\n    '));
 
 
@@ -1063,7 +1127,8 @@ ${publicFunction('addTupleMap')}(edbTuples)
 
 ${publicFunction('removeTuples')}(remTuples)
 {
-  return computeDelta(new Map(), remTuples);
+  const mremTuples = remTuples.map(getMTuple);
+  return computeDelta(new Map(), mremTuples);
 } 
 
 function computeDelta(edbTuples, remTuples)
@@ -1082,7 +1147,7 @@ function computeDelta(edbTuples, remTuples)
     , removed: 
     function ()
     {
-      return toTupleMapStringKeys(globRemovedTuples);
+      return moduleToTupleMap(globRemovedTuples);
     }};}
   `;
 }
@@ -1198,6 +1263,17 @@ function emitFirst()
 
 //const IMM_EMPTY_COLLECTION = Object.freeze([]);
 
+const MutableArrays =
+{
+  addAll(x, y)
+  {
+    for (const elem of y)
+    {
+      x.push(elem);
+    }
+  }
+}
+
 const MutableSets =
 {
   addAll(x, y)
@@ -1269,7 +1345,7 @@ function ProductGB(rule, tuples, value)
   this.rule = rule;
   this.tuples = tuples;
   this.value = value;
-  this._outtuple = null;
+  this._outgb = null;
 }
 ProductGB.prototype.toString =
   function ()
@@ -1292,13 +1368,13 @@ function termString(termValue)
   return String(termValue);
 }
 
-function toTupleMap(tuples)
+function genericToTupleMap(genericTuples)
 {
   const map = new Map();
 
   function add(tuple)
   {
-    const key = tuple.constructor;
+    const key = tuple[0];
     const currentValue = map.get(key);
     if (currentValue === undefined)
     {
@@ -1309,34 +1385,40 @@ function toTupleMap(tuples)
       currentValue.push(tuple);
     }
   }
-  [...tuples].forEach(add);
+  [...genericTuples].forEach(add);
   return map;
 }
 
-function toTupleMapStringKeys(tuples)  // bwek
+function moduleToTupleMap(mtuples)
 {
   const map = new Map();
 
-  function add(tuple)
+  function add(mtuple)
   {
-    const key = tuple.constructor.name; // !!!
+    const tuple = mtuple.toGeneric();
+    const key = tuple[0];
     const currentValue = map.get(key);
     if (currentValue === undefined)
     {
-      map.set(key, [tuple]);
+      map.set(key, tuple);
     }
     else
     {
       currentValue.push(tuple);
     }
   }
-  [...tuples].forEach(add);
+  [...mtuples].forEach(add);
   return map;
+}
+
+function getMTuple(x)
+{
+  return (pred2getter.get(x[0]))(...x.slice(1));
 }
 
 ${publicFunction('addTuples')}(edbTuples)
 {
-  return addTupleMap(toTupleMap(edbTuples));
+  return addTupleMap(genericToTupleMap(edbTuples));
 }
 `} // emitFirst
 
@@ -1349,11 +1431,6 @@ ${publicFunction('profileResults')}()
   return { ${vars.join()} };
 }
     `;
-  }
-
-  function emitRest()
-  {
-    return `// the end`;
   }
 
   return main();

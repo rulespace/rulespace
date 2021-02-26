@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import { performance } from 'perf_hooks';
-import { compileToModule, toModuleTupleFor } from './test-common.mjs';
+import { compileToModule } from './test-common.mjs';
 
 const PERF_LOG_FILE_PREFIX = 'logs/perflog-';
 const PERF_LOG_FILE_SUFFIX = '.csv';
@@ -34,12 +34,12 @@ function zeroPad(n)
 
 function addTuplesFor(module)
 {
-  return (...ts) => module.add_tuples(ts.map(toModuleTupleFor(module)));
+  return (...ts) => module.add_tuples(ts);
 }
 
 function removeTuplesFor(module)
 {
-  return (...ts) => module.remove_tuples(ts.map(toModuleTupleFor(module)));  
+  return (...ts) => module.remove_tuples(ts);  
 }
 
 
@@ -47,8 +47,8 @@ function performProfiling({name, src, moduleCb, wlCb})
 {
   console.log(name);
 
-  compileToModule(src, 'profile', {profile:true}).then(module => {
-  //import('./compiled/profile.mjs').then(module => {
+  // compileToModule(src, 'profile', {profile:true}).then(module => {
+  import('./compiled/profile.mjs').then(module => {
 
     const wlStart = performance.now();
     if (moduleCb)

@@ -1,7 +1,37 @@
 import { performance } from 'perf_hooks';
 import { assertTrue, Sets } from '../common.mjs';
-import { compileToConstructor, parseTuples, Unique, toModuleTupleFor, toGenericTuple } from './test-common.mjs';
+import { compileToConstructor, parseTuples, tupleEquals } from './test-common.mjs';
 import { toDot, sanityCheck } from '../schemelog-common.mjs';
+
+function containsTuple(t, ts)
+{
+  for (const tt of ts)
+  {
+    if (tupleEquals(t, tt))
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+function equalTuples(ts1, ts2)
+{
+  const as1 = [...ts1];
+  const as2 = [...ts2];
+  if (as1.length !== as2.length)
+  {
+    return false;
+  }
+  for (const t1 of as1)
+  {
+    if (!containsTuple(t1, as2))
+    {
+      return false;
+    }
+  }
+  return true;
+}
 
 function permutations(s)
 {
@@ -41,7 +71,6 @@ function remove(item, seq)
 
 function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
 {
-  const unique = new Unique();
   const ctr = compileToConstructor(src);
   const edbTuples = parseTuples(edbTuplesSrc);
   const expectedIdbTuples = parseTuples(expectedIdbTuplesSrc);
@@ -49,25 +78,25 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
   {
     const module = ctr();
     sanityCheck(module);
-    module.addTuples(p.map(toModuleTupleFor(module)));  
+    const delta = module.addTuples(p);
     sanityCheck(module);
-    assertTrue(Sets.equals(unique.set(module.edbTuples()), unique.set(p)));
-    const expectedTuples = Sets.union(unique.set(p), unique.set(expectedIdbTuples));
-    assertTrue(Sets.equals(unique.set(module.tuples()), expectedTuples));
+    assertTrue(equalTuples(module.edbTuples(), p));
+    const expectedTuples = Sets.union(p, expectedIdbTuples);
+    assertTrue(equalTuples(module.tuples(), expectedTuples));
+    assertTrue(equalTuples([...delta.added().values()].flat(), expectedTuples));
   }
   // if (dot) {console.log(toDot(module.edbTuples()))}; 
 }
 
 function testIncrementalAdd(src, edbTuplesSrc)
 {
-  const unique = new Unique();
   const ctr = compileToConstructor(src);
   const edbTuples = parseTuples(edbTuplesSrc);
 
   for (const s of selections(edbTuples))
   {
     const nimodule = ctr();
-    nimodule.addTuples(s.map(toModuleTupleFor(nimodule)));
+    nimodule.addTuples(s);
     sanityCheck(nimodule);
   
     let imodule;
@@ -79,11 +108,11 @@ function testIncrementalAdd(src, edbTuplesSrc)
         imodule = ctr();
         for (const t of p)
         {
-          imodule.addTuples([t].map(toModuleTupleFor(imodule)));
+          imodule.addTuples([t]);
           sanityCheck(imodule);
         }
 
-        assertTrue(Sets.equals(unique.set(nimodule.tuples()), unique.set(imodule.tuples())));
+        assertTrue(equalTuples(nimodule.tuples(), imodule.tuples()));
       }
       catch (e)
       {
@@ -98,7 +127,6 @@ function testIncrementalAdd(src, edbTuplesSrc)
 
 function testRemoveEdb(src, edbTuplesSrc)
 {
-  const unique = new Unique();
   const ctr = compileToConstructor(src);
   const edbTuples = parseTuples(edbTuplesSrc);
   
@@ -108,18 +136,18 @@ function testRemoveEdb(src, edbTuplesSrc)
     let nimodule, imodule;
     try
     {
-      remainingEdbs = Sets.difference(unique.set(edbTuples), unique.set(s));
+      remainingEdbs = Sets.difference(edbTuples, s);
       nimodule = ctr();
-      nimodule.addTuples([...remainingEdbs].map(toModuleTupleFor(nimodule)));
+      nimodule.addTuples([...remainingEdbs]);
       sanityCheck(nimodule);
   
       imodule = ctr();
-      imodule.addTuples([...edbTuples].map(toModuleTupleFor(imodule)));
+      imodule.addTuples([...edbTuples]);
       sanityCheck(imodule);
-      imodule.removeTuples([...s].map(toModuleTupleFor(imodule)).map(t => t.get()));
+      imodule.removeTuples([...s]);
       sanityCheck(imodule);
   
-      assertTrue(Sets.equals(unique.set(nimodule.tuples()), unique.set(imodule.tuples())));
+      assertTrue(equalTuples(nimodule.tuples(), imodule.tuples()));
     }
     catch (e)
     {

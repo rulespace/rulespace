@@ -1,4 +1,5 @@
-import { compileToModule, parseTuples, toModuleTupleFor } from './test-common.mjs';
+import { sanityCheck } from '../schemelog-common.mjs';
+import { compileToModule, parseTuples } from './test-common.mjs';
 
 const src =
 `
@@ -16,27 +17,21 @@ const src =
 
 (rule [Unreachable x y]
   [Node x] [Node y] (not [Reachable x y]))
-
 `;
 
-compileToModule(src, 'standalone', {profile:true}).then(module => {
+compileToModule(src, 'standalone', {debug:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
-const edbTuples = parseTuples(`[Link "a" "b"] [Link "b" "c"] [Link "c" "b"] [Link "c" "c"] [Link "c" "d"]`);
-const delta1 = module.addTuples(edbTuples.map(toModuleTupleFor(module)));
-const delta2 = module.removeTuples(parseTuples(`[Link "c" "c"] [Link "c" "d"] [Link "b" "c"]`).map(toModuleTupleFor(module)).map(t => t.get()));
+  const edbTuples = parseTuples(`[Link "a" "b"] [Link "b" "c"] [Link "c" "b"] [Link "c" "c"] [Link "c" "d"]`);
+  // const edbTuples = parseTuples(`[Link "a" "b"] [Link "b" "c"] [Link "c" "c"]`);
+  // const edbTuples = parseTuples(`[I 'a 10] [I 'a 20] [I 'b 33]`);
+  const delta1a = module.addTuples([edbTuples[0]]);
+  const delta1b = module.addTuples([edbTuples[1]]);
+  // const delta1c = module.addTuples([edbTuples[2]]);
+  // const delta2 = module.removeTuples(parseTuples(`[Link "c" "c"] [Link "c" "d"] [Link "b" "c"]`));
 // console.log(toDot(module.edbTuples()));
 console.log("tuples: " + [...module.tuples()]);
-console.log("profile: ", module.profileResults());
 
-console.log(`
-  delta1
-  added   ${[...delta1.added()].join()}
-  removed ${[...delta1.removed()].join()}
-
-  delta2
-  added   ${[...delta2.added()].join()}
-  removed ${[...delta2.removed()].join()}
-  `)
+sanityCheck(module);
 })
 
 // [Link a b],[Link c b],

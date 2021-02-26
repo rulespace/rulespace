@@ -1,6 +1,6 @@
 import { Sets, assertTrue } from './common.mjs';
 
-export function reachableTuples(tuples)
+export function reachableTuples(tuples, module)
 {
   const seen = new Set();
   const wl = [...tuples];
@@ -11,13 +11,13 @@ export function reachableTuples(tuples)
     if (!seen.has(tuple))
     {
       seen.add(tuple);
-      for (const outproduct of tuple._outproducts)
+      for (const outproduct of module.productsOut(tuple))
       {
-        wl.push(outproduct._outtuple);
+        wl.push(outproduct.tupleOut);
       }
-      for (const outproductgb of tuple._outproductsgb)
+      for (const outproductgb of module.productsOutGb(tuple))
       {
-        wl.push(outproductgb._outgb._outtuple);
+        wl.push(outproductgb.groupByOut.tupleOut);
       }
     }
   }
@@ -28,7 +28,7 @@ export function reachableTuples(tuples)
 export function sanityCheck(module)
 {
   const tuples = new Set(module.tuples());
-  const rtuples = reachableTuples(module.edbTuples());
+  const rtuples = reachableTuples(module.edbTuples(), module);
   const sameTuples = Sets.equals(tuples, rtuples);
   if (!sameTuples)
   {
@@ -38,17 +38,6 @@ export function sanityCheck(module)
     `);
   }
   assertTrue(sameTuples);
-
-  // const products = new Set();
-  // for (const tuple of tuples)
-  // {
-  //   for (const product of tuple._outproducts)
-  //   {
-  //     products.add(product);
-  //   }
-  // }
-
-
 }
 
 

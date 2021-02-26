@@ -1,6 +1,6 @@
 import os from 'os';
 import { performance } from 'perf_hooks';
-import { compileToConstructor, toModuleTupleFor } from './test-common.mjs';
+import { compileToConstructor } from './test-common.mjs';
 
 const PERF_LOG_FILE_PREFIX = 'logs/perflog-';
 const PERF_LOG_FILE_SUFFIX = '.csv';
@@ -44,12 +44,12 @@ function zeroPad(n)
 
 function addTuplesFor(module)
 {
-  return (...ts) => module.addTuples(ts.map(toModuleTupleFor(module)));
+  return (...ts) => module.addTuples(ts);
 }
 
 function removeTuplesFor(module)
 {
-  return (...ts) => module.removeTuples(ts.map(toModuleTupleFor(module)));  
+  return (...ts) => module.removeTuples(ts);  
 }
 
 function logPerf(testName, ...wlDuration)
