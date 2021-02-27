@@ -367,20 +367,19 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
     const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
     return `
       // updates for ${head}
-      const ptuples = new Set([${ptuples.join(', ')}]);
       const existing_${pred}_tuple = get_${pred}(${head.terms.join(', ')});
       if (existing_${pred}_tuple === null)
       {
         const new_${pred}_tuple = add_get_${pred}(${head.terms.join(', ')});
         newTuples.add(new_${pred}_tuple);
-        const product = new Product(${rule._id}, ptuples);
+        const product = new Rule${rule._id}Product(${ptuples.join(', ')});
         ${t2ps.join('\n        ')}
         product._outtuple = new_${pred}_tuple;
         new_${pred}_tuple._inproducts.add(product);
       }
       else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
       {
-        const product = new Product(${rule._id}, ptuples);
+        const product = new Rule${rule._id}Product(${ptuples.join(', ')});
         ${t2ps.join('\n        ')}
         product._outtuple = existing_${pred}_tuple;
         existing_${pred}_tuple._inproducts.add(product);
@@ -518,10 +517,34 @@ function emitRule(rule)
 {
   const compileEnv = new Set();
 
+  const tupleArity = rule.body.reduce((acc, exp) => ((exp instanceof Atom) || (exp instanceof Neg)) ? acc+1 : acc, 0);
+  const tupleParams = Array.from({length:tupleArity}, (_, i) => `tuple${i}`);
+  const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
+  const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
+
   return `
-/* rule [no aggregates] 
+/* rule (tuple arity ${tupleArity}) (no aggregates)
 ${rule} 
 */
+
+class Rule${rule._id}Product
+{
+  constructor(${tupleParams.join(', ')})
+  {
+    ${tupleFieldInits.join('\n')}
+    this._outtuple = null; // TODO make this ctr param!
+  }
+
+  toString()
+  {
+    return "r${rule._id}:" + this.tuples.join('.');
+  }
+
+  tuples() // or, a field initialized in ctr?
+  {
+    return [${tupleFields.join(', ')}];
+  }
+}
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {
@@ -802,7 +825,7 @@ ${publicFunction('productsOut')}(tuple)
   for (const mp of mtuple._outproducts)
   {
     // TODO additional protection? (freezing, ...)
-    products.push({rule:mp.rule, tuples: [...mp.tuples].map(t => t.toGeneric()), tupleOut: mp._outtuple.toGeneric()});
+    products.push({rule:mp.rule, tuples: mp.tuples().map(t => t.toGeneric()), tupleOut: mp._outtuple.toGeneric()});
   }
   return products;
 }
@@ -826,7 +849,7 @@ ${publicFunction('productsIn')}(tuple)
   for (const mp of mtuple.inproducts)
   {
     // TODO additional protection? (freezing, ...)
-    products.push({rule:mp.rule, tuples: [...mp.tuples].map(t => t.toGeneric())});
+    products.push({rule:mp.rule, tuples: mp.tuples().map(t => t.toGeneric())});
   }
   return products;
 }
@@ -1166,7 +1189,7 @@ function remove_tuples_i(tuples)
   {
     ${logDebug('"remove product " + product')}
 
-    for (const intuple of product.tuples)
+    for (const intuple of product.tuples())
     {
       intuple._outproducts.delete(product);
       ${logDebug('"deleted " + intuple + " --> " + product')}
@@ -1219,7 +1242,7 @@ function remove_tuples_i(tuples)
 
     function groundedProduct(product)
     {
-      for (const tuple of product.tuples)
+      for (const tuple of product.tuples())
       {
         if (!groundedTuple(tuple))
         {
@@ -1307,38 +1330,6 @@ const Sets =
     return true;
   }
 }
-
-function Product(rule, tuples)
-{
-  this.rule = rule;
-  this.tuples = tuples;
-  this._outtuple = null;
-  // for (const existingP of products)
-  // {
-  //   if (existingP.equals(this))
-  //   {
-  //     console.log("existing product created: " + this);
-  //     return this;
-  //   }
-  // }
-  // console.log("fresh product created: " + this);
-  // products.push(this);
-  // return this;
-}
-Product.prototype.toString =
-  function ()
-  {
-    return this.rule + ":" + [...this.tuples].join('.');
-  }
-Product.prototype.equals =
-  function (x)
-  {
-    if (this.rule !== x.rule)
-    {
-      return false;
-    }
-    return Sets.equals(this.tuples, x.tuples);
-  }
 
 function ProductGB(rule, tuples, value)
 {
