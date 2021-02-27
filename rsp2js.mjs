@@ -190,7 +190,6 @@ function get_${pred}(${tn.join(', ')})
     return sb.join('\n');
   }
 
-  
   function emitAddGet(pred, arity)
   {
 
@@ -223,6 +222,43 @@ function add_get_${pred}(${tn.join(', ')})
     }
     sb.push(`
     return ${maps[arity]};
+}
+    `);
+    return sb.join('\n');
+  }
+
+  function emitAddGet2(name, rootMapName, numFields)
+  {
+
+    function emitEntry(i)
+    {
+      if (i === numFields)
+      {
+        return `entry`;
+      }
+      return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
+    }
+
+    const tn = termNames2(numFields);
+    const maps = [rootMapName].concat(Array.from(Array(numFields), (_, i) => "l" + i));
+    const sb = [`
+function addGet${name}(${tn.join(', ')})
+{
+    `];
+    for (let i = 0; i < numFields; i++)
+    {
+      sb.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(t${i});
+      if (${maps[i+1]} === undefined)
+      {
+        const entry = new ${name}(${tn.join(', ')});
+        ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
+        return entry;
+      }
+      `)
+    }
+    sb.push(`
+    return ${maps[numFields]};
 }
     `);
     return sb.join('\n');
@@ -372,14 +408,14 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
       {
         const new_${pred}_tuple = add_get_${pred}(${head.terms.join(', ')});
         newTuples.add(new_${pred}_tuple);
-        const product = new Rule${rule._id}Product(${ptuples.join(', ')});
+        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
         ${t2ps.join('\n        ')}
         product._outtuple = new_${pred}_tuple;
         new_${pred}_tuple._inproducts.add(product);
       }
       else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
       {
-        const product = new Rule${rule._id}Product(${ptuples.join(', ')});
+        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
         ${t2ps.join('\n        ')}
         product._outtuple = existing_${pred}_tuple;
         existing_${pred}_tuple._inproducts.add(product);
@@ -537,7 +573,7 @@ class Rule${rule._id}Product
 
   toString()
   {
-    return "r${rule._id}:" + this.tuples.join('.');
+    return "r${rule._id}:" + this.tuples().join('.');
   }
 
   tuples() // or, a field initialized in ctr?
@@ -545,6 +581,10 @@ class Rule${rule._id}Product
     return [${tupleFields.join(', ')}];
   }
 }
+
+const Rule${rule._id}Products = new Map();
+${emitAddGet2(`Rule${rule._id}Product`, `Rule${rule._id}Products`, tupleArity)}
+// TODO: Product removal!
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {

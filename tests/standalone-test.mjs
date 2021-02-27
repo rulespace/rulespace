@@ -26,7 +26,7 @@ compileToModule(src, 'standalone', {debug:true}).then(module => {
   // const edbTuples = parseTuples(`[I 'a 10] [I 'a 20] [I 'b 33]`);
   const delta1a = module.addTuples([edbTuples[0]]);
   const delta1b = module.addTuples([edbTuples[1]]);
-  // const delta1c = module.addTuples([edbTuples[2]]);
+  const delta1c = module.addTuples([edbTuples[2]]);
   // const delta2 = module.removeTuples(parseTuples(`[Link "c" "c"] [Link "c" "d"] [Link "b" "c"]`));
 // console.log(toDot(module.edbTuples()));
 console.log("tuples: " + [...module.tuples()]);
