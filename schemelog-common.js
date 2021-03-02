@@ -1,4 +1,4 @@
-import { Sets, assertTrue } from './common.mjs';
+import { Sets, assertTrue } from 'common';
 
 export function reachableTuples(tuples, module)
 {

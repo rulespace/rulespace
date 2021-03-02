@@ -1,7 +1,7 @@
 import { performance } from 'perf_hooks';
-import { assertTrue, Sets } from '../common.mjs';
-import { compileToConstructor, parseTuples, tupleEquals } from './test-common.mjs';
-import { toDot, sanityCheck } from '../schemelog-common.mjs';
+import { assertTrue, Sets } from 'common';
+import { compileToConstructor, parseTuples, tupleEquals } from './test-common.js';
+import { toDot, sanityCheck } from '../schemelog-common.js';
 
 function containsTuple(t, ts)
 {
@@ -80,8 +80,14 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
     sanityCheck(module);
     const delta = module.addTuples(p);
     sanityCheck(module);
-    assertTrue(equalTuples(module.edbTuples(), p));
-    const expectedTuples = Sets.union(p, expectedIdbTuples);
+    // const expectedEdbTuples = new  // TODO: by design, added non-edb tuples are discarded by module
+    // if (!equalTuples(module.edbTuples(), p))
+    // {
+    //   console.log("(expected) edb tuples: " + [...p].join());
+    //   console.log("module edb tuples: " + [...module.edbTuples()].join());
+    //   throw new Error("assertion failed");
+    // }
+    const expectedTuples = Sets.union(module.edbTuples(), expectedIdbTuples); // here, use 'actual' module edb tuples 
     assertTrue(equalTuples(module.tuples(), expectedTuples));
     assertTrue(equalTuples([...delta.added().values()].flat(), expectedTuples));
   }
@@ -376,5 +382,13 @@ testInitialSolve(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`,
 testIncrementalAdd(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
 
 testRemoveEdb(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
+
+testInitialSolve(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
+testInitialSolve(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
+testInitialSolve(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
+testInitialSolve(`(rule [X] [I])`, `[I]`, `[X]`);
+testInitialSolve(`(rule [X] [I])`, `[J]`, ``); 
+
+testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 
 console.log("done: " + (performance.now() - start) + "ms");

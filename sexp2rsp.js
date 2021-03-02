@@ -1,6 +1,6 @@
-import { assertTrue } from './common.mjs';
-import { Pair, Sym, Keyword, Tuple } from './sexp-parser.mjs';
-import { Program, Rule, Neg, Agg, Atom, Lit, Var } from './rsp.mjs';
+import { assertTrue } from 'common';
+import { Pair, Sym, Keyword, Tuple } from './sexp-reader.js';
+import { Program, Rule, Neg, Agg, Atom, Lit, Var } from './rsp.js';
 
 export function sexp2rsp(sexps)
 {

@@ -40,8 +40,9 @@ JenssMacBookPro2local;1614355081108;20210226;1658;;lnru100;66;60;55
 JenssMacBookPro2local;1614355081108;20210226;1658;;lnru500;619;705;674
 JenssMacBookPro2local;1614355081108;20210226;1658;;lnru1000;15336;14462;14709
 
-separate products per (non-GB) rule + mapped lookup of products
+separate products per (non-GB) rule + mapped lookup of products (no delete of prods yet)
 JenssMacBookPro2local;1614457287740;20210227;2121;;lnrunegaddrem;16;11;10
 JenssMacBookPro2local;1614457287740;20210227;2121;;lnru100;41;37;25
 JenssMacBookPro2local;1614457287740;20210227;2121;;lnru500;273;310;258
 JenssMacBookPro2local;1614457287740;20210227;2121;;lnru1000;4423;4732;3934
+

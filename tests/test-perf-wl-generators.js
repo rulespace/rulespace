@@ -1,4 +1,4 @@
-import { Unique } from './test-common.mjs';
+import { Unique } from './test-common.js';
 
 function random(min, max) // min and max included 
 {

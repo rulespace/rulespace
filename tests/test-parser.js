@@ -1,10 +1,10 @@
-import {SchemeParser, Pair } from '../parser.mjs';
+import {SchemeParser, Pair } from '../sexp-reader.js';
 
 const parser = new SchemeParser();
 
 const result = parser.parse(`
 
-'a
+[X]
 
 `);
 

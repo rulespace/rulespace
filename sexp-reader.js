@@ -1,4 +1,4 @@
-import {Characters, assertFalse} from './common.mjs';
+import {Characters, assertFalse} from 'common';
 
 let __nodeCounter__ = 0;
 
@@ -235,17 +235,18 @@ SchemeReader.prototype.read =
     return r;
   }
 
-export function SchemeParser()
+export class SchemeParser
 {
-}
+  constructor()
+  {
+  }
 
-SchemeParser.prototype.parse = // parseSequence
-  function (str)
+  parse(str)
   {
     var tokenizer = new SchemeTokenizer(str);
     var datas = [];
     var data;
-    var sp = {pos:tokenizer.reader.pos, line:tokenizer.reader.line, linePos:tokenizer.reader.linePos};
+    var sp = { pos: tokenizer.reader.pos, line: tokenizer.reader.line, linePos: tokenizer.reader.linePos };
     while ((data = tokenizer.next()) !== null)
     {
       datas.push(data);
@@ -256,6 +257,8 @@ SchemeParser.prototype.parse = // parseSequence
     po.sp = sp;
     return po;
   }
+}
+
 
 function SchemeTokenizer(str)
 {
@@ -516,13 +519,12 @@ SchemeTokenizer.prototype.parseNumber =
       var pred = this.parse(lookahead);
       terms = [];
       lookahead = this.skipWhitespace();
-      do
+      while (lookahead !== "]")
       {
         var e = this.parse(lookahead);
         terms.push(e);
         lookahead = this.skipWhitespace();
       }
-      while (lookahead !== "]");
     }
     const po = new Tuple(pred, terms);
     po.tag = ++__nodeCounter__;

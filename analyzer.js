@@ -1,5 +1,5 @@
-import { assertTrue, MutableSets, MutableMaps } from './common.mjs';
-import { Atom, Neg } from './rsp.mjs';
+import { assertTrue, MutableSets, MutableMaps } from 'common';
+import { Atom, Neg } from './rsp.js';
 
 function topoSort(predicates)
 {

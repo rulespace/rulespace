@@ -1,7 +1,7 @@
 import fs from 'fs';
-import { SchemeParser, Pair  } from '../sexp-parser.mjs';
-import { sexp2rsp  } from '../sexp2rsp.mjs';
-import { rsp2js } from '../rsp2js.mjs';
+import { SchemeParser, Pair, Null } from '../sexp-reader.js';
+import { sexp2rsp  } from '../sexp2rsp.js';
+import { rsp2js } from '../rsp2js.js';
 
 export function compileToConstructor(src, options)
 {
@@ -144,6 +144,10 @@ export function parseTuples(tupleSequenceSrc) // TODO should be folded into 'reg
 
   const parser = new SchemeParser();
   const seq = parser.parse(tupleSequenceSrc);
+  if (seq instanceof Null)
+  {
+    return []; // TODO: turn Null into (empty) iterator?
+  }
   return [...seq].map(tuple => [tuple.pred.name, ...tuple.terms.map(toValue)]);
 }
 

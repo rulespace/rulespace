@@ -1,6 +1,6 @@
 import os from 'os';
 import { performance } from 'perf_hooks';
-import { compileToConstructor } from './test-common.mjs';
+import { compileToConstructor } from './test-common.js';
 
 const PERF_LOG_FILE_PREFIX = 'logs/perflog-';
 const PERF_LOG_FILE_SUFFIX = '.csv';
@@ -15,10 +15,10 @@ const FILE_NAME = PERF_LOG_FILE_PREFIX + HOST_NAME + TEST_YEAR + TEST_MONTH + PE
 const TEST_DATE_STRING = TEST_YEAR + TEST_MONTH + zeroPad(TEST_DATE.getDate());
 const TEST_TIME_STRING = zeroPad(TEST_DATE.getHours()) + zeroPad(TEST_DATE.getMinutes());
 
-import { wl as lrnu100 } from './wl-lrnu100.mjs';
-import { wl as lrnu1000 } from './wl-lrnu1000.mjs';
-import { wl as lrnunegaddrem } from './wl-lrnunegaddrem.mjs';
-import { wl as lrnu500 } from './wl-lrnu500.mjs';
+import { wl as lrnu100 } from './wl-lrnu100.js';
+import { wl as lrnu1000 } from './wl-lrnu1000.js';
+import { wl as lrnunegaddrem } from './wl-lrnunegaddrem.js';
+import { wl as lrnu500 } from './wl-lrnu500.js';
 
 const COMMENT = '';
 

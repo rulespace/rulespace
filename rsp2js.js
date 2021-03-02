@@ -1,6 +1,6 @@
-import { Sets, assertTrue } from './common.mjs';
-import { Atom, Neg, Agg, Var, Lit } from './rsp.mjs';
-import { analyzeProgram } from './analyzer.mjs';
+import { Sets, assertTrue } from 'common';
+import { Atom, Neg, Agg, Var, Lit } from './rsp.js';
+import { analyzeProgram } from './analyzer.js';
 
 // class LineEmitter
 // {
@@ -169,64 +169,82 @@ export function rsp2js(program, options={})
   function emitGet(pred, arity)
   {
     const tn = termNames2(arity);
-    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
     const sb = [`
 function get_${pred}(${tn.join(', ')})
 {
     `];
-    for (let i = 0; i < arity; i++)
+    if (arity === 0)
     {
-      sb.push(`
-      const ${maps[i+1]} = ${maps[i]}.get(t${i});
-      if (${maps[i+1]} === undefined)
-      {
-        return null;
-      }
-      `)
+      sb.push(`return ${pred}_member;`);
     }
-    sb.push(`return ${maps[arity]};
-}
-    `);
+    else
+    {
+      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+      for (let i = 0; i < arity; i++)
+      {
+        sb.push(`
+        const ${maps[i+1]} = ${maps[i]}.get(t${i});
+        if (${maps[i+1]} === undefined)
+        {
+          return null;
+        }
+        `)
+      }
+      sb.push(`return ${maps[arity]};`);
+    }
+    sb.push(`}`);
     return sb.join('\n');
   }
 
   function emitAddGet(pred, arity)
   {
-
-    function emitEntry(i)
-    {
-      if (i === arity)
-      {
-        return `tuple`;
-      }
-      return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
-    }
-
     const tn = termNames2(arity);
-    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
     const sb = [`
 function add_get_${pred}(${tn.join(', ')})
 {
     `];
-    for (let i = 0; i < arity; i++)
+
+    if (arity === 0)
     {
       sb.push(`
-      const ${maps[i+1]} = ${maps[i]}.get(t${i});
-      if (${maps[i+1]} === undefined)
-      {
-        const tuple = new ${pred}(${tn.join(', ')});
-        ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
-        return tuple;
-      }
-      `)
+        if (${pred}_member === null)
+        {
+          ${pred}_member = new ${pred}(${tn.join(', ')});
+        }
+        return ${pred}_member;
+        `);
     }
-    sb.push(`
-    return ${maps[arity]};
-}
-    `);
+    else
+    {
+      function emitEntry(i)
+      {
+        if (i === arity)
+        {
+          return `tuple`;
+        }
+        return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
+      }
+  
+      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+      for (let i = 0; i < arity; i++)
+      {
+        sb.push(`
+        const ${maps[i+1]} = ${maps[i]}.get(t${i});
+        if (${maps[i+1]} === undefined)
+        {
+          const tuple = new ${pred}(${tn.join(', ')});
+          ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
+          return tuple;
+        }
+        `)
+      }
+      sb.push(`return ${maps[arity]};`)  
+    }
+    sb.push(`}`);
     return sb.join('\n');
   }
 
+  // TODO this is the 'generic' tuples-as-map version, yet it doesn't handle 0-arity preds
   function emitAddGet2(name, rootMapName, numFields)
   {
 
@@ -267,27 +285,44 @@ function addGet${name}(${tn.join(', ')})
   function emitRemove(pred, arity)
   {
     const tn = termNames2(arity);
-    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
     const sb = [`
 function remove_${pred}(${tn.join(', ')})
 {
     `];
-    for (let i = 0; i < arity-1; i++)
+    if (arity === 0)
     {
-      sb.push(`
-      const ${maps[i+1]} = ${maps[i]}.get(t${i});
-      `)
+      sb.push(`${pred}_member === null;`);
     }
-    sb.push(`
-    ${maps[arity - 1]}.set(t${arity-1}, undefined);
-}
-    `);
+    else
+    {
+      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+      for (let i = 0; i < arity-1; i++)
+      {
+        sb.push(`
+        const ${maps[i+1]} = ${maps[i]}.get(t${i});
+        `)
+      }
+      sb.push(`
+      ${maps[arity - 1]}.set(t${arity-1}, undefined);`);  
+    }
+    sb.push(`}`);
     return sb.join('\n');
   }
 
-
   function emitSelect(pred, arity)
   {
+    if (arity === 0)
+    {
+      // TODO: this returns iterable(?), not iterator (as when arity > 0)
+      return `
+      function select_${pred}()
+      {
+          return ${pred}_member === null ? [] : [${pred}_member];
+      }
+          `;      
+    }
+
+
     const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
 
     function emitLookup(i)
@@ -307,6 +342,7 @@ function remove_${pred}(${tn.join(', ')})
         `;
     }
     
+    // iterator
     return `
 function* select_${pred}()
 {
@@ -323,9 +359,10 @@ function emitTupleObject(pred)
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
   const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
+  const init = (pred.arity === 0 ? `let ${pred}_member = null` : `const ${pred}_members = new Map()`);
 
   let sb = `
-const ${pred}_members = new Map();
+${init};
 function ${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
@@ -436,14 +473,17 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
     atom.terms.forEach((term, i) => {
       if (term instanceof Var)
       {
-        if (compileEnv.has(term.name))
+        if (term.name !== '_')
         {
-          conditions.push(`${tuple}.t${i} === ${term.name}`);
-        }
-        else
-        {
-          bindUnboundVars.push(`const ${term.name} = ${tuple}.t${i};`);
-          compileEnv.add(term.name);
+          if (compileEnv.has(term.name))
+          {
+            conditions.push(`${tuple}.t${i} === ${term.name}`);
+          }
+          else
+          {
+            bindUnboundVars.push(`const ${term.name} = ${tuple}.t${i};`);
+            compileEnv.add(term.name);
+          }  
         }
       }
       else if (term instanceof Lit)
@@ -470,7 +510,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
     else
     {
       return `
-      // atom ${atom} [conditions]
+      // atom ${atom} (conditions)
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         if (${conditions.join(' && ')})
@@ -1066,6 +1106,10 @@ function termNames2(arity)
 
 function termToString(x)
 {
+  if (typeof x === 'string')
+  {
+    return `'${x}'`;
+  }
   return String(x); // ???
 }
 

@@ -1,15 +1,13 @@
 {
   "name": "rulespace",
   "version": "0.0.1",
-  "main": "index.mjs",
+  "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "cd tests && node test.mjs"
+    "test": "cd tests && node test.js"
   },
   "author": "Jens Nicolay <jens.nicolay@gmail.com>",
   "license": "ISC",
-  "dependencies": {
-  },
   "directories": {
     "test": "tests"
   },
@@ -27,5 +25,8 @@
     "url": "https://github.com/jensnicolay/rulespace/issues"
   },
   "homepage": "https://github.com/jensnicolay/rulespace#readme",
-  "description": ""
+  "description": "",
+  "devDependencies": {
+    "common": "file:../common"
+  }
 }
