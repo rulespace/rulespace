@@ -1000,11 +1000,11 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
     const pred = atom.atom.pred; // always edb
     return [`
     // atom ${i} ${atom} (edb)
-    const removed_${pred}_tuples = [...globRemovedTuples].filter(t => t.constructor === ${pred});
-    ${assert(`Array.isArray(removed_${pred}_tuples)`)}
-    if (removed_${pred}_tuples.length > 0)
+    const removed_${pred}_tuples${stratum.id} = [...globRemovedTuples].filter(t => t.constructor === ${pred});
+    ${assert(`Array.isArray(removed_${pred}_tuples${stratum.id})`)}
+    if (removed_${pred}_tuples${stratum.id}.length > 0)
     {
-      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples);
+      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples${stratum.id});
       MutableArrays.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
     }
   `];
@@ -1156,7 +1156,7 @@ function emitAddTuples(strata, preds)
         const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
         if (NOT_${pred}_tuple !== null)
         {
-          tuples_to_remove.push(NOT_${pred}_tuple);
+          tuples_to_remove${stratum.id}.push(NOT_${pred}_tuple);
         }
       }`;
     }
@@ -1169,13 +1169,13 @@ function emitAddTuples(strata, preds)
     // neg deps: ${[...stratum.negDependsOn].join()}
     
     // idb tuple removal due to addition of edb tuples with neg deps
-    const tuples_to_remove = [];
+    const tuples_to_remove${stratum.id} = [];
     ${removeLoops.join('\n')}
   
-    ${logDebug('"\\naddTupleMap: removeTuples " + tuples_to_remove.join()')}
-    if (tuples_to_remove.length > 0)
+    ${logDebug(`"\\naddTupleMap: removeTuples " + tuples_to_remove${stratum.id}.join()`)}
+    if (tuples_to_remove${stratum.id}.length > 0)
     {
-      const transRemovedTuples = remove_tuples_i(tuples_to_remove);
+      const transRemovedTuples = remove_tuples_i(tuples_to_remove${stratum.id});
       MutableSets.addAll(globRemovedTuples, transRemovedTuples);
       ${logDebug('`removed due to edb addition: ${[...transRemovedTuples].join()}`')}
     }

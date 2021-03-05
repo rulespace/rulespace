@@ -4,20 +4,32 @@ import { compileToModule, parseTuples } from './test-common.js';
 
 const src =
 `
-(rule [X a b]
-  [I _ _ a _ _ b _ ])
+(rule [Reachable x y]
+  [Link x y])
+  
+(rule [Reachable x y]
+  [Link x z] [Reachable z y])
 
+(rule [Node x]
+  [Link x _])
+  
+(rule [Node y]
+  [Link _ y])
+
+(rule [Unreachable x y]
+  [Node x] [Node y] (not [Reachable x y]))
+  
+(rule [Unreachable2 x y]
+  [Node x] [Node y] (not [Reachable x y]))
+      
 `;
 
 compileToModule(src, 'standalone', {debug:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
-  const edbTuples = parseTuples(`[I 0 1 2 3 4 5 6]`);
-// const edbTuples = parseTuples(`[Link "a" "b"] [Link "b" "c"] [Link "c" "c"]`);
-// const edbTuples = parseTuples(`[I 'a 10] [I 'a 20] [I 'b 33]`);
+const edbTuples = parseTuples(`[Link 'a 'b]`);
 const delta1a = module.addTuples(edbTuples);
 // const delta2 = module.removeTuples(parseTuples(`[Link "c" "c"] [Link "c" "d"] [Link "b" "c"]`));
 // console.log(toDot(module.edbTuples()));
-console.log("edb tuples: " + [...module.edbTuples()].join(' ++ '));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 
 sanityCheck(module);

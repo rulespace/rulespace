@@ -391,4 +391,29 @@ testInitialSolve(`(rule [X] [I])`, `[J]`, ``);
 
 testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 
+// bugfix: more than one neg resulted in clash of identifier names
+const example7 = `
+(rule [Reachable x y]
+  [Link x y])
+  
+(rule [Reachable x y]
+  [Link x z] [Reachable z y])
+
+(rule [Node x]
+  [Link x _])
+  
+(rule [Node y]
+  [Link _ y])
+
+(rule [Unreachable x y]
+  [Node x] [Node y] (not [Reachable x y]))
+  
+(rule [Unreachable2 x y]
+  [Node x] [Node y] (not [Reachable x y]))
+`;
+testInitialSolve(example7, `[Link 'a 'b]`, 
+  `[Node 'a] [Node 'b] [Reachable 'a 'b]
+  [Unreachable2 'a 'a] [Unreachable2 'b 'a] [Unreachable2 'b 'b]
+  [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]`)
+
 console.log("done: " + (performance.now() - start) + "ms");
