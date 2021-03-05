@@ -1392,29 +1392,6 @@ const MutableSets =
   }
 }
 
-const Sets = 
-{
-  equals(x, y)
-  {
-    if (x === y)
-    {
-      return true;
-    }
-    if (x.size !== y.size)
-    {
-      return false;
-    }
-    for (const xvalue of x)
-    {
-      if (!y.has(xvalue))
-      {
-        return false;
-      }
-    }
-    return true;
-  }
-}
-
 function ProductGB(rule, tuples, value)
 {
   this.rule = rule;

@@ -2,3 +2,4 @@
 .vscode
 ignored
 compiled
+node_modules
