@@ -8,28 +8,20 @@ const src =
   [Link x y])
   
 (rule [Reachable x y]
-  [Link x z] [Reachable z y])
-
-(rule [Node x]
-  [Link x _])
-  
-(rule [Node y]
-  [Link _ y])
-
-(rule [Unreachable x y]
-  [Node x] [Node y] (not [Reachable x y]))
-  
-(rule [Unreachable2 x y]
-  [Node x] [Node y] (not [Reachable x y]))
-      
+  [Reachable x z] [Link z y])
 `;
 
-compileToModule(src, 'standalone', {debug:true}).then(module => {
+
+
+compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
-const edbTuples = parseTuples(`[Link 'a 'b]`);
-const delta1a = module.addTuples(edbTuples);
-// const delta2 = module.removeTuples(parseTuples(`[Link "c" "c"] [Link "c" "d"] [Link "b" "c"]`));
-// console.log(toDot(module.edbTuples()));
+const edbTuples = parseTuples(`[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
+// const edbTuples = parseTuples(`[Link "b" "c"] [Link "c" "b"] [Link "c" "c"]`);
+const delta1 = module.addTuples(edbTuples);
+console.log("tuples: " + [...module.tuples()].join('\n'));
+sanityCheck(module);
+
+module.removeTuples(parseTuples(`[Link 'a 'b]`)); 
 console.log("tuples: " + [...module.tuples()].join('\n'));
 
 sanityCheck(module);

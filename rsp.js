@@ -26,6 +26,11 @@ export class Rule
     return this.head.terms[this.head.terms.length - 1] instanceof Agg;
   }
 
+  tupleArity()
+  {
+    return this.body.reduce((acc, exp) => ((exp instanceof Atom) || (exp instanceof Neg)) ? acc+1 : acc, 0);
+  }
+
   toString()
   {
     return `${this.head} :- ${this.body.join()}`;

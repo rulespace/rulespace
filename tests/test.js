@@ -89,7 +89,7 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
     // }
     const expectedTuples = Sets.union(module.edbTuples(), expectedIdbTuples); // here, use 'actual' module edb tuples 
     assertTrue(equalTuples(module.tuples(), expectedTuples));
-    assertTrue(equalTuples([...delta.added().values()].flat(), expectedTuples));
+    assertTrue(equalTuples([...delta.added()].flatMap(kv => kv[1]), expectedTuples));
   }
   // if (dot) {console.log(toDot(module.edbTuples()))}; 
 }
@@ -169,6 +169,15 @@ function testRemoveEdb(src, edbTuplesSrc)
 
 const start = performance.now();
 
+testInitialSolve(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
+testInitialSolve(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
+testInitialSolve(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
+testInitialSolve(`(rule [X] [I])`, `[I]`, `[X]`);
+testInitialSolve(`(rule [X] [I])`, `[J]`, ``); 
+
+testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
+
+// ===
 const example1 = `
 (rule [Reachable x y]
   [Link x y])
@@ -190,6 +199,7 @@ testRemoveEdb(example1, `[Link 'a 'b] [Link 'b 'c]`);
 
 testRemoveEdb(example1, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
 
+// ===
 const example2 = `
 (rule [Reachable x y]
   [Link x y])
@@ -209,6 +219,7 @@ testIncrementalAdd(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd
 
 testRemoveEdb(example2, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
 
+// ===
 const example3 = `
 (rule [Reachable x y]
   [Link x y])
@@ -239,7 +250,7 @@ testIncrementalAdd(example3, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd
 
 testRemoveEdb(example3, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
    
-
+// ===
 const example4 = `
 (rule [Reachable x y]
   [Link x y])
@@ -289,6 +300,7 @@ testIncrementalAdd(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd
 
 testRemoveEdb(example4, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
       
+// ===
 const example4b = `
 (rule [Reachable x y]
   [Link x y])
@@ -339,6 +351,7 @@ testIncrementalAdd(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c '
 testRemoveEdb(example4b, `[Link 'c 'd] [Link 'c 'c] [Link 'b 'c] [Link 'a 'b] [Link 'c 'b]`);
       
 
+// ===
 const example5 = `
 (rule [Rsum x #:sum y]
   [I x y])
@@ -353,14 +366,15 @@ const example5 = `
   [I x y])
 `;
 
-testInitialSolve(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
-  `[Rsum 'a 30] [Rsum 'b 33]
-   [Rmax 'a 20] [Rmax 'b 33]
-   [Rmin 'a 10] [Rmin 'b 33]
-   [Rcount 'a 2] [Rcount 'b 1]
-  `);
+// testInitialSolve(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
+//   `[Rsum 'a 30] [Rsum 'b 33]
+//    [Rmax 'a 20] [Rmax 'b 33]
+//    [Rmin 'a 10] [Rmin 'b 33]
+//    [Rcount 'a 2] [Rcount 'b 1]
+//   `);
 
 
+// ===
 const example6 = `
 (rule [B x] [A x])
 (rule [C x] [B x])
@@ -383,15 +397,8 @@ testIncrementalAdd(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
 
 testRemoveEdb(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`);
 
-testInitialSolve(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
-testInitialSolve(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
-testInitialSolve(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
-testInitialSolve(`(rule [X] [I])`, `[I]`, `[X]`);
-testInitialSolve(`(rule [X] [I])`, `[J]`, ``); 
 
-testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
-
-// bugfix: more than one neg resulted in clash of identifier names
+// === bugfix: more than one neg resulted in clash of identifier names
 const example7 = `
 (rule [Reachable x y]
   [Link x y])
@@ -416,4 +423,24 @@ testInitialSolve(example7, `[Link 'a 'b]`,
   [Unreachable2 'a 'a] [Unreachable2 'b 'a] [Unreachable2 'b 'b]
   [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]`)
 
+
+// ===
+const example8 = 
+`
+(rule [B x] [A x])
+(rule [C x] [B x])
+(rule [D x] [C x])
+(rule [B x] [D x])
+(rule [R x] [B x])
+`
+
+testInitialSolve(example8, `[A 1] [A 2] [A 3]`,
+  `[B 1] [C 1] [D 1] [R 1]
+    [B 2] [C 2] [D 2] [R 2]
+    [B 3] [C 3] [D 3] [R 3]
+  `);
+testIncrementalAdd(example8, `[A 1] [A 2] [A 3]`);
+testRemoveEdb(example8, `[A 1] [A 2] [A 3]`);
+
+// ============
 console.log("done: " + (performance.now() - start) + "ms");

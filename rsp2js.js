@@ -117,12 +117,17 @@ export function rsp2js(program, options={})
   // precedes: ${[...pred.precedes].join(',')}
   // posDependsOn: ${[...pred.posDependsOn].join(',')}
   // negDependsOn: ${[...pred.negDependsOn].join(',')}
-  // negated: ${pred.negated}
+  // posAppearsIn: ${[...pred.posAppearsIn].join(',')}
+  // negAppearsIn: ${[...pred.negAppearsIn].join(',')}
       `);
 
       sb.push(emitTupleObject(pred));
       //sb.push(emitGetTuple(pred));
-      sb.push(emitDeltaAddTuple(pred));
+      if (pred.edb)
+      {
+        sb.push(emitDeltaAddTuple(pred));
+      }
+      
       // if (pred.edb)
       // {
       //   sb.push(emitAddTuple(pred, strata));
@@ -146,7 +151,7 @@ export function rsp2js(program, options={})
   
 
   sb.push(emitAddTuples(strata, preds));
-  sb.push(emitRemoveTuples());
+  sb.push(emitRemoveTuples(strata));
   
   sb.push(emitIterators(preds, edbPreds, rules));
   sb.push(emitClear(edbPreds));
@@ -210,6 +215,7 @@ function add_get_${pred}(${tn.join(', ')})
         if (${pred}_member === null)
         {
           ${pred}_member = new ${pred}(${tn.join(', ')});
+          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
         }
         return ${pred}_member;
         `);
@@ -234,6 +240,7 @@ function add_get_${pred}(${tn.join(', ')})
         {
           const tuple = new ${pred}(${tn.join(', ')});
           ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
+          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
           return tuple;
         }
         `)
@@ -305,6 +312,7 @@ function remove_${pred}(${tn.join(', ')})
       sb.push(`
       ${maps[arity - 1]}.set(t${arity-1}, undefined);`);  
     }
+    sb.push(logDebug(`\`removed ${pred}(${tn.map(t => `\${${t}}`)}) from members\``));
     sb.push(`}`);
     return sb.join('\n');
   }
@@ -396,7 +404,7 @@ ${emitSelect(`${pred}`, pred.arity)}
 
 `;
 
-  if (pred.negated)
+  if (pred.negAppearsIn.size > 0)
   {
     sb += `
 const NOT_${pred}_members = new Map();
@@ -593,10 +601,11 @@ function emitRule(rule)
 {
   const compileEnv = new Set();
 
-  const tupleArity = rule.body.reduce((acc, exp) => ((exp instanceof Atom) || (exp instanceof Neg)) ? acc+1 : acc, 0);
+  const tupleArity = rule.tupleArity();
   const tupleParams = Array.from({length:tupleArity}, (_, i) => `tuple${i}`);
   const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
   const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
+  const recursive = analysis.ruleIsRecursive(rule);
 
   return `
 /* rule (tuple arity ${tupleArity}) (no aggregates)
@@ -611,14 +620,20 @@ class Rule${rule._id}Product
     this._outtuple = null; // TODO make this ctr param!
   }
 
-  toString()
+  // result of a recursive rule?
+  recursive()
   {
-    return "r${rule._id}:" + this.tuples().join('.');
+    return ${recursive};
   }
 
   tuples() // or, a field initialized in ctr?
   {
     return [${tupleFields.join(', ')}];
+  }
+
+  toString()
+  {
+    return "r${rule._id}:" + this.tuples().join('.');
   }
 }
 
@@ -629,8 +644,7 @@ ${emitAddGet2(`Rule${rule._id}Product`, `Rule${rule._id}Products`, tupleArity)}
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {
   ${logDebug(`"fire ${rule}"`)}
-  ${logDebug('`deltaPos ${deltaPos}`')}
-  ${logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
+  ${logDebug('`deltaPos ${deltaPos} deltaTuples ${[...deltaTuples].join()}`')}
 
   ${profileStart(`fireRule${rule._id}`)}
 
@@ -974,38 +988,34 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
       {
         return [`
         // atom ${i} ${atom} (edb) (aggregating)
-        ${assert(`Array.isArray(${pred}_tuples)`)}
-        if (${pred}_tuples.length > 0)
+        if (added_${pred}_tuples.length > 0)
         {
-          const [Rule${rule._id}_tuples${i}, tuplesToRemove] = fireRule${rule._id}(${i}, ${pred}_tuples);
-          MutableArrays.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
-          const transRemovedTuples = remove_tuples_i(tuplesToRemove);
-          MutableSets.addAll(globRemovedTuples, transRemovedTuples);            
+          const [Rule${rule._id}_tuples${i}, tuplesToRemove] = fireRule${rule._id}(${i}, added_${pred}_tuples);
+          MutableArrays.addAll(added_${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+          const transRemovedTuples = remove_tuples_i2(tuplesToRemove);
+          MutableSets.addAll(globRemovedTuples, transRemovedTuples);            // TODO
         }
       `];  
       }
       return [`
       // atom ${i} ${atom} (edb) (non-aggregating)
-      ${assert(`Array.isArray(${pred}_tuples)`)}
-      if (${pred}_tuples.length > 0)
+      if (added_${pred}_tuples.length > 0)
       {
-        const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, ${pred}_tuples);
-        MutableArrays.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+        const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, added_${pred}_tuples);
+        MutableArrays.addAll(added_${producesPred}_tuples, Rule${rule._id}_tuples${i});  
       }
     `];
     }
   }
   else if (atom instanceof Neg)
   {
-    const pred = atom.atom.pred; // always edb
+    const pred = atom.atom.pred; // always stratum-edb
     return [`
     // atom ${i} ${atom} (edb)
-    const removed_${pred}_tuples${stratum.id} = [...globRemovedTuples].filter(t => t.constructor === ${pred});
-    ${assert(`Array.isArray(removed_${pred}_tuples${stratum.id})`)}
-    if (removed_${pred}_tuples${stratum.id}.length > 0)
+    if (removed_${pred}_tuples.length > 0)
     {
-      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples${stratum.id});
-      MutableArrays.addAll(${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples); // TODO inefficient: does full scan in lrnu
+      MutableArrays.addAll(added_${producesPred}_tuples, Rule${rule._id}_tuples${i});  
     }
   `];
   }
@@ -1033,9 +1043,9 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred)
     if (recursivePreds.has(pred))
     {
       return [`
-        const ${producesPred}_tuples_${i} = fireRule${rule._id}(${i}, local_${pred});
-        MutableArrays.addAll(new_${producesPred}, ${producesPred}_tuples_${i});
-        MutableArrays.addAll(${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
+        const ${producesPred}_tuples_${i} = fireRule${rule._id}(${i}, local_${pred}_tuples);
+        MutableArrays.addAll(new_${producesPred}_tuples, ${producesPred}_tuples_${i});
+        MutableArrays.addAll(added_${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
       `];  
     }
     else
@@ -1064,19 +1074,17 @@ function emitRecursiveRules(rules, recursivePreds)
 
   // TODO these locals profit only in first step from addition that occurs within loop (cascade, through shared ref to general delta set)
   const locals = producedPreds.map(pred => `
-    ${assert(`Array.isArray(${pred}_tuples)`)}
-    let local_${pred} = ${pred}_tuples;
+    let local_${pred}_tuples = added_${pred}_tuples;
   `);
   const news = producedPreds.map(pred => `
-    const new_${pred} = [];
+    const new_${pred}_tuples = [];
   `);
-  const localConditions = producedPreds.map(pred => `local_${pred}.length > 0`);
+  const localConditions = producedPreds.map(pred => `local_${pred}_tuples.length > 0`);
 
   const fireRules = rules.map(rule => emitRecursiveRule(rule, recursivePreds));
 
   const transfers = producedPreds.map(pred => `
-    local_${pred} = new_${pred};
-    ${assert(`Array.isArray(local_${pred})`)}
+    local_${pred}_tuples = new_${pred}_tuples;
   `);
 
   return `
@@ -1136,231 +1144,306 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   `
 }
 
-function emitAddTuples(strata, preds) 
+function stratumLogic(stratum)
 {
+  const globalEdbStratum = (stratum.recursiveRules.size === 0 && stratum.nonRecursiveRules.size === 0);
 
-  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', ${pred}_tuples.map(mt => mt.toGeneric())]`);
+  const sb = [`
+    ${logDebug(`"=== stratum ${stratum}"`)}
+    // stratum ${stratum.id} ${globalEdbStratum ? `(global edb)` : `(global idb)`}
+    // preds: ${stratum.preds.join(', ')}
+    // non-recursive rules: ${[...stratum.nonRecursiveRules].map(rule => "Rule" + rule._id)}
+    // recursive rules: ${[...stratum.recursiveRules].map(rule => "Rule" + rule._id)}  
+    `];
 
-  function stratumLogic(stratum)
+
+  if (globalEdbStratum)
   {
-    const sb = [`${logDebug(`"\\n=======\\nstratum ${stratum}"`)}`];
-  
-    function removeLoop(pred)
+    for (const pred of stratum.preds)
     {
-      const tn = termNames(pred);
-      const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);
-  
-      return `
-      for (const added_${pred}_tuple of ${pred}_tuples)
+      assertTrue(pred.edb);
+      sb.push(emitDeltaRemoveTuple(pred));
+      if (pred.negAppearsIn.size > 0)
       {
-        const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
-        if (NOT_${pred}_tuple !== null)
-        {
-          tuples_to_remove${stratum.id}.push(NOT_${pred}_tuple);
-        }
-      }`;
-    }
-  
-    if (stratum.negDependsOn.size > 0)
-    {
-      const removeLoops = [...stratum.negDependsOn].map(removeLoop);
-  
+        sb.push(emitDeltaRemoveTuple(`NOT_${pred}`));
+      }
+
       sb.push(`
-    // neg deps: ${[...stratum.negDependsOn].join()}
-    
-    // idb tuple removal due to addition of edb tuples with neg deps
-    const tuples_to_remove${stratum.id} = [];
-    ${removeLoops.join('\n')}
-  
-    ${logDebug(`"\\naddTupleMap: removeTuples " + tuples_to_remove${stratum.id}.join()`)}
-    if (tuples_to_remove${stratum.id}.length > 0)
+
+      // removing ${pred} tuples because of user delta
+      const ${pred}_tuples_to_be_removed = (removedTuplesMap.get('${pred}') || []).map(getMTuple);
+      for (const ${pred}_tuple of ${pred}_tuples_to_be_removed)
+      {
+        deltaRemove_${pred}(${pred}_tuple);
+      }
+      
+      // adding ${pred} tuples because of user delta
+      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get('${pred}') || []);
+      `);  
+    }      
+  }
+  else // global idb stratum
+  {
+
+    if (analysis.stratumHasRecursiveRule(stratum))
     {
-      const transRemovedTuples = remove_tuples_i(tuples_to_remove${stratum.id});
-      MutableSets.addAll(globRemovedTuples, transRemovedTuples);
-      ${logDebug('`removed due to edb addition: ${[...transRemovedTuples].join()}`')}
+      assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));
+
+      if (stratum.preds.length > 1)
+      {
+        const removeLoopCondition = stratum.preds.map(pred => `damaged_${pred}_tuples.length > 0`).join(' || ');
+        sb.push(`
+        while (${removeLoopCondition})
+        {`);  
+      }
+
+      for (const pred of stratum.preds)
+      {
+        const removalCondition = analysis.predHasNonRecursiveRule
+          ? `damaged_${pred}_tuple._inproducts.size === 0 || !tupleIsGrounded(damaged_${pred}_tuple)`
+          : `damaged_${pred}_tuple._inproducts.size === 0)`; // a "fully recursive" never by itself will have incoming non-recursive products,
+          // so its groundedness always depends on other tuples (with incoming non-rec products)
+        sb.push(`
+        ${logDebug(`"removing damaged ${pred} tuples due to removal of other tuples"`)}
+        while (damaged_${pred}_tuples.length > 0)
+        {
+          const damaged_${pred}_tuple = damaged_${pred}_tuples.pop();
+          if (${removalCondition})
+          {
+            deltaRemove_${pred}(damaged_${pred}_tuple);
+          }  
+        }
+        `)
+      }
+
+      if (stratum.preds.length > 1)
+      {
+        sb.push(`
+        }`)
+      }
     }
-      `);
-    }
-  
-    if (stratum.recursiveRules.size === 0 && stratum.nonRecursiveRules.size === 0)
+    else // single-pred non-recursive stratum
     {
       assertTrue(stratum.preds.length === 1);
       const pred = stratum.preds[0];
-      assertTrue(pred.edb);
-      return `const ${pred}_tuples = delta_add_${pred}_tuples(edbTuplesMap.get('${pred}') || []);`;
+      sb.push(`
+      ${logDebug(`"removing damaged ${pred} tuples due to removal of stratum-edb tuples"`)}
+      for (const damaged_${pred}_tuple of damaged_${pred}_tuples)
+      {
+        if (damaged_${pred}_tuple._inproducts.size === 0)
+        {
+          deltaRemove_${pred}(damaged_${pred}_tuple);
+        }
+      }
+      `);
     }
-  
-    const tupleIntroductions = stratum.preds.map(pred => `const ${pred}_tuples = [];`);
-    sb.push(tupleIntroductions.join('\n    '));
 
-
-     sb.push(`// firing with delta edb tuples`); 
-    for (const rule of Sets.union(stratum.nonRecursiveRules, stratum.recursiveRules))
+     
+    // introduce tuples that this stratum may add
+    for (const pred of stratum.preds)
     {
-      sb.push(emitDeltaEdbForRule(rule, stratum));
+      sb.push(`const added_${pred}_tuples = [];`);
+
+      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing non-recursive rules"')); 
+      for (const rule of pred.rules)
+      {
+        // due to stratum-edb (non-recursive) addition 
+        sb.push(emitDeltaEdbForRule(rule, stratum));
+      }
     }
   
-    // const nonRecursiveRules = [...stratum.nonRecursiveRules].map(emitNonRecursiveRule);
-    // sb.push(nonRecursiveRules.join('\n    '));
-  
-    sb.push(`// firing with recursive delta idb tuples`); 
     if (stratum.recursiveRules.size > 0)
     {
+      sb.push(logDebug('"adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
       const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], new Set(stratum.preds.map(pred => pred.name)));
       sb.push(recursiveRules);
     }
-  
-    return sb.join('\n');
+
+    for (const pred of stratum.preds)
+    {
+      sb.push(emitDeltaRemoveTuple(pred));
+      if (pred.negAppearsIn.size > 0)
+      {
+        sb.push(emitDeltaRemoveNOTTuple(pred));
+
+        const tn = termNames(pred);
+        const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);    
+        sb.push(`
+        ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
+        for (const added_${pred}_tuple of added_${pred}_tuples)
+        {
+          const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
+          if (NOT_${pred}_tuple !== null)
+          {
+            deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
+          }
+        }
+        `);
+      }
+    }
+    
   }
-  
-  const strataLogic = strata.map(stratum => {
 
-    return `
-    // stratum ${stratum.id}
-    // preds: ${stratum.preds.join(', ')}
-    // non-recursive rules: ${[...stratum.nonRecursiveRules].map(rule => "Rule" + rule._id)}
-    // recursive rules: ${[...stratum.recursiveRules].map(rule => "Rule" + rule._id)}
-
-    ${stratumLogic(stratum)}
-  `;
-  });
-
-  return `
-${publicFunction('addTupleMap')}(edbTuples)
-{
-  return computeDelta(edbTuples, []);
+  return sb.join('\n');
 }
 
-${publicFunction('removeTuples')}(remTuples)
+function emitDeltaRemoveTuple(pred)
 {
-  const mremTuples = remTuples.map(getMTuple);
-  return computeDelta(new Map(), mremTuples);
+  const tns = termNames(pred);
+  const rules = [...pred.posAppearsIn];
+  const productRemoval = rules.map(r => `
+        // rule ${r}
+        if (outproduct instanceof Rule${r._id}Product)
+        {
+          ${Array.from({length:r.tupleArity()}, (_, i) => 
+            `outproduct.tuple${i}._outproducts.delete(outproduct);`).join('\n            ')}
+          const ${r.head.pred}_tuple = outproduct._outtuple;
+          ${r.head.pred}_tuple._inproducts.delete(outproduct);
+          damaged_${r.head.pred}_tuples.push(${r.head.pred}_tuple);
+        }
+  `);
+
+  return `
+  function deltaRemove_${pred}(${pred}_tuple)
+  {
+    remove_${pred}(${tns.map(tn => `${pred}_tuple.${tn}`).join(', ')});
+    removed_${pred}_tuples.push(${pred}_tuple);
+    for (const outproduct of ${pred}_tuple._outproducts)
+    {
+      ${productRemoval.join('  else')}
+    }
+  }`;
+}
+
+function emitDeltaRemoveNOTTuple(pred)
+{
+  const tns = termNames(pred);
+  const rules = [...pred.negAppearsIn];
+  const productRemoval = rules.map(r => `
+        // rule ${r}
+        if (outproduct instanceof Rule${r._id}Product)
+        {
+          ${Array.from({length:r.tupleArity()}, (_, i) => 
+            `outproduct.tuple${i}._outproducts.delete(outproduct);`).join('\n            ')}
+          const ${r.head.pred}_tuple = outproduct._outtuple;
+          ${r.head.pred}_tuple._inproducts.delete(outproduct);
+          damaged_${r.head.pred}_tuples.push(${r.head.pred}_tuple);
+        }
+  `);
+
+  return `
+  function deltaRemove_NOT_${pred}(NOT_${pred}_tuple)
+  {
+    remove_NOT_${pred}(${tns.map(tn => `NOT_${pred}_tuple.${tn}`).join(', ')});
+    // removed_NOT_${pred}_tuples.push(NOT_${pred}_tuple); // TODO is this ever used?
+    for (const outproduct of NOT_${pred}_tuple._outproducts)
+    {
+      ${productRemoval.join('  else')}
+    }
+  }`;
+}
+
+function emitAddTuples(strata, preds) 
+{
+  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', added_${pred}_tuples.map(mt => mt.toGeneric())]`);
+  const deltaRemovedTuplesEntries = preds.map(pred => `['${pred}', removed_${pred}_tuples.map(mt => mt.toGeneric())]`);
+
+  return `
+${publicFunction('addTupleMap')}(addTuples)
+{
+  return computeDelta(addTuples, []);
+}
+
+${publicFunction('removeTupleMap')}(remTuples)
+{
+  return computeDelta([], remTuples);
 } 
 
-function computeDelta(edbTuples, remTuples)
+function computeDelta(addTuples, remTuples)
 {
-  const edbTuplesMap = new Map(edbTuples);
-  ${logDebug('"addTupleMap " + [...edbTuplesMap.values()]')}
-  const globRemovedTuples = new Set(remove_tuples_i(remTuples));
+  const addedTuplesMap = new Map(addTuples);
+  const removedTuplesMap = new Map(remTuples);
+  ${logDebug('"addedTupleMap " + [...addedTuplesMap.values()]')}
+  ${logDebug('"removedTupleMap " + [...removedTuplesMap.values()]')}
 
-  ${strataLogic.join('\n')}
-  
-  return {added: 
-    function ()
-    {
-      return new Map([${[...deltaAddedTuplesEntries]}]);
-    }
-    , removed: 
-    function ()
-    {
-      return moduleToTupleMap(globRemovedTuples);
-    }};}
-  `;
-}
-
-function emitRemoveTuples()
-{
-  return `
-
-// only forward (so, in essence, only edb tuples supported) 
-function remove_tuples_i(tuples)
-{
-  ${logDebug('"removeTuples " + tuples')}
-
-  const wl = [...tuples]; // TODO: because this is not a set, same tuples can be scheduled multiple times
-
-  function removeProduct(product)
-  {
-    ${logDebug('"remove product " + product')}
-
-    for (const intuple of product.tuples())
-    {
-      intuple._outproducts.delete(product);
-      ${logDebug('"deleted " + intuple + " --> " + product')}
-      // remember: it's not because a tuple's outproducts is empty,
-      // that it cannot in the future play a role in other products 
-    }
-    const outtuple = product._outtuple;
-    outtuple._inproducts.delete(product);
-    ${logDebug('"deleted " + product + " --> " + outtuple + " (leaving " + outtuple._inproducts.size + " inproducts)"')}
-    if (outtuple._inproducts.size === 0)
-    {
-      ${logDebug('"scheduled for removal: " + outtuple')}
-      wl.push(outtuple);
-    }
-    else
-    {
-      ${logDebug('"grounded? " + outtuple')}
-      checkGrounded(outtuple);
-      // TODO: check for recursive pred/rule (only then a cycle is poss?)
-    }
-    // product._outtuple = null;
+  ${preds
+    .filter(pred => !pred.edb) 
+    .map(pred => `const damaged_${pred}_tuples = [];`)
+    .join('\n  ')
   }
 
-  function checkGrounded(tuple)
-  {
-    const seen = new Set();
+  ${preds
+    .map(pred => `const removed_${pred}_tuples = [];`)
+    .join('\n  ')
+  }
 
-    function groundedTuple(tuple)
+
+  ${strata.map(stratumLogic).join('\n')}
+  
+  ${logDebug('"=== done"')}
+  return {
+    added() {return [${[...deltaAddedTuplesEntries]}]},
+    removed() {return [${[...deltaRemovedTuplesEntries]}]}
+    }
+} // computeDelta
+`;
+}
+
+function emitRemoveTuples(strata)
+{
+  return `
+function tupleIsGrounded(tuple)
+{
+  const seen = new Set();
+
+  function groundedTuple(tuple)
+  {
+    if (seen.has(tuple))
     {
-      if (tuple._inproducts.size === 0)
+      ${logDebug('`${tuple} not grounded: cycle`')}
+      return false;
+    }
+    seen.add(tuple);
+    if (tuple._inproducts.size === 0)
+    {
+      ${logDebug('`${tuple} grounded: no inproducts`')}
+      return true;
+    }
+    for (const inproduct of tuple._inproducts)
+    {
+      if (!inproduct.recursive())
       {
+        // known to be grounded because of incoming product from lower stratum
+        ${logDebug('`${tuple} grounded because of non-recursive product ${inproduct}`')}
         return true;
       }
-      if (seen.has(tuple))
+      if (groundedProduct(inproduct))
+      {
+        ${logDebug('`${tuple} grounded because of product ${inproduct}`')}
+        return true;
+      }
+    }  
+    ${logDebug('`${tuple} not grounded: has no grounded products`')}
+    return false;
+  }
+
+  function groundedProduct(product)
+  {
+    for (const tuple of product.tuples())
+    {
+      if (!groundedTuple(tuple))
       {
         return false;
       }
-      seen.add(tuple);
-      for (const inproduct of tuple._inproducts)
-      {
-        if (groundedProduct(inproduct))
-        {
-          return true;
-        }
-      }  
-      ${logDebug('"no grounded products, not grounded, scheduled for removal: " + tuple')}
-      wl.push(tuple);
-      return false;
     }
-
-    function groundedProduct(product)
-    {
-      for (const tuple of product.tuples())
-      {
-        if (!groundedTuple(tuple))
-        {
-          // TODO: immediately remove product here?
-          return false;
-        }
-      }
-      return true;
-    }
-
-    groundedTuple(tuple);
+    return true;
   }
 
-  const removedTuples = new Set();
-  while (wl.length > 0)
-  {
-    const tuple = wl.pop();
-    if (removedTuples.has(tuple))
-    {
-      continue;
-    }
-    removedTuples.add(tuple);
-    ${logDebug('"==\\nremove tuple " + tuple')}
-    tuple._remove();
-    for (const product of tuple._outproducts)
-    {
-      removeProduct(product);     
-    }
-  }
-
-  ${logDebug('`removed ${[...removedTuples].join()}`')}
-  return removedTuples;
-
-}`;
+  const isGrounded = groundedTuple(tuple);
+  ${logDebug('`${tuple} is ${isGrounded ? "" : "not "}grounded`')}
+  return isGrounded;
+}
+`;
 }
 
 function emitFirst()
@@ -1471,6 +1554,11 @@ function getMTuple(x)
 ${publicFunction('addTuples')}(edbTuples)
 {
   return addTupleMap(genericToTupleMap(edbTuples));
+}
+
+${publicFunction('removeTuples')}(edbTuples)
+{
+  return removeTupleMap(genericToTupleMap(edbTuples));
 }
 `} // emitFirst
 

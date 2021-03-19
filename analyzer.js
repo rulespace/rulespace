@@ -67,9 +67,10 @@ class Pred
     this.rules = new Set();
     this.posDependsOn = new Set();
     this.negDependsOn = new Set();
+    this.posAppearsIn = new Set();
+    this.negAppearsIn = new Set();
     this.precedes = new Set();
-    this.negated = false;
-  }
+}
 
   toString()
   {
@@ -114,6 +115,7 @@ function collect(program)
         const pred = handleAtom(term);
         pred.precedes.add(headPred);
         headPred.posDependsOn.add(pred);
+        pred.posAppearsIn.add(rule);
       }
       else if (term instanceof Neg)
       {
@@ -121,7 +123,7 @@ function collect(program)
         const pred = handleAtom(atom);
         pred.precedes.add(headPred);
         headPred.negDependsOn.add(pred);
-        pred.negated = true;
+        pred.negAppearsIn.add(rule);
       }
     }
   }
@@ -220,11 +222,69 @@ export function analyzeProgram(program)
   const predicates = [...name2pred.values()];
   const sccPreds = topoSort(predicates);
   const strata = sccPreds.map(makeStratum(name2pred));
-
   const preds = sccPreds.flat();
+
+  const rule2stratum = new Map();
+  strata.forEach(stratum =>
+    {
+      for (const rule of stratum.nonRecursiveRules)
+      {
+        rule2stratum.set(rule, stratum);
+      }
+      for (const rule of stratum.recursiveRules)
+      {
+        rule2stratum.set(rule, stratum);
+      }
+    });
 
   return { 
     program, name2pred, strata,
-    preds
+    preds,
+    
+    // new design (to be phased in): methods on this obj instead of methods/props on objects)
+    
+    ruleIsRecursive(rule)
+    {
+      const stratum = rule2stratum.get(rule);
+      return stratum.recursiveRules.has(rule);
+    },
+
+    ruleIsNonRecursive(rule)
+    {
+      const stratum = rule2stratum.get(rule);
+      return stratum.nonRecursiveRules.has(rule);
+    },
+
+    // is there at least one rule that produces pred that is not recursive
+    // (i.e., rule from from a lower stratum)
+    // => `true` for local edb preds that are not also global edb (latter don't have producing rules)
+    predHasNonRecursiveRule(pred)
+    {
+      for (const rule of pred.rules)
+      {
+        if (this.ruleIsNonRecursive(rule))
+        {
+          return true;
+        }
+      }
+      return false;
+    },
+
+    predHasRecursiveRule(pred)
+    {
+      for (const rule of pred.rules)
+      {
+        if (this.ruleIsRecursive(rule))
+        {
+          return true;
+        }
+      }
+      return false;
+    },
+
+    stratumHasRecursiveRule(stratum)
+    {
+      return stratum.recursiveRules.size > 0;
+    }
   };
 }
