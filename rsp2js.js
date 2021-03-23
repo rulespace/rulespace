@@ -137,7 +137,7 @@ export function rsp2js(program, options={})
         sb.push(`/* ${rule} */`);
         if (rule.aggregates())
         {
-          sb.push(emitRuleGBObject(rule));
+          sb.push(emitRuleGB(rule));
         }
         else
         {
@@ -596,7 +596,6 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
   throw new Error(body[i]);
 }
 
-// (Reachable x y) :- (Reachable x z) (Link z y)
 function emitRule(rule)
 {
   const compileEnv = new Set();
@@ -608,7 +607,7 @@ function emitRule(rule)
   const recursive = analysis.ruleIsRecursive(rule);
 
   return `
-/* rule (tuple arity ${tupleArity}) (no aggregates)
+/* rule (tuple arity ${tupleArity}) (${recursive ? 'recursive' : 'non-recursive'} (non-aggregating)
 ${rule} 
 */
 
@@ -661,7 +660,7 @@ function fireRule${rule._id}(deltaPos, deltaTuples)
   `;
 }
 
-function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
+function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO contains cloned code from `compileRule`
 {
   if (i === body.length)
   {
@@ -669,11 +668,11 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
     assertTrue(agg instanceof Agg);
     const aggregate = agg.aggregate;
     const gb = head.terms.slice(0, head.terms.length - 1);
+    const t2ps = ptuples.map(tuple => `${tuple}._outproductsgb.add(productGB);`);
     return `
       // updates for ${head}
-      const ptuples = new Set([${ptuples.join()}]);
-      const productGB = new ProductGB(${rule._id}, ptuples, ${aggregate});
-      const groupby = add_get_Rule${rule._id}GB(${gb.join()}); // TODO!!!!
+      const productGB = addGetRule${rule._id}ProductGB(${ptuples.join()});
+      const groupby = add_get_Rule${rule._id}GB(${gb.join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -681,6 +680,8 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
       }
       else
       {
+        productGB.value = ${aggregate}; // TODO: aggregate is func dep on tuples, arrange this in another way (e.g. set in ctr)?
+        productGB._outgb = groupby;
         const currentAdditionalValues = updates.get(groupby);
         if (!currentAdditionalValues)
         {
@@ -690,11 +691,7 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
         {
           currentAdditionalValues.push(${aggregate});
         }
-        for (const tuple of ptuples)
-        {
-          tuple._outproductsgb.add(productGB);
-        }
-        productGB._outgb = groupby;
+        ${t2ps.join('\n        ')}
       }
 `;
   }
@@ -782,115 +779,87 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples)
   throw new Error(body[i]);
 }
 
-// (R x sum<z>) :- (X x) (I x y), z = y*y 
-function emitRuleGBObject(rule)
+function emitRuleGB(rule)
 {
+  const tupleArity = rule.tupleArity();
+  const tupleParams = Array.from({length:tupleArity}, (_, i) => `tuple${i}`);
+  const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
+  const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
+
   const pred = rule.head.pred;
   const compileEnv = new Set();
-  const gbNames = Array.from(Array(rule.head.terms.length - 1), (_, i) => "groupby.t"+i);
-  const aggregateName ="t" + (rule.head.terms.length - 1);
 
-  const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
-  let joinOperation; // join semilattice
-  let addOperation, identityValue; // commutative group
-  switch (aggregator)
-  {
-    case "max": joinOperation = "Math.max(acc, val)"; break;
-    case "min": joinOperation = "Math.min(acc, val)"; break;
-    case "sum": addOperation = "acc + val"; identityValue = 0; break;
-    case "count": addOperation = "acc + 1"; identityValue = 0; break;
-    default: throw new Error("Unknown aggregator: " + aggregator);
-  }
-
-  let updateOperation;
-  if (joinOperation)
-  {
-    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${joinOperation}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregateName})`
-  }
-  else if (addOperation)
-  {
-    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${addOperation}, currentResultTuple.${aggregateName})`
-  }
-  else
-  {
-    throw new Error("No update operation for aggregator: " + aggregator)
-  }
-
-  const GBclass = emitRuleGBClass(rule);
-
-  return `
-/* rule [aggregates] 
-${rule} 
-*/
-function fireRule${rule._id}(deltaPos, deltaTuples)
-{
-  ${logDebug(`"fire ${rule}"`)}
-  ${logDebug('`deltaPos ${deltaPos}`')}
-  ${logDebug('`deltaTuples ${[...deltaTuples].join()}`')}
-
-  const newTuples = new Set();
-  const tuplesToRemove = [];
-  const updates = new Map(); // groupby -> additionalValues
-
-  ${compileRuleGBFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
-  
-  // bind head ${rule.head}
-  for (const [groupby, additionalValues] of updates)
-  {
-    const currentResultTuple = groupby._outtuple;
-    const updatedValue = ${updateOperation};
-    const updatedResultTuple = add_get_${pred}(${gbNames.join()}, updatedValue);  
-    if (groupby._outtuple !== updatedResultTuple)
-    {
-      if (groupby._outtuple !== null)
-      { 
-        tuplesToRemove.push(groupby._outtuple);
-      }
-      groupby._outtuple = updatedResultTuple;
-      newTuples.add(updatedResultTuple);
-    }
-  }
-
-  ${logDebug('`=> newTuples ${[...newTuples].join()}`')}
-  return [newTuples, tuplesToRemove];
-} // end fireRule${rule._id}
-
-${GBclass}
-
-  `;
-}
-
-function emitRuleGBClass(rule)
-{
   const numGbTerms = rule.head.terms.length - 1;
   const tn = Array.from(Array(numGbTerms), (_, i) => "t" + i);
-  const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
   const termAssignments = tn.map(t => `this.${t} = ${t}`);
   const termToStrings = tn.map(t => `this.${t}`);
   const aggTerm = rule.head.terms[rule.head.terms.length - 1];
-  return `
-const Rule${rule._id}GB_members = new Set();
-function Rule${rule._id}GB(${tn.join(', ')})
-{
-  ${termAssignments.join('; ')};
-  this._outtuple = null;
-}
-Rule${rule._id}GB.prototype.toString = function () { return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"})) };
-Rule${rule._id}GB.prototype.rule = function () { return 'Rule${rule._id}'};
 
-function add_get_Rule${rule._id}GB(${tn.join(', ')})
+
+  const recursive = analysis.ruleIsRecursive(rule);
+  assertTrue(!recursive);
+
+  return `
+/* rule (tuple arity ${tupleArity}) (non-recursive) (aggregating) 
+${rule} 
+*/
+
+class Rule${rule._id}GB
 {
-  for (const member of Rule${rule._id}GB_members)
+  constructor(${tn.join(', ')})
   {
-    if (${termEqualities.join(' && ')})
-    {
-      return member;
-    }
+    ${termAssignments.join('; ')};
+    this._outtuple = null;  
   }
-  const gb = new Rule${rule._id}GB(${tn.join(', ')});
-  Rule${rule._id}GB_members.add(gb);
-  return gb;
+
+  toString()
+  {
+    return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"}));
+  }
 }
+
+const Rule${rule._id}GB_members = new Map();
+${emitAddGet(`Rule${rule._id}GB`, numGbTerms)}
+
+class Rule${rule._id}ProductGB
+{
+  constructor(${tupleParams.join(', ')})
+  {
+    ${tupleFieldInits.join('\n    ')}
+    this.value = null; // TODO ctr param? (is func dep on tuples + complicates addGet)
+    this._outgb = null;  // TODO ctr param? (complicates addGet)
+  }
+
+  tuples() // or, a field initialized in ctr?
+  {
+    return [${tupleFields.join(', ')}];
+  }
+
+  toString()
+  {
+    return "r${rule._id}:" + this.tuples().join('.');
+  }
+}
+
+const Rule${rule._id}ProductGBs = new Map();
+${emitAddGet2(`Rule${rule._id}ProductGB`, `Rule${rule._id}ProductGBs`, tupleArity)}
+// TODO: Product removal!
+
+function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
+{
+  ${logDebug(`"fire ${rule}"`)}
+  ${logDebug('`deltaPos ${deltaPos} deltaTuples ${[...deltaTuples].join()}`')}
+
+  ${profileStart(`fireRule${rule._id}GB`)}
+
+  const newTuples = new Set();
+
+  ${compileRuleGBFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
+  
+  ${profileEnd(`fireRule${rule._id}GB`)}
+
+  ${logDebug('`=> current updates: ${[...updates.entries()].join(", ")}`')}
+} // end fireRule${rule._id}GB
   `;
 }
 
@@ -931,7 +900,7 @@ ${publicFunction('productsOutGb')}(tuple) // TODO: rename this
   for (const mp of mtuple._outproductsgb)
   {
     // TODO additional protection? (freezing, ...)
-    products.push({rule:mp.rule, tuples: [...mp.tuples].map(t => t.toGeneric()), value: mtuple.value, groupByOut: {tupleOut: mp._outgb._outtuple.toGeneric()}});
+    products.push({rule:mp.rule, tuples: mp.tuples().map(t => t.toGeneric()), value: mtuple.value, groupByOut: {tupleOut: mp._outgb._outtuple.toGeneric()}});
   }
   return products;
 }
@@ -990,10 +959,7 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
         // atom ${i} ${atom} (edb) (aggregating)
         if (added_${pred}_tuples.length > 0)
         {
-          const [Rule${rule._id}_tuples${i}, tuplesToRemove] = fireRule${rule._id}(${i}, added_${pred}_tuples);
-          MutableArrays.addAll(added_${producesPred}_tuples, Rule${rule._id}_tuples${i});  
-          const transRemovedTuples = remove_tuples_i2(tuplesToRemove);
-          MutableSets.addAll(globRemovedTuples, transRemovedTuples);            // TODO
+          fireRule${rule._id}GB(${i}, added_${pred}_tuples, updates${rule._id});
         }
       `];  
       }
@@ -1028,10 +994,75 @@ function emitDeltaEdbForRule(rule, stratum)
   const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, rule, producesPred, stratum));
 
   return `
-    /* Rule${rule._id}
+    /* Rule${rule._id} (non-aggregating)
 ${rule}
     */
     ${atoms.join('\n    ')}
+  `;
+}
+
+function emitDeltaEdbForAggregatingRule(rule, stratum)
+{
+  const pred = rule.head.pred;
+  const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, rule, pred, stratum));
+  const gbNames = Array.from({length: rule.head.terms.length - 1}, (_, i) => "groupby.t"+i);
+
+  const aggregateName ="t" + (rule.head.terms.length - 1);  
+  const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
+  let joinOperation; // join semilattice
+  let addOperation, identityValue; // commutative group
+  switch (aggregator)
+  {
+    case "max": joinOperation = "Math.max(acc, val)"; break;
+    case "min": joinOperation = "Math.min(acc, val)"; break;
+    case "sum": addOperation = "acc + val"; identityValue = 0; break;
+    case "count": addOperation = "acc + 1"; identityValue = 0; break;
+    default: throw new Error("Unknown aggregator: " + aggregator);
+  }
+
+  let updateOperation;
+  if (joinOperation)
+  {
+    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${joinOperation}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregateName})`
+  }
+  else if (addOperation)
+  {
+    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${addOperation}, currentResultTuple.${aggregateName})`
+  }
+  else
+  {
+    throw new Error("No update operation for aggregator: " + aggregator)
+  }
+
+  return `
+    /* Rule${rule._id} (aggregating)
+${rule}
+    */
+
+    const updates${rule._id} = new Map(); // groupby -> additional values
+
+    ${atoms.join('\n    ')}
+
+    // bind head ${rule.head}
+    for (const [groupby, additionalValues] of updates${rule._id})
+    {
+      ${logDebug('`update: gb ${groupby} additional vals ${additionalValues}`')}
+      const currentResultTuple = groupby._outtuple;
+      ${logDebug('`currentResultTuple ${currentResultTuple}`')}
+      const updatedValue = ${updateOperation};
+      const updatedResultTuple = add_get_${pred}(${gbNames.join()}, updatedValue);  
+      ${logDebug('`updatedResultTuple ${updatedResultTuple}`')}
+      if (groupby._outtuple !== updatedResultTuple)
+      {
+        if (groupby._outtuple !== null)
+        { 
+          deltaRemove_${pred}(groupby._outtuple);
+        }
+        groupby._outtuple = updatedResultTuple;
+        updatedResultTuple.ingb = groupby;
+        added_${pred}_tuples.push(updatedResultTuple);
+      }
+    }
   `;
 }
 
@@ -1237,18 +1268,21 @@ function stratumLogic(stratum)
       }
       `);
     }
-
      
-    // introduce tuples that this stratum may add
     for (const pred of stratum.preds)
     {
       sb.push(`const added_${pred}_tuples = [];`);
-
       sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing non-recursive rules"')); 
       for (const rule of pred.rules)
       {
-        // due to stratum-edb (non-recursive) addition 
-        sb.push(emitDeltaEdbForRule(rule, stratum));
+        if (rule.aggregates())
+        {
+          sb.push(emitDeltaEdbForAggregatingRule(rule, stratum));
+        }
+        else
+        {
+          sb.push(emitDeltaEdbForRule(rule, stratum));
+        }
       }
     }
   
@@ -1474,19 +1508,6 @@ const MutableSets =
     }
   }
 }
-
-function ProductGB(rule, tuples, value)
-{
-  this.rule = rule;
-  this.tuples = tuples;
-  this.value = value;
-  this._outgb = null;
-}
-ProductGB.prototype.toString =
-  function ()
-  {
-    return this.rule.name + ":" + [...this.tuples].join('.') + "=" + this.value;
-  }
 
 function atomString(predicateName, ...termValues)
 {

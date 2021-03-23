@@ -282,6 +282,17 @@ export function analyzeProgram(program)
       return false;
     },
 
+    // is pred created by agg rule? (condition: has exactly one agg rule to avoid complex/impossible semantics with groupbys)
+    predIsAggregating(pred)
+    {
+      if (pred.rules.size === 1)
+      {
+        const aggregates = [...pred.rules][0].aggregates();
+        return aggregates;
+      }
+      return false;
+    },
+
     stratumHasRecursiveRule(stratum)
     {
       return stratum.recursiveRules.size > 0;

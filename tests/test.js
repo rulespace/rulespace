@@ -366,13 +366,12 @@ const example5 = `
   [I x y])
 `;
 
-// testInitialSolve(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
-//   `[Rsum 'a 30] [Rsum 'b 33]
-//    [Rmax 'a 20] [Rmax 'b 33]
-//    [Rmin 'a 10] [Rmin 'b 33]
-//    [Rcount 'a 2] [Rcount 'b 1]
-//   `);
-
+testInitialSolve(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
+  `[Rsum 'a 30] [Rsum 'b 33]
+   [Rmax 'a 20] [Rmax 'b 33]
+   [Rmin 'a 10] [Rmin 'b 33]
+   [Rcount 'a 2] [Rcount 'b 1]
+  `);
 
 // ===
 const example6 = `
@@ -430,17 +429,38 @@ const example8 =
 (rule [B x] [A x])
 (rule [C x] [B x])
 (rule [D x] [C x])
+(rule [B x] [A2 x])
 (rule [B x] [D x])
 (rule [R x] [B x])
 `
 
-testInitialSolve(example8, `[A 1] [A 2] [A 3]`,
+testInitialSolve(example8, `[A 1] [A2 2] [A 3]`,
   `[B 1] [C 1] [D 1] [R 1]
     [B 2] [C 2] [D 2] [R 2]
     [B 3] [C 3] [D 3] [R 3]
   `);
 testIncrementalAdd(example8, `[A 1] [A 2] [A 3]`);
 testRemoveEdb(example8, `[A 1] [A 2] [A 3]`);
+
+// ===
+const example9 =
+`
+(rule [Rsum x #:sum y]
+  [I x z] [J z y])
+
+(rule [Rmax x #:max y]
+  [I x z] [J z y])
+  `
+
+testInitialSolve(example9, `[I 'a 'aa] [J 'aa 10] [J 'bb 20] [I 'a 'bb]`,
+  `[Rsum 'a 30] [Rmax 'a 20]
+  `);
+testIncrementalAdd(example9, `
+[I 'a 'aa] [J 'aa 10] 
+[I 'a 'bb] [J 'bb 20] [J 'bb 30]
+[I 'b 'bb] [J 'bb 40]
+`);
+
 
 // ============
 console.log("done: " + (performance.now() - start) + "ms");
