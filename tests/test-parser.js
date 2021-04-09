@@ -4,7 +4,7 @@ const parser = new SchemeParser();
 
 const result = parser.parse(`
 
-[X]
+[R x #('V a b)]
 
 `);
 

@@ -462,5 +462,19 @@ testIncrementalAdd(example9, `
 `);
 
 
+// ===
+const example10 =
+`
+(rule [R x [V y 9]]
+  [I x y])
+
+(rule [S a b c]
+  [R a [V b c]])
+`;
+testInitialSolve(example10, `[I 1 2] [I 3 4]`,
+  `[R 1 [V 2 9]] [S 1 [V 2 9]]
+   [R 3 [V 4 9]] [S 3 [V 4 9]]
+  `);
+
 // ============
 console.log("done: " + (performance.now() - start) + "ms");

@@ -1,3 +1,18 @@
+/*
+program = rules
+
+rule = atom body
+
+body = queryParts
+
+queryPart = exp | assign
+
+atom = name exps agg?
+
+exp = lit | var | atom | !exp | binexp
+
+*/
+
 export class Program
 {
   constructor(rules)
@@ -52,7 +67,7 @@ export class Atom
 
   toString()
   {
-    return `[${this.pred} ${this.terms.join(' ')}]`;
+    return `[${this.pred} ${this.terms.map(toTermString).join(' ')}]`;
   }
 }
 
@@ -127,4 +142,14 @@ export class Assign
   {
     return `${this.left}${this.operator}${this.right}`;
   }
+}
+
+
+function toTermString(x)
+{
+  if (Array.isArray(x))
+  {
+    return `#(${x.map(toTermString).join(' ')})`;
+  }
+  return String(x);
 }

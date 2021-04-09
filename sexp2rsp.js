@@ -78,16 +78,9 @@ export function compileTerm(exp)
       case 'quote':
       {
         const quoted = exp.cdr.car;
-        const name = quoted.name; // assert Sym
-        const current = symbols.get(name);
-        if (current === undefined)
-        {
-          symbols.set(name, quoted);
-          console.log("returning new " + quoted);
-          return quoted;
-        }
-        console.log("returning existing " + current);
-        return current;
+        throw new Error("TODO");
+        // assertTrue(quoted instanceof Sym); // TODO expand
+        // return new Lit(quoted.valueOf());
       }
       case 'not':       
       {
@@ -96,6 +89,11 @@ export function compileTerm(exp)
       }
       default: throw new Error("cannot handle " + exp);
     }
+  }
+
+  if (exp instanceof Array)
+  {
+    return exp.map(compileTerm);
   }
 
   return new Lit(exp.valueOf()); // TODO: valueOf needed?

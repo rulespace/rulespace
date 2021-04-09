@@ -78,10 +78,52 @@ class Pred
   }
 }
 
+class Functor
+{
+  constructor(name, arity)
+  {
+    this.name = name;
+    this.arity = arity;
+  }
+  
+  toString()
+  {
+    return this.name;
+  }
+}
+
 function collect(program)
 {
 
   const name2pred = new Map();
+  const name2functor = new Map();
+
+  function handleFunctor(functor)
+  {
+    const name = functor.pred;
+    const arity = functor.arity();
+    let func = name2functor.get(name);
+    if (func === undefined)
+    {
+      func = new Functor(name, arity);
+      name2functor.set(name, func);
+      return func;
+    }
+    if (func.arity !== arity)
+    {
+      throw new Error(`arity mismatch for functor ${func}`);
+    }
+
+    // scan exps
+    for (const exp of func.terms)
+    {
+      if (exp instanceof Atom)
+      {
+        // atom exp in functor = functor
+        handleFunctor(exp);
+      }
+    }
+  }
 
   function handleAtom(atom)
   {
@@ -96,7 +138,17 @@ function collect(program)
     }
     if (pred.arity !== arity)
     {
-      throw new Error("arity mismatch: " + pred);
+      throw new Error(`arity mismatch for predicate ${pred}`);
+    }
+
+    // scan exps
+    for (const exp of atom.terms)
+    {
+      if (exp instanceof Atom)
+      {
+        // atom exp in atom = functor
+        handleFunctor(exp);
+      }
     }
     return pred;
   }
@@ -108,27 +160,31 @@ function collect(program)
     headPred.idb = true;
     headPred.edb = false;
     headPred.rules.add(rule);
-    for (const term of rule.body)
+    for (const queryPart of rule.body)
     {
-      if (term instanceof Atom)
+      if (queryPart instanceof Atom)
       {
-        const pred = handleAtom(term);
+        const pred = handleAtom(queryPart);
         pred.precedes.add(headPred);
         headPred.posDependsOn.add(pred);
         pred.posAppearsIn.add(rule);
       }
-      else if (term instanceof Neg)
+      else if (queryPart instanceof Neg)
       {
-        const atom = term.atom;
+        const atom = queryPart.atom;
         const pred = handleAtom(atom);
         pred.precedes.add(headPred);
         headPred.negDependsOn.add(pred);
         pred.negAppearsIn.add(rule);
       }
+      else
+      {
+        throw new Error(`cannot handle ${queryPart} in ${rule}`);
+      }
     }
   }
 
-  return { name2pred };
+  return { name2pred, name2functor };
 }
 
 class Stratum
@@ -218,7 +274,7 @@ function makeStratum(name2pred)
 
 export function analyzeProgram(program)
 {
-  const { name2pred } = collect(program);
+  const { name2pred, name2functor } = collect(program);
   const predicates = [...name2pred.values()];
   const sccPreds = topoSort(predicates);
   const strata = sccPreds.map(makeStratum(name2pred));
@@ -242,17 +298,9 @@ export function analyzeProgram(program)
     preds,
     
     // new design (to be phased in): methods on this obj instead of methods/props on objects)
-    
-    ruleIsRecursive(rule)
+    functors()
     {
-      const stratum = rule2stratum.get(rule);
-      return stratum.recursiveRules.has(rule);
-    },
-
-    ruleIsNonRecursive(rule)
-    {
-      const stratum = rule2stratum.get(rule);
-      return stratum.nonRecursiveRules.has(rule);
+      return [...name2functor.values()];
     },
 
     // is there at least one rule that produces pred that is not recursive
@@ -291,6 +339,18 @@ export function analyzeProgram(program)
         return aggregates;
       }
       return false;
+    },
+
+    ruleIsNonRecursive(rule)
+    {
+      const stratum = rule2stratum.get(rule);
+      return stratum.nonRecursiveRules.has(rule);
+    },
+
+    ruleIsRecursive(rule)
+    {
+      const stratum = rule2stratum.get(rule);
+      return stratum.recursiveRules.has(rule);
     },
 
     stratumHasRecursiveRule(stratum)

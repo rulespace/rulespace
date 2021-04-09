@@ -1,6 +1,7 @@
-import { Sets, assertTrue } from 'common';
+import { MutableArrays, assertTrue } from 'common';
 import { Atom, Neg, Agg, Var, Lit } from './rsp.js';
 import { analyzeProgram } from './analyzer.js';
+import { sanityCheck } from './schemelog-common.js';
 
 // class LineEmitter
 // {
@@ -108,6 +109,12 @@ export function rsp2js(program, options={})
     }
 
     sb.push(emitFirst());
+
+    for (const functor of analysis.functors())
+    {
+      sb.push(emitFunctorObject(functor));
+    }
+
 
     for (const pred of preds)
     {
@@ -254,7 +261,6 @@ function add_get_${pred}(${tn.join(', ')})
   // TODO this is the 'generic' tuples-as-map version, yet it doesn't handle 0-arity preds
   function emitAddGet2(name, rootMapName, numFields)
   {
-
     function emitEntry(i)
     {
       if (i === numFields)
@@ -377,6 +383,7 @@ function ${pred}(${tn.join(', ')})
   this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
   this._outproducts = new Set();
   this._outproductsgb = new Set();
+  this._refs = []; // TODO: can statically determine which preds will have refs (i.e., allocated as part of tuple) 
   this._generic = null;
 }
 // public API (only)
@@ -389,7 +396,7 @@ ${pred}.prototype._remove = function () {
 ${pred}.prototype.toGeneric = function () {
   if (this._generic === null)
   {
-    const generic = ['${pred}', ${termFields.join(', ')}];
+    const generic = ['${pred}', ${termFields.map(x => `toGenericTerm(${x})`).join(', ')}];
     this._generic = generic;
     return generic;
   }
@@ -439,24 +446,175 @@ ${emitRemove(`NOT_${pred}`, pred.arity)}
   return sb;
 }
 
-function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
+function emitFunctorObject(functor)
+{
+  const tn = termNames(functor);
+  const termAssignments = tn.map(t => `this.${t} = ${t};`);
+  const termFields = tn.map(t => `this.${t}`);
+  const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
+  const init = (functor.arity === 0 ? `let ${functor}_member = null` : `const ${functor}_members = new Map()`);
+
+  let sb = `
+${init};
+function ${functor}(${tn.join(', ')})
+{
+  ${termAssignments.join('\n  ')}
+  this._rc = 0;
+  this._outproducts = new Set();
+  this._outproductsgb = new Set();
+  this._refs = [];
+  this._generic = null;
+}
+${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
+${functor}.prototype._remove = function () {
+  remove_${functor}(${termFields.join(', ')});
+};
+${functor}.prototype.toGeneric = function () {
+  if (this._generic === null)
+  {
+    const generic = ['${functor}', ${termFields.map(x => `toGenericTerm(${x})`).join(', ')}];
+    this._generic = generic;
+    return generic;
+  }
+  return this._generic;
+};
+
+${emitGet(`${functor}`, functor.arity)}
+${emitAddGet(`${functor}`, functor.arity)}
+${emitRemove(`${functor}`, functor.arity)}
+`;
+
+  return sb;
+}
+
+
+function compileMatchFunctor(functor, target, compileEnv, bindUnboundVars, conditions)
+{
+  conditions.push(`${target} instanceof ${functor.pred}`);
+  functor.terms.forEach((term, i) => // TODO cloned from compileAtom
+  {
+    if (term instanceof Var)
+    {
+      if (term.name !== '_')
+      {
+        if (compileEnv.has(term.name))
+        {
+          conditions.push(`${target}.t${i} === ${term.name}`);
+        }
+        else
+        {
+          bindUnboundVars.push(`const ${term.name} = ${target}.t${i};`);
+          compileEnv.add(term.name);
+        }  
+      }
+    }
+    else if (term instanceof Lit)
+    {
+      conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
+    }
+    else if (term instanceof Atom)
+    {
+      compileMatchFunctor(term, `${target}.t${i}`, compileEnv, bindUnboundVars, condition);
+    }
+    else
+    {
+      throw new Error("cannot handle " + term);
+    }
+  })
+}
+
+
+function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
+{
+  atom.terms.forEach((term, i) =>
+  {
+    if (term instanceof Var)
+    {
+      if (term.name !== '_')
+      {
+        if (compileEnv.has(term.name))
+        {
+          conditions.push(`${target}.t${i} === ${term.name}`);
+        }
+        else
+        {
+          bindUnboundVars.push(`const ${term.name} = ${target}.t${i};`);
+          compileEnv.add(term.name);
+        }  
+      }
+    }
+    else if (term instanceof Lit)
+    {
+      conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
+    }
+    else if (term instanceof Atom) // functor
+    {
+      compileMatchFunctor(term, `${target}.t${i}`, compileEnv, bindUnboundVars, conditions);
+    }
+    else
+    {
+      throw new Error("cannot handle " + term);
+    }
+  })
+}
+
+
+function compileCreateFunctor(functor, j, compileEnv, termExpsOut, rcIncs)
+{
+  termExpsOut.push(`functor${j}`);
+  rcIncs.push(`functor${j}`);
+  const termExps = functor.terms;
+  return `
+      // functor ${functor}
+      const functor${j} = add_get_${functor.pred}(${termExps.join(', ')});
+  `;
+}
+
+function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 {
   if (i === body.length)
   {
     const pred = head.pred;
     const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
     const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
+    const termExps = [];
+    const termAids = [];
+
+    head.terms.map((term, j) =>
+    {
+      if (term instanceof Var)
+      {
+        termExps.push(term);
+      }
+      else if (term instanceof Atom) // Functor
+      {
+        termAids.push(compileCreateFunctor(term, j, compileEnv, termExps, rcIncs));
+      }
+      else if (term instanceof Lit)
+      {
+        termExps.push(term);
+      }
+      else
+      {
+        throw new Error(`cannot handle term ${term}`);
+      }
+    })
+
+
     return `
-      // updates for ${head}
-      const existing_${pred}_tuple = get_${pred}(${head.terms.join(', ')});
+      // adding ${head}
+      ${termAids}
+      const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
       if (existing_${pred}_tuple === null)
       {
-        const new_${pred}_tuple = add_get_${pred}(${head.terms.join(', ')});
+        const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
         newTuples.add(new_${pred}_tuple);
         const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
         ${t2ps.join('\n        ')}
         product._outtuple = new_${pred}_tuple;
         new_${pred}_tuple._inproducts.add(product);
+        ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
+        ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
       }
       else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
       {
@@ -478,40 +636,17 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
     const pred = atom.pred;
     const bindUnboundVars = [];
     const conditions = [];
-    atom.terms.forEach((term, i) => {
-      if (term instanceof Var)
-      {
-        if (term.name !== '_')
-        {
-          if (compileEnv.has(term.name))
-          {
-            conditions.push(`${tuple}.t${i} === ${term.name}`);
-          }
-          else
-          {
-            bindUnboundVars.push(`const ${term.name} = ${tuple}.t${i};`);
-            compileEnv.add(term.name);
-          }  
-        }
-      }
-      else if (term instanceof Lit)
-      {
-        conditions.push(`${tuple}.t${i} === ${termToString(term.value)}`);
-      }
-      else
-      {
-        throw new Error("cannot handle " + term);
-      }
-    });
+    
+    compileAtom(atom, tuple, compileEnv, bindUnboundVars, conditions);
 
     if (conditions.length === 0)
     {
       return `
-      // atom ${atom} [no conditions]
+      // atom ${atom} (no conditions)
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         ${bindUnboundVars.join('\n        ')}
-        ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
+        ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
       }
       `;  
     }
@@ -523,8 +658,8 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
       {
         if (${conditions.join(' && ')})
         {
-          ${bindUnboundVars.join('\n       ')}
-          ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
+          ${bindUnboundVars.join('\n          ')}
+          ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
         }
       }
       `;  
@@ -568,7 +703,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
       continue;
     }
     const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.join(', ')});
-    ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
+    ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
     `;  
   }// Neg
 
@@ -589,7 +724,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples)
       // assign ${atom}
       const ${left} = ${right};
 
-      ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples)}
+      ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
     `;
   }
 
@@ -649,7 +784,7 @@ function fireRule${rule._id}(deltaPos, deltaTuples)
 
   const newTuples = new Set();
 
-  ${compileRuleFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
+  ${compileRuleFireBody(rule, rule.head, rule.body, 0, compileEnv, [], [])}
 
   ${profileEnd(`fireRule${rule._id}`)}
 
@@ -932,7 +1067,8 @@ ${publicFunction('clear')}()
   `;
 }
 
-function compileTerm(term)
+function compileTerm(term) // TODO term compiling is already present elsewhere
+// make distinction between head terms and body terms!
 {
   if (term instanceof Var)
   {
@@ -1346,6 +1482,18 @@ function emitDeltaRemoveTuple(pred)
     {
       ${productRemoval.join('  else')}
     }
+    const refs = ${pred}_tuple._refs; // TODO check this statically (compile away when possible)
+    if (refs.length > 0) 
+    {
+      for (let i = 0; i < refs.length; i++)
+      {
+        const rc = --refs[i]._rc;
+        if (rc === 0)
+        {
+          refs[i]._remove();
+        }
+      }
+    }
   }`;
 }
 
@@ -1524,6 +1672,16 @@ function termString(termValue)
   return String(termValue);
 }
 
+function toGenericTerm(term)
+{
+  const type = typeof(term);
+  if (type === 'object')
+  {
+    return term.toGeneric();
+  }
+  return term;
+}
+
 function genericToTupleMap(genericTuples)
 {
   const map = new Map();
@@ -1569,7 +1727,9 @@ function moduleToTupleMap(mtuples)
 
 function getMTuple(x)
 {
-  return (pred2getter.get(x[0]))(...x.slice(1));
+  const mtuple = (pred2getter.get(x[0]))(...x.slice(1))
+  ${assert('mtuple', 'x', 'no mtuple found')}
+  return mtuple;
 }
 
 ${publicFunction('addTuples')}(edbTuples)

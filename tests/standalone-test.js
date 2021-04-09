@@ -4,25 +4,25 @@ import { compileToModule, parseTuples } from './test-common.js';
 
 const src =
 `
-(rule [Rsum x #:sum y]
-  [I x z] [J z y])
+(rule [R x [V y 9]]
+  [I x y])
 
-(rule [Rmax x #:max y]
-  [I x z] [J z y])
+(rule [S a b c]
+  [R a [V b c]])
 `;
 
 
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
-module.addTuples(parseTuples(`[I 'a 'aa] [J 'aa 10]  [J 'bb 20] [I 'a 'bb]`));
+module.addTuples(parseTuples(`[I 1 2] [I 3 4]`));
 // const edbTuples = parseTuples(`[Link "b" "c"] [Link "c" "b"] [Link "c" "c"]`);
 // module.addTuples(parseTuples(`[I 'a 'bb]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 sanityCheck(module);
 
-// module.removeTuples(parseTuples(`[A 2] [A2 2]`)); 
-// console.log("tuples: " + [...module.tuples()].join('\n'));
+module.removeTuples(parseTuples(`[I 1 2]`)); 
+console.log("tuples: " + [...module.tuples()].join('\n'));
 
 sanityCheck(module);
 })

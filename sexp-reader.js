@@ -482,14 +482,12 @@ SchemeTokenizer.prototype.parseNumber =
   {
     var sp = {pos:this.reader.pos, line:this.reader.line, linePos:this.reader.linePos};
     var lookahead = this.skipWhitespace();
-    var po;
+    var po = [];
     if (lookahead === ")")
     {
-      po = [];
     }
     else
     {
-      po = [];
       do
       {
         var e = this.parse(lookahead);
