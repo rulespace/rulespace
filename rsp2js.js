@@ -1,7 +1,6 @@
 import { MutableArrays, assertTrue } from 'common';
 import { Atom, Neg, Agg, Var, Lit } from './rsp.js';
 import { analyzeProgram } from './analyzer.js';
-import { sanityCheck } from './schemelog-common.js';
 
 // class LineEmitter
 // {
@@ -157,7 +156,7 @@ export function rsp2js(program, options={})
     sb.push(`const pred2getter = new Map([${pred2getters.join()}])`);
   
 
-  sb.push(emitAddTuples(strata, preds));
+  sb.push(emitComputeDelta(strata, preds));
   sb.push(emitRemoveTuples(strata));
   
   sb.push(emitIterators(preds, edbPreds, rules));
@@ -248,6 +247,55 @@ function add_get_${pred}(${tn.join(', ')})
           const tuple = new ${pred}(${tn.join(', ')});
           ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
           ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
+          return tuple;
+        }
+        `)
+      }
+      sb.push(`return ${maps[arity]};`)  
+    }
+    sb.push(`}`);
+    return sb.join('\n');
+  }
+
+  function emitAddGetExternal(pred, arity)
+  {
+    const tn = termNames2(arity);
+    const sb = [`
+function add_get_external_${pred}(tuple)
+{
+    `];
+
+    if (arity === 0)
+    {
+      sb.push(`
+        if (${pred}_member === null)
+        {
+          ${pred}_member = tuple;
+          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
+        }
+        return ${pred}_member;
+        `);
+    }
+    else
+    {
+      function emitEntry(i)
+      {
+        if (i === arity)
+        {
+          return `tuple`;
+        }
+        return `new Map([[tuple.t${i}, ${emitEntry(i+1)}]])`;
+      }
+  
+      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+      for (let i = 0; i < arity; i++)
+      {
+        sb.push(`
+        const ${maps[i+1]} = ${maps[i]}.get(tuple.t${i});
+        if (${maps[i+1]} === undefined)
+        {
+          ${maps[i]}.set(tuple.t${i}, ${emitEntry(i+1)});
+          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${tuple.${t}}`)}) to members\``)}
           return tuple;
         }
         `)
@@ -377,30 +425,23 @@ function emitTupleObject(pred)
 
   let sb = `
 ${init};
-function ${pred}(${tn.join(', ')})
+${publicFunction(pred)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
   this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
   this._outproducts = new Set();
   this._outproductsgb = new Set();
   this._refs = []; // TODO: can statically determine which preds will have refs (i.e., allocated as part of tuple) 
-  this._generic = null;
 }
 // public API (only)
 // ${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};
 //
-${pred}.prototype.toString = function () {return atomString("${pred}", ${termFields.join(', ')})};
+${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
+${pred}.prototype.get = function () { // also internally used
+  return get_${pred}(${termFields.join(', ')});
+};
 ${pred}.prototype._remove = function () {
   remove_${pred}(${termFields.join(', ')});
-};
-${pred}.prototype.toGeneric = function () {
-  if (this._generic === null)
-  {
-    const generic = ['${pred}', ${termFields.map(x => `toGenericTerm(${x})`).join(', ')}];
-    this._generic = generic;
-    return generic;
-  }
-  return this._generic;
 };
 
 ${emitGet(`${pred}`, pred.arity)}
@@ -420,20 +461,10 @@ function NOT_${pred}(${tn.join(', ')})
   ${termAssignments.join('\n  ')}  
   this._inproducts = new Set(); // TODO: invariant: no inproducts?
   this._outproducts = new Set();
-  this._generic = null;
 }        
 NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${termFields.join(', ')})};  
 NOT_${pred}.prototype._remove = function () {
   remove_NOT_${pred}(${termFields.join(', ')});
-};
-NOT_${pred}.prototype.toGeneric = function () {
-  if (this._generic === null)
-  {
-    const generic = ['!${pred}', ${termFields.join(', ')}];
-    this._generic = generic;
-    return generic;
-  }
-  return this._generic;
 };
 
 
@@ -456,27 +487,17 @@ function emitFunctorObject(functor)
 
   let sb = `
 ${init};
-function ${functor}(${tn.join(', ')})
+${publicFunction(functor)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
   this._rc = 0;
   this._outproducts = new Set();
   this._outproductsgb = new Set();
   this._refs = [];
-  this._generic = null;
 }
 ${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
 ${functor}.prototype._remove = function () {
   remove_${functor}(${termFields.join(', ')});
-};
-${functor}.prototype.toGeneric = function () {
-  if (this._generic === null)
-  {
-    const generic = ['${functor}', ${termFields.map(x => `toGenericTerm(${x})`).join(', ')}];
-    this._generic = generic;
-    return generic;
-  }
-  return this._generic;
 };
 
 ${emitGet(`${functor}`, functor.arity)}
@@ -1000,8 +1021,8 @@ function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
 
 function emitIterators(preds, edbPreds, rules)
 {
-  const tupleYielders = preds.map(pred => `for (const t of select_${pred}()) {yield t.toGeneric()};`);
-  const edbTupleYielders = edbPreds.map(pred => `for (const t of select_${pred}()) {yield t.toGeneric()};`);
+  const tupleYielders = preds.map(pred => `yield* select_${pred}()`);
+  const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}()`);
   // const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
 
   return `
@@ -1015,43 +1036,6 @@ ${publicFunctionStar('edbTuples')}()
 {
   ${edbTupleYielders.join('\n  ')}
 }
-
-${publicFunction('productsOut')}(tuple) 
-{
-  const mtuple = getMTuple(tuple);
-  const products = [];
-  for (const mp of mtuple._outproducts)
-  {
-    // TODO additional protection? (freezing, ...)
-    products.push({rule:mp.rule, tuples: mp.tuples().map(t => t.toGeneric()), tupleOut: mp._outtuple.toGeneric()});
-  }
-  return products;
-}
-
-${publicFunction('productsOutGb')}(tuple) // TODO: rename this
-{
-  const mtuple = getMTuple(tuple);
-  const products = [];
-  for (const mp of mtuple._outproductsgb)
-  {
-    // TODO additional protection? (freezing, ...)
-    products.push({rule:mp.rule, tuples: mp.tuples().map(t => t.toGeneric()), value: mtuple.value, groupByOut: {tupleOut: mp._outgb._outtuple.toGeneric()}});
-  }
-  return products;
-}
-
-${publicFunction('productsIn')}(tuple) 
-{
-  const mtuple = getMTuple(tuple);
-  const products = [];
-  for (const mp of mtuple.inproducts)
-  {
-    // TODO additional protection? (freezing, ...)
-    products.push({rule:mp.rule, tuples: mp.tuples().map(t => t.toGeneric())});
-  }
-  return products;
-}
-
 `;
 }
 
@@ -1292,18 +1276,19 @@ function termToString(x)
 function emitDeltaAddTuple(pred)
 {
   const tn = termNames(pred);
-  const termProperties = Array.from(Array(pred.arity), (_, i) => `proposed[${i+1}]`);
+  const termProperties = Array.from(Array(pred.arity), (_, i) => `proposed.t${i+1}`);
   return `
+
+${emitAddGetExternal(pred, pred.arity)}
 function delta_add_${pred}_tuples(proposedEdbTuples)
 {
   const ${pred}_tuples = [];
   for (const proposed of proposedEdbTuples)
   {
-    const actual = get_${pred}(${termProperties.join(', ')});
-    if (actual === null)  
+    const actual = add_get_external_${pred}(proposed);
+    if (actual === proposed) // freshly added
     {
-      const fresh = add_get_${pred}(${termProperties.join(', ')}); // TODO should be unconditional add
-      ${pred}_tuples.push(fresh);
+      ${pred}_tuples.push(actual);
     }
   }
   return ${pred}_tuples;
@@ -1338,14 +1323,14 @@ function stratumLogic(stratum)
       sb.push(`
 
       // removing ${pred} tuples because of user delta
-      const ${pred}_tuples_to_be_removed = (removedTuplesMap.get('${pred}') || []).map(getMTuple);
+      const ${pred}_tuples_to_be_removed = (removedTuplesMap.get(${pred}) || []);
       for (const ${pred}_tuple of ${pred}_tuples_to_be_removed)
       {
         deltaRemove_${pred}(${pred}_tuple);
       }
       
       // adding ${pred} tuples because of user delta
-      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get('${pred}') || []);
+      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) || []);
       `);  
     }      
   }
@@ -1371,7 +1356,7 @@ function stratumLogic(stratum)
           : `damaged_${pred}_tuple._inproducts.size === 0)`; // a "fully recursive" never by itself will have incoming non-recursive products,
           // so its groundedness always depends on other tuples (with incoming non-rec products)
         sb.push(`
-        ${logDebug(`"removing damaged ${pred} tuples due to removal of other tuples"`)}
+        ${logDebug(`\`removing \${damaged_${pred}_tuples.length} damaged ${pred} tuples due to removal of other tuples\``)}
         while (damaged_${pred}_tuples.length > 0)
         {
           const damaged_${pred}_tuple = damaged_${pred}_tuples.pop();
@@ -1525,22 +1510,12 @@ function emitDeltaRemoveNOTTuple(pred)
   }`;
 }
 
-function emitAddTuples(strata, preds) 
+function emitComputeDelta(strata, preds) 
 {
-  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', added_${pred}_tuples.map(mt => mt.toGeneric())]`);
-  const deltaRemovedTuplesEntries = preds.map(pred => `['${pred}', removed_${pred}_tuples.map(mt => mt.toGeneric())]`);
+  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', added_${pred}_tuples]`);
+  const deltaRemovedTuplesEntries = preds.map(pred => `['${pred}', removed_${pred}_tuples]`);
 
   return `
-${publicFunction('addTupleMap')}(addTuples)
-{
-  return computeDelta(addTuples, []);
-}
-
-${publicFunction('removeTupleMap')}(remTuples)
-{
-  return computeDelta([], remTuples);
-} 
-
 function computeDelta(addTuples, remTuples)
 {
   const addedTuplesMap = new Map(addTuples);
@@ -1672,23 +1647,14 @@ function termString(termValue)
   return String(termValue);
 }
 
-function toGenericTerm(term)
-{
-  const type = typeof(term);
-  if (type === 'object')
-  {
-    return term.toGeneric();
-  }
-  return term;
-}
 
-function genericToTupleMap(genericTuples)
+function toTupleMap(tuples)
 {
   const map = new Map();
 
   function add(tuple)
   {
-    const key = tuple[0];
+    const key = tuple.constructor;
     const currentValue = map.get(key);
     if (currentValue === undefined)
     {
@@ -1699,47 +1665,33 @@ function genericToTupleMap(genericTuples)
       currentValue.push(tuple);
     }
   }
-  [...genericTuples].forEach(add);
+  [...tuples].forEach(add);
   return map;
 }
 
-function moduleToTupleMap(mtuples)
+${publicFunction('addTupleMap')}(addTuples)
 {
-  const map = new Map();
-
-  function add(mtuple)
-  {
-    const tuple = mtuple.toGeneric();
-    const key = tuple[0];
-    const currentValue = map.get(key);
-    if (currentValue === undefined)
-    {
-      map.set(key, tuple);
-    }
-    else
-    {
-      currentValue.push(tuple);
-    }
-  }
-  [...mtuples].forEach(add);
-  return map;
-}
-
-function getMTuple(x)
-{
-  const mtuple = (pred2getter.get(x[0]))(...x.slice(1))
-  ${assert('mtuple', 'x', 'no mtuple found')}
-  return mtuple;
+  return computeDelta(addTuples, []);
 }
 
 ${publicFunction('addTuples')}(edbTuples)
 {
-  return addTupleMap(genericToTupleMap(edbTuples));
+  return addTupleMap(toTupleMap(edbTuples));
 }
+
+${publicFunction('getTuple')}(tuple)
+{
+  return tuple.get();
+}
+
+${publicFunction('removeTupleMap')}(remTuples)
+{
+  return computeDelta([], remTuples);
+} 
 
 ${publicFunction('removeTuples')}(edbTuples)
 {
-  return removeTupleMap(genericToTupleMap(edbTuples));
+  return removeTupleMap(toTupleMap(edbTuples));
 }
 `} // emitFirst
 

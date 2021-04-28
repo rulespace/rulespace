@@ -1,7 +1,6 @@
 import { performance } from 'perf_hooks';
 import { assertTrue, Sets } from 'common';
-import { compileToConstructor, parseTuples, tupleEquals } from './test-common.js';
-import { toDot, sanityCheck } from '../schemelog-common.js';
+import { tupleEquals, compileAtoms, atomToFreshModuleTuple, compileToConstructor, sanityCheck } from './test-common.js';
 
 function containsTuple(t, ts)
 {
@@ -72,37 +71,46 @@ function remove(item, seq)
 function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
 {
   const ctr = compileToConstructor(src);
-  const edbTuples = parseTuples(edbTuplesSrc);
-  const expectedIdbTuples = parseTuples(expectedIdbTuplesSrc);
-  for (const p of permutations(edbTuples))
+  const edbAtoms = compileAtoms(edbTuplesSrc);
+  const expectedIdbAtoms = compileAtoms(expectedIdbTuplesSrc);
+  for (const p of permutations(edbAtoms))
   {
     const module = ctr();
     sanityCheck(module);
-    const delta = module.addTuples(p);
+
+    const edbTuples = p.map(atom => atomToFreshModuleTuple(module, atom));
+    const delta = module.addTuples(edbTuples);
     sanityCheck(module);
-    // const expectedEdbTuples = new  // TODO: by design, added non-edb tuples are discarded by module
-    // if (!equalTuples(module.edbTuples(), p))
-    // {
-    //   console.log("(expected) edb tuples: " + [...p].join());
-    //   console.log("module edb tuples: " + [...module.edbTuples()].join());
-    //   throw new Error("assertion failed");
-    // }
-    const expectedTuples = Sets.union(module.edbTuples(), expectedIdbTuples); // here, use 'actual' module edb tuples 
-    assertTrue(equalTuples(module.tuples(), expectedTuples));
+    if (!equalTuples(module.edbTuples(), edbTuples)) // TODO we don't check whether tuples actually are sets (should not contain dupes)
+    {
+      console.log("(expected) edb tuples: " + edbTuples.join());
+      console.log("    module edb tuples: " + [...module.edbTuples()].join());
+      throw new Error("assertion failed");
+    }
+    
+    const expectedIdbTuples = expectedIdbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+    const expectedTuples = edbTuples.concat(expectedIdbTuples);
+    if (!equalTuples(module.tuples(), expectedTuples))
+    {
+      console.log("(expected) tuples: " + [...expectedTuples].join());
+      console.log("    module tuples: " + [...module.tuples()].join());
+      throw new Error("assertion failed");
+    }
+    
     assertTrue(equalTuples([...delta.added()].flatMap(kv => kv[1]), expectedTuples));
   }
-  // if (dot) {console.log(toDot(module.edbTuples()))}; 
 }
 
 function testIncrementalAdd(src, edbTuplesSrc)
 {
   const ctr = compileToConstructor(src);
-  const edbTuples = parseTuples(edbTuplesSrc);
+  const edbAtoms = compileAtoms(edbTuplesSrc);
 
-  for (const s of selections(edbTuples))
+  for (const s of selections(edbAtoms))
   {
     const nimodule = ctr();
-    nimodule.addTuples(s);
+    const edbTuples = s.map(atom => atomToFreshModuleTuple(nimodule, atom));
+    nimodule.addTuples(edbTuples);
     sanityCheck(nimodule);
   
     let imodule;
@@ -114,7 +122,7 @@ function testIncrementalAdd(src, edbTuplesSrc)
         imodule = ctr();
         for (const t of p)
         {
-          imodule.addTuples([t]);
+          imodule.addTuples([atomToFreshModuleTuple(imodule, t)]);
           sanityCheck(imodule);
         }
 
@@ -134,34 +142,34 @@ function testIncrementalAdd(src, edbTuplesSrc)
 function testRemoveEdb(src, edbTuplesSrc)
 {
   const ctr = compileToConstructor(src);
-  const edbTuples = parseTuples(edbTuplesSrc);
+  const edbAtoms = compileAtoms(edbTuplesSrc);
   
-  for (const s of selections(edbTuples))
+  for (const s of selections(edbAtoms))
   {
     let remainingEdbs;
     let nimodule, imodule;
     try
     {
-      remainingEdbs = Sets.difference(edbTuples, s);
+      remainingEdbs = Sets.difference(edbAtoms, s);
       nimodule = ctr();
-      nimodule.addTuples([...remainingEdbs]);
+      nimodule.addTuples([...remainingEdbs].map(atom => atomToFreshModuleTuple(nimodule, atom)));
       sanityCheck(nimodule);
   
       imodule = ctr();
-      imodule.addTuples([...edbTuples]);
+      imodule.addTuples([...edbAtoms].map(atom => atomToFreshModuleTuple(imodule, atom)));
       sanityCheck(imodule);
-      imodule.removeTuples([...s]);
+      imodule.removeTuples([...s].map(atom => atomToFreshModuleTuple(imodule, atom).get()));
       sanityCheck(imodule);
   
       assertTrue(equalTuples(nimodule.tuples(), imodule.tuples()));
     }
     catch (e)
     {
-      console.log("edbTuples: " + edbTuples.join());
+      console.log("edbTuples: " + edbAtoms.join());
       console.log("selection: " + s.join());
       console.log("remaining  " + [...remainingEdbs].join());
       console.log("ni tuples: " + [...nimodule.tuples()]);
-      console.log("i tuples:  " + [...imodule.tuples()]);
+      if (imodule) {console.log("i tuples:  " + [...imodule.tuples()])}
       throw e;
     }
   }
@@ -173,7 +181,7 @@ testInitialSolve(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
 testInitialSolve(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
 testInitialSolve(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
 testInitialSolve(`(rule [X] [I])`, `[I]`, `[X]`);
-testInitialSolve(`(rule [X] [I])`, `[J]`, ``); 
+// testInitialSolve(`(rule [X] [I])`, `[J]`, ``);  cannot add J!
 
 testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 
@@ -472,8 +480,8 @@ const example10 =
   [R a [V b c]])
 `;
 testInitialSolve(example10, `[I 1 2] [I 3 4]`,
-  `[R 1 [V 2 9]] [S 1 [V 2 9]]
-   [R 3 [V 4 9]] [S 3 [V 4 9]]
+  `[R 1 [V 2 9]] [S 1 2 9]
+   [R 3 [V 4 9]] [S 3 4 9]
   `);
 
 // ============

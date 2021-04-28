@@ -1,49 +1,12 @@
 import { performance } from 'perf_hooks';
 import { assertTrue, Sets } from 'common';
-import { compileToConstructor, Unique, toModuleTuple, toModuleTupleFor } from './test-common.js';
+import { compileToConstructor, toModuleTuple, toModuleTupleFor } from './test-common.js';
 
 /**
  * 
  * TODO rewrite this into something that works on wl-....mjs that accept wlCb
  * (maybe rewrite them all to use wlCb)
  */
-
-class AddTuple
-{
-  constructor(tuple)
-  {
-    this.tuple = tuple;
-  }
-
-  applyToModule(module)
-  {
-    const mTuple = toModuleTuple(module, this.tuple);
-    module.addTuples([mTuple]);
-  }
-
-  applyToSet(set)
-  {
-    set.add(this.tuple);
-  }
-}
-class RemoveTuple
-{
-  constructor(tuple)
-  {
-    this.tuple = tuple;
-  }
-
-  applyToModule(module)
-  {
-    const mTuple = toModuleTuple(module, this.tuple);
-    module.removeTuples([mTuple]);
-  }
-
-  applyToSet(set)
-  {
-    set.delete(this.tuple);
-  }
-}
 
 export function addTuple(tuple)
 {

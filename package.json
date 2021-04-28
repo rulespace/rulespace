@@ -7,7 +7,7 @@
     "test": "cd tests && node test.js"
   },
   "author": "Jens Nicolay <jens.nicolay@gmail.com>",
-  "license": "ISC",
+  "license": "CC-BY-NC-ND-4.0",
   "directories": {
     "test": "tests"
   },
@@ -16,7 +16,7 @@
     "url": "git+https://github.com/jensnicolay/rulespace.git"
   },
   "keywords": [
-    "datalog",
+    "datalog",      
     "rules",
     "facts",
     "incremental"

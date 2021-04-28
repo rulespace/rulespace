@@ -1,27 +1,34 @@
 import { assertTrue } from 'common';
-import { Pair, Sym, Keyword, Tuple } from './sexp-reader.js';
+import { Null, Pair, Sym, Keyword, Tuple } from './sexp-reader.js';
 import { Program, Rule, Neg, Agg, Atom, Lit, Var } from './rsp.js';
 
 export function sexp2rsp(sexps)
 {
   const rules = [];
-  for (const sexp of sexps)
+  if (!(sexps instanceof Null))
   {
-    if (sexp instanceof Pair)
+    for (const sexp of sexps)
     {
-      if ((sexp.car instanceof Sym) && sexp.car.name === 'rule')
+      if (sexp instanceof Pair)
       {
-        rules.push(compileRule(sexp));
+        if ((sexp.car instanceof Sym) && sexp.car.name === 'rule')
+        {
+          rules.push(compileRule(sexp));
+        }
+        else
+        {
+          throw new Error("cannot handle " + sexp);
+        }
+      }
+      else if (sexp instanceof Tuple)
+      {
+        rules.push(compileFact(sexp));
       }
       else
       {
         throw new Error("cannot handle " + sexp);
       }
-      }
-    else
-    {
-      throw new Error("cannot handle " + sexp);
-    }
+    }  
   }
   return new Program(rules);
 }
@@ -32,6 +39,13 @@ function compileRule(ruleExp)
   let bodyExps = ruleExp.cdr.cdr;
   const head = compileAtom(headExp);
   const body = [...bodyExps].map(compileTerm);
+  return new Rule(head, body);
+}
+
+function compileFact(headExp)
+{
+  const head = compileAtom(headExp);
+  const body = [];
   return new Rule(head, body);
 }
 
@@ -78,9 +92,7 @@ export function compileTerm(exp)
       case 'quote':
       {
         const quoted = exp.cdr.car;
-        throw new Error("TODO");
-        // assertTrue(quoted instanceof Sym); // TODO expand
-        // return new Lit(quoted.valueOf());
+        return new Lit(quoted.valueOf()); // TODO introduce Ref?
       }
       case 'not':       
       {

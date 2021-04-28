@@ -1,27 +1,22 @@
-import { sanityCheck } from '../schemelog-common.js';
-import { compileToModule, parseTuples } from './test-common.js';
-
+import { compileToModule, sanityCheck, compileModuleTuples } from './test-common.js';
 
 const src =
 `
-(rule [R x [V y 9]]
-  [I x y])
-
-(rule [S a b c]
-  [R a [V b c]])
+(rule [Reachable x y]
+  [Link x y])
+  
+(rule [Reachable x y]
+  [Reachable x z] [Link z y])
 `;
-
-
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
-module.addTuples(parseTuples(`[I 1 2] [I 3 4]`));
 // const edbTuples = parseTuples(`[Link "b" "c"] [Link "c" "b"] [Link "c" "c"]`);
-// module.addTuples(parseTuples(`[I 'a 'bb]`));
+module.addTuples(compileModuleTuples(module, `[Link 1 2]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 sanityCheck(module);
 
-module.removeTuples(parseTuples(`[I 1 2]`)); 
+module.removeTuples(compileModuleTuples(module, `[Link 1 2]`).map(t => t.get())); 
 console.log("tuples: " + [...module.tuples()].join('\n'));
 
 sanityCheck(module);

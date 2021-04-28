@@ -1,7 +1,7 @@
 /*
 program = rules
 
-rule = atom body
+rule = atom body?
 
 body = queryParts
 
