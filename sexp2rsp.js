@@ -1,6 +1,6 @@
 import { assertTrue } from 'common';
 import { Null, Pair, Sym, Keyword, Tuple } from './sexp-reader.js';
-import { Program, Rule, Neg, Agg, Atom, Lit, Var } from './rsp.js';
+import { Program, Rule, Neg, Agg, Atom, Lit, Var, App } from './rsp.js';
 
 export function sexp2rsp(sexps)
 {
@@ -71,42 +71,46 @@ function compileAtom(tuple)
   return new Atom(pred, terms);
 }
 
-export function compileTerm(exp)
+export function compileTerm(term)
 {
-  if (exp instanceof Sym)
+  if (term instanceof Sym)
   {
-    return new Var(exp.name);
+    return new Var(term.name);
   }
 
-  if (exp instanceof Tuple)
+  if (term instanceof Tuple)
   {
-    return compileAtom(exp);
+    return compileAtom(term);
   }
 
-  if (exp instanceof Pair)
+  if (term instanceof Pair)
   {
-    const rator = exp.car;
+    const rator = term.car;
     assertTrue(rator instanceof Sym)
     switch (rator.name)
     {
       case 'quote':
       {
-        const quoted = exp.cdr.car;
+        const quoted = term.cdr.car;
         return new Lit(quoted.valueOf()); // TODO introduce Ref?
       }
-      case 'not':       
+      case 'not':  // TODO 'not' as app (= when arg is not an atom)
       {
-        const negated = compileTerm(exp.cdr.car);
+        const negated = compileTerm(term.cdr.car);
         return new Neg(negated);    
       }
-      default: throw new Error("cannot handle " + exp);
+      default:
+      {
+        return new App(term.car, term.cdr.properToArray().map(compileTerm));
+      }
+      // default: throw new Error(`cannot handle term ${term} of type ${term.constructor.name}`);
     }
   }
 
-  if (exp instanceof Array)
+  if (term instanceof Array)
   {
-    return exp.map(compileTerm);
+    return term.map(compileTerm);
   }
 
-  return new Lit(exp.valueOf()); // TODO: valueOf needed?
+  return new Lit(term.valueOf()); // TODO: valueOf needed?
 }

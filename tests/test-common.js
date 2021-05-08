@@ -5,21 +5,19 @@ import { sexp2rsp  } from '../sexp2rsp.js';
 import { rsp2js } from '../rsp2js.js';
 import { Atom, Lit } from '../rsp.js';
 
-export function compileToConstructor(src, options)
-{
-  const parser = new SchemeParser();
-  const sexp = parser.parse(src);
-  const rsp = sexp2rsp(sexp);
-  const compiled = rsp2js(rsp,  {...options, module:false});
-  return Function(compiled);
-}
-
 export function compileToRsp(src)
 {
   const parser = new SchemeParser();
   const sexp = parser.parse(src);
   const rsp = sexp2rsp(sexp);
   return rsp;
+}
+
+export function compileToConstructor(src, options)
+{
+  const rsp = compileToRsp(src);
+  const compiled = rsp2js(rsp,  {...options, module:false});
+  return Function(compiled);
 }
 
 export function compileToModule(src, name, options)
@@ -60,7 +58,7 @@ export function atomToFreshModuleTuple(module, atom)
 /* returns 'fresh' module tuple objects, not 'interned' tuple */
 export function compileModuleTuples(module, src)
 {
-  const atoms = compileToAtoms(src);
+  const atoms = compileAtoms(src);
   return atoms.map(atom => atomToFreshModuleTuple(module, atom));
 }
 

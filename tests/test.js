@@ -181,7 +181,9 @@ testInitialSolve(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
 testInitialSolve(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
 testInitialSolve(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
 testInitialSolve(`(rule [X] [I])`, `[I]`, `[X]`);
-// testInitialSolve(`(rule [X] [I])`, `[J]`, ``);  cannot add J!
+// testInitialSolve(`(rule [X] [I])`, `[J]`, ``);  cannot add J! not an edb
+testInitialSolve(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);
+
 
 testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 
@@ -484,5 +486,18 @@ testInitialSolve(example10, `[I 1 2] [I 3 4]`,
    [R 3 [V 4 9]] [S 3 4 9]
   `);
 
+// === bug: duplicate identifier names in generated code for recursive rules
+const example11 =
+`
+(rule [Reachable e2 ctx2] [Reachable e1 ctx1] [Step e1 ctx1 e2 ctx2])
+(rule [Step e1 ctx e2 ctx2] [Lit e1 _] [Reachable e1 ctx] [Cont e1 ctx1 e2 ctx2])
+(rule [Step e1 ctx e2 ctx2] [Id e1 _] [Reachable e1 ctx] [Cont e1 ctx1 e2 ctx2])
+`;
+
+testInitialSolve(example11, ``, ``); 
+
+
 // ============
 console.log("done: " + (performance.now() - start) + "ms");
+
+

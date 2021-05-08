@@ -1,6 +1,7 @@
 import { MutableArrays, assertTrue } from 'common';
-import { Atom, Neg, Agg, Var, Lit } from './rsp.js';
+import { Atom, Neg, Agg, Var, Lit, Assign, App } from './rsp.js';
 import { analyzeProgram } from './analyzer.js';
+import { Sym } from './sexp-reader.js';
 
 // class LineEmitter
 // {
@@ -574,7 +575,7 @@ function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
     }
     else
     {
-      throw new Error("cannot handle " + term);
+      throw new Error(`cannot handle ${term} of type ${term.constructor.name} in ${atom}`);
     }
   })
 }
@@ -658,32 +659,38 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const bindUnboundVars = [];
     const conditions = [];
     
-    compileAtom(atom, tuple, compileEnv, bindUnboundVars, conditions);
-
-    if (conditions.length === 0)
+    switch (pred)
     {
-      return `
-      // atom ${atom} (no conditions)
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
-      {
-        ${bindUnboundVars.join('\n        ')}
-        ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-      }
-      `;  
-    }
-    else
-    {
-      return `
-      // atom ${atom} (conditions)
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
-      {
-        if (${conditions.join(' && ')})
+      default:
         {
-          ${bindUnboundVars.join('\n          ')}
-          ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
+          compileAtom(atom, tuple, compileEnv, bindUnboundVars, conditions);
+
+          if (conditions.length === 0)
+          {
+            return `
+            // atom ${atom} (no conditions)
+            for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
+            {
+              ${bindUnboundVars.join('\n        ')}
+              ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
+            }
+            `;  
+          }
+          else
+          {
+            return `
+            // atom ${atom} (conditions)
+            for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
+            {
+              if (${conditions.join(' && ')})
+              {
+                ${bindUnboundVars.join('\n          ')}
+                ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
+              }
+            }
+            `;  
+          }      
         }
-      }
-      `;  
     }
   }
 
@@ -729,27 +736,41 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
   }// Neg
 
 
-  if (atom instanceof Assign)
-  {
-    assertTrue(atom.operator === '='); // nothing else supported at the moment
-    assertTrue(atom.left instanceof Var); // nothing else supported at the moment
-    const name = atom.left.name;
-    if (compileEnv.has(name))
-    {
-      throw new Error("assigning bound name: " + name);
-    }
-    compileEnv.add(name);
-    const left = compileTerm(atom.left);
-    const right = compileTerm(atom.right);
-    return `
-      // assign ${atom}
-      const ${left} = ${right};
+  // if (atom instanceof Assign)
+  // {
+  //   assertTrue(atom.operator === '='); // nothing else supported at the moment
+  //   assertTrue(atom.left instanceof Var); // nothing else supported at the moment
+  //   const name = atom.left.name;
+  //   if (compileEnv.has(name))
+  //   {
+  //     throw new Error("assigning bound name: " + name);
+  //   }
+  //   compileEnv.add(name);
+  //   const left = compileTerm(atom.left);
+  //   const right = compileTerm(atom.right);
+  //   return `
+  //     // assign ${atom}
+  //     const ${left} = ${right};
 
-      ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-    `;
+  //     ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
+  //   `;
+  // }
+
+  if (atom instanceof App)
+  {
+    assertTrue(atom.operator instanceof Sym && atom.operator.name === '='); // nothing else supported at the moment
+    assertTrue(atom.operands.length === 2); // nothing else supported at the moment
+    assertTrue(atom.operands[0] instanceof Var); // nothing else supported at the moment
+    return `
+        // application ${atom}
+        if (${atom.operands[0]} === ${compileTerm(atom.operands[1])})
+        {
+          ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
+        } // application ${atom}
+    `
   }
 
-  throw new Error(body[i]);
+  throw new Error(`cannot handle ${body[i]} of type ${body[i].constructor.name} in ${rule}`);
 }
 
 function emitRule(rule)
@@ -953,7 +974,10 @@ function emitRuleGB(rule)
 
 
   const recursive = analysis.ruleIsRecursive(rule);
-  assertTrue(!recursive);
+  if (recursive)
+  {
+    throw new Error(`${rule}: aggregating rules must not be recursive`);
+  }
 
   return `
 /* rule (tuple arity ${tupleArity}) (non-recursive) (aggregating) 
@@ -1058,11 +1082,15 @@ function compileTerm(term) // TODO term compiling is already present elsewhere
   {
     return term.name;
   }
-  if (term instanceof Bin)
+  // if (term instanceof Bin)
+  // {
+  //   return compileTerm(term.left) + term.operator + compileTerm(term.right);
+  // }
+  if (term instanceof Lit)
   {
-    return compileTerm(term.left) + term.operator + compileTerm(term.right);
+    return String(term);
   }
-  throw new Error("compile term error: " + term);
+  throw new Error(`cannot handle term ${term} of type ${term.constructor.name}`);
 }
 
 function emitEdbAtom(atom, i, rule, producesPred, stratum)
@@ -1194,9 +1222,9 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred)
     if (recursivePreds.has(pred))
     {
       return [`
-        const ${producesPred}_tuples_${i} = fireRule${rule._id}(${i}, local_${pred}_tuples);
-        MutableArrays.addAll(new_${producesPred}_tuples, ${producesPred}_tuples_${i});
-        MutableArrays.addAll(added_${producesPred}_tuples, ${producesPred}_tuples_${i}); // not reqd for rdb
+        const ${producesPred}_tuples_${rule._id}_${i} = fireRule${rule._id}(${i}, local_${pred}_tuples);
+        MutableArrays.addAll(new_${producesPred}_tuples, ${producesPred}_tuples_${rule._id}_${i});
+        MutableArrays.addAll(added_${producesPred}_tuples, ${producesPred}_tuples_${rule._id}_${i}); // not reqd for rdb
       `];  
     }
     else
@@ -1212,7 +1240,7 @@ function emitRecursiveRule(rule, recursivePreds)
   const producesPred = rule.head.pred;
   const atoms = rule.body.flatMap((atom, i) => emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred));
   return `
-    /* Rule${rule._id} [recursive]
+    /* Rule${rule._id} (recursive)
 ${rule}
     */
     ${atoms.join('\n    ')}
@@ -1512,8 +1540,8 @@ function emitDeltaRemoveNOTTuple(pred)
 
 function emitComputeDelta(strata, preds) 
 {
-  const deltaAddedTuplesEntries = preds.map(pred => `['${pred}', added_${pred}_tuples]`);
-  const deltaRemovedTuplesEntries = preds.map(pred => `['${pred}', removed_${pred}_tuples]`);
+  const deltaAddedTuplesEntries = preds.map(pred => `[${pred}, added_${pred}_tuples]`);
+  const deltaRemovedTuplesEntries = preds.map(pred => `[${pred}, removed_${pred}_tuples]`);
 
   return `
 function computeDelta(addTuples, remTuples)

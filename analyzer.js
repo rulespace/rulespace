@@ -1,5 +1,5 @@
 import { assertTrue, MutableSets, MutableMaps } from 'common';
-import { Atom, Neg } from './rsp.js';
+import { Atom, Neg, App } from './rsp.js';
 
 function topoSort(predicates)
 {
@@ -125,7 +125,7 @@ function collect(program)
     }
   }
 
-  function handleAtom(atom)
+  function handleAtom(atom, rule)
   {
     const name = atom.pred;
     const arity = atom.arity();
@@ -138,7 +138,7 @@ function collect(program)
     }
     if (pred.arity !== arity)
     {
-      throw new Error(`arity mismatch for predicate ${pred}`);
+      throw new Error(`arity mismatch for atom ${atom} in rule ${rule}: expected arity ${pred.arity}, got ${arity}`);
     }
 
     // scan exps
@@ -156,7 +156,7 @@ function collect(program)
   for (const rule of program.rules)
   {
     const head = rule.head;
-    const headPred = handleAtom(head);
+    const headPred = handleAtom(head, rule);
     headPred.idb = true;
     headPred.edb = false;
     headPred.rules.add(rule);
@@ -164,7 +164,7 @@ function collect(program)
     {
       if (queryPart instanceof Atom)
       {
-        const pred = handleAtom(queryPart);
+        const pred = handleAtom(queryPart, rule);
         pred.precedes.add(headPred);
         headPred.posDependsOn.add(pred);
         pred.posAppearsIn.add(rule);
@@ -173,13 +173,17 @@ function collect(program)
       {
         const atom = queryPart.atom;
         const pred = handleAtom(atom);
-        pred.precedes.add(headPred);
+        pred.precedes.add(headPred, rule);
         headPred.negDependsOn.add(pred);
         pred.negAppearsIn.add(rule);
       }
+      else if (queryPart instanceof App)
+      {
+        // ignore
+      }
       else
       {
-        throw new Error(`cannot handle ${queryPart} in ${rule}`);
+        throw new Error(`cannot handle ${queryPart} of type ${queryPart.constructor.name} in ${rule}`);
       }
     }
   }

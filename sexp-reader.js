@@ -327,6 +327,10 @@ SchemeTokenizer.prototype.parse =
     {
       return this.parseNumber(c);
     }
+    if (c === ')' || c === ']')
+    {
+      throw new Error(`unexpected closing '${c}' at ${this.reader.line}:${this.reader.linePos}`)
+    }
     return this.parseIdentifier(c);
   }
 

@@ -48,7 +48,7 @@ export class Rule
 
   toString()
   {
-    return `${this.head} :- ${this.body.join()}`;
+    return `(rule ${this.head} ${this.body.join(' ')})`;
   }
 }
 
@@ -141,6 +141,20 @@ export class Assign
   toString()
   {
     return `${this.left}${this.operator}${this.right}`;
+  }
+}
+
+export class App // Exp
+{
+  constructor(operator, operands)
+  {
+    this.operator = operator;
+    this.operands = operands;
+  }
+
+  toString()
+  {
+    return `(${this.operator} ${this.operands.join(' ')})`;
   }
 }
 
