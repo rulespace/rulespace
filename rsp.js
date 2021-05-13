@@ -9,7 +9,7 @@ queryPart = exp | assign
 
 atom = name exps agg?
 
-exp = lit | var | atom | !exp | binexp
+exp = lit | var | atom | !exp | app
 
 */
 

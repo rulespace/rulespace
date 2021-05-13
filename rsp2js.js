@@ -434,10 +434,8 @@ ${publicFunction(pred)}(${tn.join(', ')})
   this._outproductsgb = new Set();
   this._refs = []; // TODO: can statically determine which preds will have refs (i.e., allocated as part of tuple) 
 }
-// public API (only)
-// ${pred}.prototype.get = function () {return get_${pred}(${termFields.join(', ')})};
-//
 ${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
+${pred}.prototype.values = function () {return [${termFields}]};
 ${pred}.prototype.get = function () { // also internally used
   return get_${pred}(${termFields.join(', ')});
 };
