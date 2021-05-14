@@ -182,10 +182,16 @@ testInitialSolve(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
 testInitialSolve(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
 testInitialSolve(`(rule [X] [I])`, `[I]`, `[X]`);
 // testInitialSolve(`(rule [X] [I])`, `[J]`, ``);  cannot add J! not an edb
+
+// apps
 testInitialSolve(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);
+testInitialSolve(`(rule [X a b] [I a b] (!= a 3))`, `[I 3 4] [I 5 6]`, `[X 5 6]`);
 
 
 testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
+
+// TODO: (strategy for) reserved js words
+//testInitialSolve(`(rule [if a b] [let a b] [while a b] [for a b] [const a b])`, ``);
 
 // ===
 const example1 = `

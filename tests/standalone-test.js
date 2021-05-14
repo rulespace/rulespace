@@ -2,7 +2,7 @@ import { compileToModule, sanityCheck, compileModuleTuples } from './test-common
 
 const src =
 `
-(rule [X a b] [I a b] (= a 3))
+(rule [X a b] [I a b] (!= a 3))
 `;
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {

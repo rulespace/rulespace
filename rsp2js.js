@@ -709,7 +709,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
         }
         else
         {
-          throw new Error("unbound var in negation: " + term.name);
+          throw new Error(`unbound variable ${term.name} in negation in ${rule}`);
         }
       }
       else if (term instanceof Lit)
@@ -756,12 +756,25 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
   if (atom instanceof App)
   {
-    assertTrue(atom.operator instanceof Sym && atom.operator.name === '='); // nothing else supported at the moment
+    assertTrue(atom.operator instanceof Sym)
     assertTrue(atom.operands.length === 2); // nothing else supported at the moment
     assertTrue(atom.operands[0] instanceof Var); // nothing else supported at the moment
+    let jsOperator;
+    switch (atom.operator.name)
+    {
+      case '=':
+        jsOperator = "===";
+        break;
+      case '!=':
+        jsOperator = "!==";
+        break;
+      default:
+        throw new Error(`cannot handle operator ${atom.operator.name} in ${rule}`);
+    }
+
     return `
         // application ${atom}
-        if (${atom.operands[0]} === ${compileTerm(atom.operands[1])})
+        if (${atom.operands[0]} ${jsOperator} ${compileTerm(atom.operands[1])})
         {
           ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
         } // application ${atom}
