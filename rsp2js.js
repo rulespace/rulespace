@@ -40,12 +40,12 @@ class DynamicVars
   }  
 }
 
-export function rsp2js(program, options={})
+export function rsp2js(rsp, options={})
 {
   // const parser = new SchemeParser();
   // const program = parser.parse(src);
 
-  const analysis = analyzeProgram(program);
+  const analysis = analyzeProgram(rsp);
   const strata = analysis.strata;
   const preds = analysis.preds;
   const edbPreds = preds.filter(pred => pred.edb);
@@ -756,7 +756,10 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
   if (atom instanceof App)
   {
-    assertTrue(atom.operator instanceof Sym)
+    if (!(atom.operator instanceof Sym))
+    {
+      throw new Error(`cannot handle operator ${atom.operator} of type ${atom.operator.constructor.name} in ${rule}`);
+    }
     assertTrue(atom.operands.length === 2); // nothing else supported at the moment
     assertTrue(atom.operands[0] instanceof Var); // nothing else supported at the moment
     let jsOperator;

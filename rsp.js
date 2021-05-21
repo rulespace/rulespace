@@ -13,6 +13,8 @@ exp = lit | var | atom | !exp | app
 
 */
 
+export { Sym } from './sexp-reader.js';
+
 export class Program
 {
   constructor(rules)
