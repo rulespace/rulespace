@@ -2,12 +2,13 @@ import { compileToModule, sanityCheck, compileModuleTuples } from './test-common
 
 const src =
 `
-(rule [X a b] [I a b] (!= a 3))
+(rule [Root a] [I a b])
+(rule [Lookup x [Root k]] [J x k])
 `;
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
-module.addTuples(compileModuleTuples(module, `[I 3 4] [I 5 6]`));
+module.addTuples(compileModuleTuples(module, ``));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 sanityCheck(module);
 

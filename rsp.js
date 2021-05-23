@@ -112,7 +112,7 @@ export class Lit
     const value = this.value;
     if (typeof value === "string")
     {
-      return "'" + value + "'";
+      return "\"" + value + "\"";
     }
     return String(value);
   }

@@ -1,6 +1,15 @@
 import { assertTrue, MutableSets, MutableMaps } from 'common';
 import { Atom, Neg, App } from './rsp.js';
 
+export class AnalyzerError extends Error
+{
+  constructor(msg)
+  {
+    super(msg);
+    this.name = 'AnalyzerError';
+  }
+}
+
 function topoSort(predicates)
 {
 
@@ -101,21 +110,24 @@ function collect(program)
   function handleFunctor(functor)
   {
     const name = functor.pred;
+    if (name2pred.has(name))
+    {
+      throw new AnalyzerError(`function symbol ${name} is already declared as predicate`);
+    }
     const arity = functor.arity();
     let func = name2functor.get(name);
     if (func === undefined)
     {
       func = new Functor(name, arity);
       name2functor.set(name, func);
-      return func;
     }
-    if (func.arity !== arity)
+    else if (func.arity !== arity)
     {
       throw new Error(`arity mismatch for functor ${func}`);
     }
 
     // scan exps
-    for (const exp of func.terms)
+    for (const exp of functor.terms)
     {
       if (exp instanceof Atom)
       {
@@ -128,17 +140,20 @@ function collect(program)
   function handleAtom(atom, rule)
   {
     const name = atom.pred;
+    if (name2functor.has(name))
+    {
+      throw new AnalyzerError(`predicate ${name} is already declared as function symbol`);
+    }
     const arity = atom.arity();
     let pred = name2pred.get(name);
     if (pred === undefined)
     {
       pred = new Pred(name, arity);
       name2pred.set(name, pred);
-      return pred;
     }
-    if (pred.arity !== arity)
+    else if (pred.arity !== arity)
     {
-      throw new Error(`arity mismatch for atom ${atom} in rule ${rule}: expected arity ${pred.arity}, got ${arity}`);
+      throw new AnalyzerError(`arity mismatch for atom ${atom} in rule ${rule}: expected arity ${pred.arity}, got ${arity}`);
     }
 
     // scan exps

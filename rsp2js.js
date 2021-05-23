@@ -19,6 +19,26 @@ import { Sym } from './sexp-reader.js';
 //   }
 // }
 
+function nameEnc(str) // TODO: too basic // TODO: register term names in map: surface name -> compiled name (term0, term1, ...)
+{
+  let sb = "_";
+  for (const c of str)
+  {
+    if (c === "‘" || c === "’" ||
+        c === "“" || c === "”" ||
+        c === "«" || c === "»" ||
+        c === "…")
+    {
+       sb += c.charCodeAt(0);
+    }
+    else
+    {
+      sb += c;
+    }
+  }
+  return sb;
+}
+
 class DynamicVars
 {
   constructor(initial)
@@ -519,11 +539,11 @@ function compileMatchFunctor(functor, target, compileEnv, bindUnboundVars, condi
       {
         if (compileEnv.has(term.name))
         {
-          conditions.push(`${target}.t${i} === ${term.name}`);
+          conditions.push(`${target}.t${i} === ${nameEnc(term.name)}`);
         }
         else
         {
-          bindUnboundVars.push(`const ${term.name} = ${target}.t${i};`);
+          bindUnboundVars.push(`const ${nameEnc(term.name)} = ${target}.t${i};`);
           compileEnv.add(term.name);
         }  
       }
@@ -554,11 +574,11 @@ function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
       {
         if (compileEnv.has(term.name))
         {
-          conditions.push(`${target}.t${i} === ${term.name}`);
+          conditions.push(`${target}.t${i} === ${nameEnc(term.name)}`);
         }
         else
         {
-          bindUnboundVars.push(`const ${term.name} = ${target}.t${i};`);
+          bindUnboundVars.push(`const ${nameEnc(term.name)} = ${target}.t${i};`);
           compileEnv.add(term.name);
         }  
       }
@@ -586,7 +606,7 @@ function compileCreateFunctor(functor, j, compileEnv, termExpsOut, rcIncs)
   const termExps = functor.terms;
   return `
       // functor ${functor}
-      const functor${j} = add_get_${functor.pred}(${termExps.join(', ')});
+      const functor${j} = add_get_${functor.pred}(${termExps.map(compileTerm).join(', ')});
   `;
 }
 
@@ -604,7 +624,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     {
       if (term instanceof Var)
       {
-        termExps.push(term);
+        termExps.push(nameEnc(term.name));
       }
       else if (term instanceof Atom) // Functor
       {
@@ -705,7 +725,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
       {
         if (compileEnv.has(term.name))
         {
-          getValues.push(`${term.name}`);
+          getValues.push(`${nameEnc(term.name)}`);
         }
         else
         {
@@ -728,7 +748,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     {
       continue;
     }
-    const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.join(', ')});
+    const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.map(t => nameEnc(t.name)).join(', ')});
     ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
     `;  
   }// Neg
@@ -777,7 +797,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
     return `
         // application ${atom}
-        if (${atom.operands[0]} ${jsOperator} ${compileTerm(atom.operands[1])})
+        if (${compileTerm(atom.operands[0])} ${jsOperator} ${compileTerm(atom.operands[1])})
         {
           ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
         } // application ${atom}
@@ -863,7 +883,7 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
     return `
       // updates for ${head}
       const productGB = addGetRule${rule._id}ProductGB(${ptuples.join()});
-      const groupby = add_get_Rule${rule._id}GB(${gb.join()});
+      const groupby = add_get_Rule${rule._id}GB(${gb.map(t => nameEnc(t.name)).join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -871,16 +891,16 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
       }
       else
       {
-        productGB.value = ${aggregate}; // TODO: aggregate is func dep on tuples, arrange this in another way (e.g. set in ctr)?
+        productGB.value = ${nameEnc(aggregate.name)}; // TODO: aggregate is func dep on tuples, arrange this in another way (e.g. set in ctr)?
         productGB._outgb = groupby;
         const currentAdditionalValues = updates.get(groupby);
         if (!currentAdditionalValues)
         {
-          updates.set(groupby, [${aggregate}]);
+          updates.set(groupby, [${nameEnc(aggregate.name)}]);
         }
         else
         {
-          currentAdditionalValues.push(${aggregate});
+          currentAdditionalValues.push(${nameEnc(aggregate.name)});
         }
         ${t2ps.join('\n        ')}
       }
@@ -902,11 +922,11 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
       {
         if (compileEnv.has(term.name))
         {
-          conditions.push(`${tuple}.t${i} === ${term.name}`);
+          conditions.push(`${tuple}.t${i} === ${nameEnc(term.name)}`);
         }
         else
         {
-          bindUnboundVars.push(`const ${term.name} = ${tuple}.t${i};`);
+          bindUnboundVars.push(`const ${nameEnc(term.name)} = ${tuple}.t${i};`);
           compileEnv.add(term.name);
         }
       }
@@ -1094,7 +1114,7 @@ function compileTerm(term) // TODO term compiling is already present elsewhere
 {
   if (term instanceof Var)
   {
-    return term.name;
+    return nameEnc(term.name);
   }
   // if (term instanceof Bin)
   // {

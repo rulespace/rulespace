@@ -101,6 +101,36 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
   }
 }
 
+function testError(src, edbTuplesSrc, expectedErrorMessageStart)
+{
+  try
+  {
+    const ctr = compileToConstructor(src);
+    const edbAtoms = compileAtoms(edbTuplesSrc);
+    const expectedIdbAtoms = compileAtoms(expectedIdbTuplesSrc);
+    const module = ctr();
+    sanityCheck(module);
+
+    const edbTuples = edbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+    sanityCheck(module);
+    if (!equalTuples(module.edbTuples(), edbTuples)) // TODO we don't check whether tuples actually are sets (should not contain dupes)
+    {
+      console.log("(expected) edb tuples: " + edbTuples.join());
+      console.log("    module edb tuples: " + [...module.edbTuples()].join());
+      throw new Error("assertion failed");
+    }    
+    throw new Error(`expected error ${expectedErrorMessageStart}, but got tuples: ${[...module.tuples()].join()}`);
+  }
+  catch (e)
+  {
+    const message = String(e);
+    if (!message.startsWith(expectedErrorMessageStart))
+    {
+      throw new Error(`expected error to start with ${expectedErrorMessageStart}, but got the following error: ${e}`);
+    }
+  }
+}
+
 function testIncrementalAdd(src, edbTuplesSrc)
 {
   const ctr = compileToConstructor(src);
@@ -190,8 +220,23 @@ testInitialSolve(`(rule [X a b] [I a b] (!= a 3))`, `[I 3 4] [I 5 6]`, `[X 5 6]`
 
 testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 
+// funny chars
+testInitialSolve(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
+
+// bug: function symbols in head not analyzed
+testInitialSolve(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);
+
 // TODO: (strategy for) reserved js words
 //testInitialSolve(`(rule [if a b] [let a b] [while a b] [for a b] [const a b])`, ``);
+
+// === analyzer errors
+
+// AnalyzerError: predicate Root is already declared as fynction symbol
+testError(`(rule [Lookup x [Root k]] [J x k]) (rule [Root a] [I a b])`, ``, 'AnalyzerError');
+
+// AnalyzerError: function symbol Root is already declared as predicate
+testError(`(rule [Root a] [I a b]) (rule [Lookup x [Root k]] [J x k])`, ``, 'AnalyzerError');
+
 
 // ===
 const example1 = `
@@ -501,6 +546,13 @@ const example11 =
 `;
 
 testInitialSolve(example11, ``, ``); 
+
+// === 
+// const example12 =
+// `
+// `
+
+// testInitialSolve(example12, ``, ``); 
 
 
 // ============
