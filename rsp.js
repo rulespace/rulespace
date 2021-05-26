@@ -142,7 +142,7 @@ export class Assign
 
   toString()
   {
-    return `${this.left}${this.operator}${this.right}`;
+    return `(${this.operator} ${this.left} ${this.right})`;
   }
 }
 
@@ -157,6 +157,19 @@ export class App // Exp
   toString()
   {
     return `(${this.operator} ${this.operands.join(' ')})`;
+  }
+}
+
+export class Paren // Exp
+{
+  constructor(exp)
+  {
+    this.exp = exp;
+  }
+
+  toString()
+  {
+    return this.exp.toString(); // sexp structure is enough (paren is 'helper' for C-like languages with notational ambiguity
   }
 }
 

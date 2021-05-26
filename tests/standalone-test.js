@@ -2,8 +2,7 @@ import { compileToModule, sanityCheck, compileModuleTuples } from './test-common
 
 const src =
 `
-(rule [Root a] [I a b])
-(rule [Lookup x [Root k]] [J x k])
+(rule [No] (not [A]))
 `;
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {

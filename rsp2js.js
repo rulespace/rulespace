@@ -718,7 +718,6 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const tuple = "tuple" + i;
     ptuples.push('NOT_' + tuple);
     const pred = natom.pred;
-    //const bindUnboundVars = [];
     const getValues = [];
     natom.terms.forEach((term, i) => {
       if (term instanceof Var)
@@ -743,7 +742,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     });
 
     return `
-    // atom ${atom} [conditions]
+    // atom ${atom} (conditions)
     if (get_${pred}(${getValues.join(', ')}) !== null)
     {
       continue;
@@ -1379,7 +1378,7 @@ function stratumLogic(stratum)
       sb.push(emitDeltaRemoveTuple(pred));
       if (pred.negAppearsIn.size > 0)
       {
-        sb.push(emitDeltaRemoveTuple(`NOT_${pred}`));
+        sb.push(emitDeltaRemoveNOTTuple(pred));
       }
 
       sb.push(`

@@ -1,12 +1,12 @@
 import { assertTrue, MutableSets, MutableMaps } from 'common';
 import { Atom, Neg, App } from './rsp.js';
 
-export class AnalyzerError extends Error
+export class AnalysisError extends Error
 {
   constructor(msg)
   {
     super(msg);
-    this.name = 'AnalyzerError';
+    this.name = 'AnalysisError';
   }
 }
 
@@ -112,7 +112,7 @@ function collect(program)
     const name = functor.pred;
     if (name2pred.has(name))
     {
-      throw new AnalyzerError(`function symbol ${name} is already declared as predicate`);
+      throw new AnalysisError(`functor '${name}' is already declared as predicate`);
     }
     const arity = functor.arity();
     let func = name2functor.get(name);
@@ -123,7 +123,7 @@ function collect(program)
     }
     else if (func.arity !== arity)
     {
-      throw new Error(`arity mismatch for functor ${func}`);
+      throw new AnalysisError(`arity mismatch for functor '${func}'`);
     }
 
     // scan exps
@@ -142,7 +142,7 @@ function collect(program)
     const name = atom.pred;
     if (name2functor.has(name))
     {
-      throw new AnalyzerError(`predicate ${name} is already declared as function symbol`);
+      throw new AnalysisError(`predicate '${name}' is already declared as functor`);
     }
     const arity = atom.arity();
     let pred = name2pred.get(name);
@@ -153,7 +153,7 @@ function collect(program)
     }
     else if (pred.arity !== arity)
     {
-      throw new AnalyzerError(`arity mismatch for atom ${atom} in rule ${rule}: expected arity ${pred.arity}, got ${arity}`);
+      throw new AnalysisError(`arity mismatch for atom ${atom} in rule ${rule}: expected arity ${pred.arity}, got ${arity}`);
     }
 
     // scan exps

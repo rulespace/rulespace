@@ -226,16 +226,25 @@ testInitialSolve(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]
 // bug: function symbols in head not analyzed
 testInitialSolve(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);
 
-// TODO: (strategy for) reserved js words
-//testInitialSolve(`(rule [if a b] [let a b] [while a b] [for a b] [const a b])`, ``);
+// bug: emit of deltaRemoveNOTTuple in globaEdbStratum used string iso. pred object
+testInitialSolve(`(rule [Yes x] [A x]) (rule [No x] [B x] (not [A x]))`, ``, ``);
+
 
 // === analyzer errors
 
-// AnalyzerError: predicate Root is already declared as fynction symbol
-testError(`(rule [Lookup x [Root k]] [J x k]) (rule [Root a] [I a b])`, ``, 'AnalyzerError');
+// AnalysisError: predicate Root is already declared as fynction symbol
+testError(`(rule [Lookup x [Root k]] [J x k]) (rule [Root a] [I a b])`, ``, 'AnalysisError');
 
-// AnalyzerError: function symbol Root is already declared as predicate
-testError(`(rule [Root a] [I a b]) (rule [Lookup x [Root k]] [J x k])`, ``, 'AnalyzerError');
+// AnalysisError: function symbol Root is already declared as predicate
+testError(`(rule [Root a] [I a b]) (rule [Lookup x [Root k]] [J x k])`, ``, 'AnalysisError');
+
+// TODO: (strategy for) reserved js words
+//testInitialSolve(`(rule [if a b] [let a b] [while a b] [for a b] [const a b])`, ``);
+
+// TODO: when no terms, negation can appear first in body, meaning it's not in a for-loop (no indexing yet!),
+// resulting in a 'continue' being emitted that is outside iteration
+// this is really an edge case
+// testInitialSolve(`(rule [No] (not [A]))`, ``, ``);
 
 
 // ===
