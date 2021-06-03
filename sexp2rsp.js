@@ -1,6 +1,6 @@
 import { assertTrue } from 'common';
 import { Null, Pair, Sym, Keyword, Tuple } from './sexp-reader.js';
-import { Program, Rule, Neg, Agg, Atom, Lit, Var, App } from './rsp.js';
+import { Program, Rule, Neg, Agg, Atom, Lit, Var, App, Assign } from './rsp.js';
 
 export function sexp2rsp(sexps)
 {
@@ -36,8 +36,8 @@ export function sexp2rsp(sexps)
 function compileRule(ruleExp)
 {
   const headExp = ruleExp.cdr.car;
-  let bodyExps = ruleExp.cdr.cdr;
   const head = compileAtom(headExp);
+  const bodyExps = ruleExp.cdr.cdr;
   const body = [...bodyExps].map(compileTerm);
   return new Rule(head, body);
 }
@@ -98,6 +98,12 @@ export function compileTerm(term)
       {
         const negated = compileTerm(term.cdr.car);
         return new Neg(negated);    
+      }
+      case ':=':
+      {
+        const lhs = compileTerm(term.cdr.car);
+        const rhs = compileTerm(term.cdr.cdr.car);
+        return new Assign(rator.name, lhs, rhs); // de-Symmed
       }
       default:
       {

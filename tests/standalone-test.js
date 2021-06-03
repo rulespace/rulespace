@@ -2,7 +2,7 @@ import { compileToModule, sanityCheck, compileModuleTuples } from './test-common
 
 const src =
 `
-(rule [No] (not [A]))
+(rule [X 123] #f)
 `;
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {

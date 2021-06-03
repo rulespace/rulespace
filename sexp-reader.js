@@ -8,6 +8,12 @@ export function Null()
 
 const NULL = new Null();
 
+Null.prototype[Symbol.iterator] =
+  function* ()
+  {
+  }
+
+
 Null.prototype.valueOf =
   function ()
   {

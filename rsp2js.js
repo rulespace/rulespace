@@ -3,6 +3,16 @@ import { Atom, Neg, Agg, Var, Lit, Assign, App } from './rsp.js';
 import { analyzeProgram } from './analyzer.js';
 import { Sym } from './sexp-reader.js';
 
+export class RspJsCompilationError extends Error
+{
+  constructor(msg)
+  {
+    super(msg);
+    this.name = 'RspJsCompilationError';
+  }
+}
+
+
 // class LineEmitter
 // {
 //   constructor()
@@ -173,29 +183,67 @@ export function rsp2js(rsp, options={})
       }
     }
 
+    sb.push(`const facts = new Map();`); 
+    sb.push(logDebug('"adding edb tuples due to fact addition by firing fact rule"')); 
+    for (const pred of preds)
+    {
+      for (const rule of pred.rules)
+      {
+        if (rule.tupleArity() === 0)
+        {
+          const producesPred = rule.head.pred;
+
+          sb.push(`/* fact: ${rule} */`);// TODO delta pos and tuple not required for fact rules
+          sb.push(`
+          const new_Rule${rule._id}_tuples = fireRule${rule._id}(-1, []);
+          const existing_Rule${rule._id}_tuples = facts.get(${pred});
+          if (existing_Rule${rule._id}_tuples === undefined)
+          {
+            facts.set(${pred}, new_Rule${rule._id}_tuples);
+          }
+          else
+          {
+            MutableArrays.addAll(existing_Rule${rule._id}_tuples, new_Rule${rule._id}_tuples);  
+          }
+          `);
+        }
+      }
+    }
+    sb.push(`
+    if (facts.size > 0)
+    {
+      ${logDebug('"computing idb tuples due to addition of fact edbs"')}; 
+      addTupleMap(facts);
+    }
+    `)
+
+    ////////////////
+
+
     const pred2getters = preds.map(pred => `['${pred}', get_${pred}]`);
     sb.push(`const pred2getter = new Map([${pred2getters.join()}])`);
-  
 
-  sb.push(emitComputeDelta(strata, preds));
-  sb.push(emitRemoveTuples(strata));
-  
-  sb.push(emitIterators(preds, edbPreds, rules));
-  sb.push(emitClear(edbPreds));
+    sb.push(emitComputeDelta(strata, preds));
+    sb.push(emitRemoveTuples(strata));
+    
+    sb.push(emitIterators(preds, edbPreds, rules));
+    sb.push(emitClear(edbPreds));
 
-  if (FLAG_profile)
-  {
-    sb.push(emitProfileResults());
-  }
+    ////////////////
 
-  if (FLAG_compile_to_ctr)
-  {
-    sb.push(`return {${publicFunctions.join(', ')}};`);
-  }
+    if (FLAG_profile)
+    {
+      sb.push(emitProfileResults());
+    }
 
-  sb.push(`// the end`);
+    if (FLAG_compile_to_ctr)
+    {
+      sb.push(`return {${publicFunctions.join(', ')}};`);
+    }
 
-  return sb.join('\n');
+    sb.push(`// the end`);
+
+    return sb.join('\n');
   } // main
 
   function emitGet(pred, arity)
@@ -616,9 +664,9 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
   {
     const pred = head.pred;
     const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
-    const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
     const termExps = [];
     const termAids = [];
+    const fact = rule.tupleArity() === 0;
 
     head.terms.map((term, j) =>
     {
@@ -640,9 +688,30 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
       }
     })
 
+    let provenanceActions;
+    if (fact)
+    {
+      provenanceActions = `
+      // fact, no provenance stuff
+      `
+    }
+    else
+    {
+      const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
+      provenanceActions = `
+      else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
+      {
+        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
+        ${t2ps.join('\n        ')}
+        product._outtuple = existing_${pred}_tuple;
+        existing_${pred}_tuple._inproducts.add(product);
+      }      
+      `
+    }
+
 
     return `
-      // adding ${head}
+      // adding ${fact ? `edb` : `idb`} ${head}
       ${termAids}
       const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
       if (existing_${pred}_tuple === null)
@@ -656,13 +725,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
         ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
         ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
       }
-      else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
-      {
-        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
-        ${t2ps.join('\n        ')}
-        product._outtuple = existing_${pred}_tuple;
-        existing_${pred}_tuple._inproducts.add(product);
-      }
+      ${provenanceActions}
     `;
   }
 
@@ -753,36 +816,34 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
   }// Neg
 
 
-  // if (atom instanceof Assign)
-  // {
-  //   assertTrue(atom.operator === '='); // nothing else supported at the moment
-  //   assertTrue(atom.left instanceof Var); // nothing else supported at the moment
-  //   const name = atom.left.name;
-  //   if (compileEnv.has(name))
-  //   {
-  //     throw new Error("assigning bound name: " + name);
-  //   }
-  //   compileEnv.add(name);
-  //   const left = compileTerm(atom.left);
-  //   const right = compileTerm(atom.right);
-  //   return `
-  //     // assign ${atom}
-  //     const ${left} = ${right};
-
-  //     ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-  //   `;
-  // }
-
   if (atom instanceof App)
   {
-    if (!(atom.operator instanceof Sym))
+    return compileApplication(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, compileRuleFireBody);
+  }
+
+  if (atom instanceof Assign)
+  {
+    return compileAssignment(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
+  }
+
+  if (atom instanceof Lit)
+  {
+    return compileLit(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
+  }
+
+  throw new Error(`cannot handle ${body[i]} of type ${body[i].constructor.name} in ${rule}`);
+}
+
+  function compileApplication(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, cont) 
+  {
+    if (!(atom.operator instanceof Sym)) 
     {
       throw new Error(`cannot handle operator ${atom.operator} of type ${atom.operator.constructor.name} in ${rule}`);
     }
     assertTrue(atom.operands.length === 2); // nothing else supported at the moment
     assertTrue(atom.operands[0] instanceof Var); // nothing else supported at the moment
     let jsOperator;
-    switch (atom.operator.name)
+    switch (atom.operator.name) 
     {
       case '=':
         jsOperator = "===";
@@ -798,13 +859,45 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
         // application ${atom}
         if (${compileTerm(atom.operands[0])} ${jsOperator} ${compileTerm(atom.operands[1])})
         {
-          ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
+          ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
         } // application ${atom}
-    `
+    `;
   }
 
-  throw new Error(`cannot handle ${body[i]} of type ${body[i].constructor.name} in ${rule}`);
-}
+  function compileAssignment(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
+  {
+    const op = atom.operator;
+    const name = atom.left;
+    const right = atom.right;
+
+    assertTrue(op === ':=');
+    assertTrue(name instanceof Var);
+
+    if (compileEnv.has(name)) {
+      throw new RspJsCompilationError(`assigning bound name '${name}'`);
+    }
+    compileEnv.add(name);
+    const nameC = compileTerm(name);
+    const rightC = compileTerm(right);
+    return `
+      // assign ${atom}
+      const ${nameC} = ${rightC};
+
+      ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
+    `;
+  }
+
+  function compileLit(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
+  {
+    const litC = compileTerm(atom);
+    return `
+        // literal ${atom}
+        if (${litC} !== false)
+        {
+          ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
+        } // literal ${atom}
+    `;
+  }
 
 function emitRule(rule)
 {
@@ -966,24 +1059,14 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
     }
   }
 
+  if (atom instanceof App)
+  {
+    return compileApplication(atom, rule, head, body, i, compileEnv, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
+  }
+
   if (atom instanceof Assign)
   {
-    assertTrue(atom.operator === '='); // nothing else supported at the moment
-    assertTrue(atom.left instanceof Var); // nothing else supported at the moment
-    const name = atom.left.name;
-    if (compileEnv.has(name))
-    {
-      throw new Error("assigning bound name: " + name);
-    }
-    compileEnv.add(name);
-    const left = compileTerm(atom.left);
-    const right = compileTerm(atom.right);
-    return `
-      // assign ${atom}
-      const ${left} = ${right};
-
-      ${compileRuleGBFireBody(rule, head, body, i+1, compileEnv, ptuples)}
-    `;
+    return compileAssignment(atom, compileEnv, rule, head, body, i, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
   }
 
   throw new Error(body[i]);
@@ -1359,7 +1442,7 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
 
 function stratumLogic(stratum)
 {
-  const globalEdbStratum = (stratum.recursiveRules.size === 0 && stratum.nonRecursiveRules.size === 0);
+  const globalEdbStratum = analysis.stratumIsEdb(stratum);
 
   const sb = [`
     ${logDebug(`"=== stratum ${stratum}"`)}

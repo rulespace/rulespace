@@ -68,7 +68,7 @@ function remove(item, seq)
   return [...seq].filter(x => x !== item);
 }
 
-function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
+function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
 {
   const ctr = compileToConstructor(src);
   const edbAtoms = compileAtoms(edbTuplesSrc);
@@ -83,8 +83,8 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
     sanityCheck(module);
     if (!equalTuples(module.edbTuples(), edbTuples)) // TODO we don't check whether tuples actually are sets (should not contain dupes)
     {
-      console.log("(expected) edb tuples: " + edbTuples.join());
-      console.log("    module edb tuples: " + [...module.edbTuples()].join());
+      console.error("expected edb tuples: " + edbTuples.join());
+      console.error("  module edb tuples: " + [...module.edbTuples()].join());
       throw new Error("assertion failed");
     }
     
@@ -92,12 +92,62 @@ function testInitialSolve(src, edbTuplesSrc, expectedIdbTuplesSrc)
     const expectedTuples = edbTuples.concat(expectedIdbTuples);
     if (!equalTuples(module.tuples(), expectedTuples))
     {
-      console.log("(expected) tuples: " + [...expectedTuples].join());
-      console.log("    module tuples: " + [...module.tuples()].join());
+      console.error("expected tuples: " + [...expectedTuples].join());
+      console.error("  module tuples: " + [...module.tuples()].join());
       throw new Error("assertion failed");
     }
     
-    assertTrue(equalTuples([...delta.added()].flatMap(kv => kv[1]), expectedTuples));
+    const actualDeltaTuples = [...delta.added()].flatMap(kv => kv[1]);
+    if (!equalTuples(actualDeltaTuples, expectedTuples))
+    {
+      console.error("expected delta tuples: " + expectedTuples.join());
+      console.error("         delta tuples: " + actualDeltaTuples.join());
+      throw new Error("assertion failed");
+    }
+  }
+}
+
+function testAddWithFacts(src, edbTuplesSrc, expectedFactTuplesSrc, expectedIdbTuplesSrc)
+{
+  const ctr = compileToConstructor(src);
+  const edbAtoms = compileAtoms(edbTuplesSrc);
+  const expectedIdbAtoms = compileAtoms(expectedIdbTuplesSrc);
+  const expectedFactAtoms = compileAtoms(expectedFactTuplesSrc);
+  for (const p of permutations(edbAtoms))
+  {
+    const module = ctr();
+    sanityCheck(module);
+    const initialTuples = [...module.tuples()]; // only edbs from facts + computed idbs  
+
+    const edbTuples = p.map(atom => atomToFreshModuleTuple(module, atom));
+    const expectedFactTuples = expectedFactAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+    const delta = module.addTuples(edbTuples);
+    sanityCheck(module);
+    const expectedEdbTuples = edbTuples.concat(expectedFactTuples);
+    if (!equalTuples(module.edbTuples(), expectedEdbTuples))
+    {
+      console.error("expected edb tuples: " + expectedEdbTuples.join());
+      console.error("  module edb tuples: " + [...module.edbTuples()].join());
+      throw new Error("assertion failed");
+    }
+    
+    const expectedIdbTuples = expectedIdbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+    const expectedTuples = expectedEdbTuples.concat(expectedIdbTuples);
+    if (!equalTuples(module.tuples(), expectedTuples))
+    {
+      console.error("expected tuples: " + [...expectedTuples].join());
+      console.error("  module tuples: " + [...module.tuples()].join());
+      throw new Error("assertion failed");
+    }
+    
+    const expectedDeltaTuples = [...Sets.union(Sets.difference(expectedTuples.map(t => t.get()), initialTuples), edbTuples)];
+    const actualDeltaTuples = [...delta.added()].flatMap(kv => kv[1]);
+    if (!equalTuples(actualDeltaTuples, expectedDeltaTuples))
+    {
+      console.error("expected delta tuples: " + expectedDeltaTuples.join());
+      console.error("         delta tuples: " + actualDeltaTuples.join());
+      throw new Error("assertion failed");
+    }
   }
 }
 
@@ -207,27 +257,35 @@ function testRemoveEdb(src, edbTuplesSrc)
 
 const start = performance.now();
 
-testInitialSolve(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
-testInitialSolve(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
-testInitialSolve(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
-testInitialSolve(`(rule [X] [I])`, `[I]`, `[X]`);
+testAdd(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
+testAdd(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
+testAdd(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
+testAdd(`(rule [X] [I])`, `[I]`, `[X]`);
+testAdd(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 // testInitialSolve(`(rule [X] [I])`, `[J]`, ``);  cannot add J! not an edb
 
 // apps
-testInitialSolve(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);
-testInitialSolve(`(rule [X a b] [I a b] (!= a 3))`, `[I 3 4] [I 5 6]`, `[X 5 6]`);
+testAdd(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);
+testAdd(`(rule [X a b] [I a b] (!= a 3))`, `[I 3 4] [I 5 6]`, `[X 5 6]`);
 
+// assign
+testAdd(`(rule [X y] [I x] (:= y 123))`, `[I 999]`, `[X 123]`);
 
-testInitialSolve(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
+// fact rules
+testAddWithFacts(`(rule [X 123])`, ``, `[X 123]`, ``);
+testAddWithFacts(`(rule [X 123] #t)`, ``, `[X 123]`, ``);
+testAddWithFacts(`(rule [X 123] #f)`, ``, ``, ``);
+testAddWithFacts(`(rule [X 123]) (rule [Y x] [X x])`, ``, `[X 123]`, `[Y 123]`);
+testAddWithFacts(`(rule [X 123]) (rule [Y x] [X x])`, `[X 456]`, `[X 123]`, `[Y 123] [Y 456]`);
 
 // funny chars
-testInitialSolve(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
+testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
 
 // bug: function symbols in head not analyzed
-testInitialSolve(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);
+testAdd(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);
 
 // bug: emit of deltaRemoveNOTTuple in globaEdbStratum used string iso. pred object
-testInitialSolve(`(rule [Yes x] [A x]) (rule [No x] [B x] (not [A x]))`, ``, ``);
+testAdd(`(rule [Yes x] [A x]) (rule [No x] [B x] (not [A x]))`, ``, ``);
 
 
 // === analyzer errors
@@ -256,11 +314,11 @@ const example1 = `
   [Reachable x z] [Link z y])
 `;
  
-testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c]`, 
+testAdd(example1, `[Link 'a 'b] [Link 'b 'c]`, 
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
-testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+testAdd(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]`);
-testInitialSolve(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+testAdd(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c] [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]`);
 
 testIncrementalAdd(example1, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`);
@@ -278,11 +336,11 @@ const example2 = `
   [Link x z] [Reachable z y])
 `;
 
-testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c]`,
+testAdd(example2, `[Link 'a 'b] [Link 'b 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]`);
-testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+testAdd(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]`);
-testInitialSolve(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+testAdd(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c] [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]`);
 
 testIncrementalAdd(example2, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`);
@@ -304,15 +362,15 @@ const example3 = `
   [Link _ y])
 `;
 
-testInitialSolve(example3, `[Link 'a 'b] [Link 'b 'c]`,
+testAdd(example3, `[Link 'a 'b] [Link 'b 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]
    [Node 'a] [Node 'b] [Node 'c]`);
 
-testInitialSolve(example3, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+testAdd(example3, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
    [Node 'a] [Node 'b] [Node 'c]`);
 
-testInitialSolve(example3, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+testAdd(example3, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c] [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]
    [Node 'a] [Node 'b] [Node 'c] [Node 'd]`);
 
@@ -338,19 +396,19 @@ const example4 = `
   [Node x] [Node y] (not [Reachable x y]))
 `;
 
-testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c]`,
+testAdd(example4, `[Link 'a 'b] [Link 'b 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]
    [Node 'a] [Node 'b] [Node 'c]
    [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]
    [Unreachable 'c 'a] [Unreachable 'c 'b] [Unreachable 'c 'c]`);
 
-testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+testAdd(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
    [Node 'a] [Node 'b] [Node 'c]
    [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]
    [Unreachable 'c 'a] [Unreachable 'c 'b]`);
   
-testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+testAdd(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
    [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]
    [Node 'a] [Node 'b] [Node 'c] [Node 'd]
@@ -358,7 +416,7 @@ testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`
    [Unreachable 'c 'a] [Unreachable 'c 'b]
    [Unreachable 'd 'd] [Unreachable 'd 'c] [Unreachable 'd 'b] [Unreachable 'd 'a]`);
       
-testInitialSolve(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd] [Link 'c 'b]`,
+testAdd(example4, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd] [Link 'c 'b]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
    [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd] [Reachable 'c 'b] [Reachable 'b 'b]
    [Node 'a] [Node 'b] [Node 'c] [Node 'd]
@@ -388,19 +446,19 @@ const example4b = `
   [Node x] [Node y] (not [Reachable x y]))
 `;
 
-testInitialSolve(example4b, `[Link 'a 'b] [Link 'b 'c]`,
+testAdd(example4b, `[Link 'a 'b] [Link 'b 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c]
    [Node 'a] [Node 'b] [Node 'c]
    [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]
    [Unreachable 'c 'a] [Unreachable 'c 'b] [Unreachable 'c 'c]`);
 
-testInitialSolve(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
+testAdd(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
    [Node 'a] [Node 'b] [Node 'c]
    [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]
    [Unreachable 'c 'a] [Unreachable 'c 'b]`);
   
-testInitialSolve(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
+testAdd(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
    [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd]
    [Node 'a] [Node 'b] [Node 'c] [Node 'd]
@@ -408,7 +466,7 @@ testInitialSolve(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd]
    [Unreachable 'c 'a] [Unreachable 'c 'b]
    [Unreachable 'd 'd] [Unreachable 'd 'c] [Unreachable 'd 'b] [Unreachable 'd 'a]`);
       
-testInitialSolve(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd] [Link 'c 'b]`,
+testAdd(example4b, `[Link 'a 'b] [Link 'b 'c] [Link 'c 'c] [Link 'c 'd] [Link 'c 'b]`,
   `[Reachable 'a 'b] [Reachable 'b 'c] [Reachable 'a 'c] [Reachable 'c 'c]
    [Reachable 'c 'd] [Reachable 'b 'd] [Reachable 'a 'd] [Reachable 'c 'b] [Reachable 'b 'b]
    [Node 'a] [Node 'b] [Node 'c] [Node 'd]
@@ -436,7 +494,7 @@ const example5 = `
   [I x y])
 `;
 
-testInitialSolve(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
+testAdd(example5, `[I 'a 10] [I 'a 20] [I 'b 33]`,
   `[Rsum 'a 30] [Rsum 'b 33]
    [Rmax 'a 20] [Rmax 'b 33]
    [Rmin 'a 10] [Rmin 'b 33]
@@ -451,12 +509,12 @@ const example6 = `
 (rule [C x] [E x])
 `;
 
-testInitialSolve(example6, `[A 1] [A 2] [D 3] [D 4]`,
+testAdd(example6, `[A 1] [A 2] [D 3] [D 4]`,
   `[B 1] [B 2] [C 1] [C 2]
    [E 3] [E 4] [C 3] [C 4]
   `);
 
-testInitialSolve(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`,
+testAdd(example6, `[A 1] [A 2] [A 3] [A 4] [D 1] [D 2] [D 3] [D 4]`,
   `[B 1] [B 2] [B 3] [B 4]
    [E 1] [E 2] [E 3] [E 4]
    [C 1] [C 2] [C 3] [C 4]
@@ -487,7 +545,7 @@ const example7 = `
 (rule [Unreachable2 x y]
   [Node x] [Node y] (not [Reachable x y]))
 `;
-testInitialSolve(example7, `[Link 'a 'b]`, 
+testAdd(example7, `[Link 'a 'b]`, 
   `[Node 'a] [Node 'b] [Reachable 'a 'b]
   [Unreachable2 'a 'a] [Unreachable2 'b 'a] [Unreachable2 'b 'b]
   [Unreachable 'a 'a] [Unreachable 'b 'a] [Unreachable 'b 'b]`)
@@ -504,7 +562,7 @@ const example8 =
 (rule [R x] [B x])
 `
 
-testInitialSolve(example8, `[A 1] [A2 2] [A 3]`,
+testAdd(example8, `[A 1] [A2 2] [A 3]`,
   `[B 1] [C 1] [D 1] [R 1]
     [B 2] [C 2] [D 2] [R 2]
     [B 3] [C 3] [D 3] [R 3]
@@ -522,7 +580,7 @@ const example9 =
   [I x z] [J z y])
   `
 
-testInitialSolve(example9, `[I 'a 'aa] [J 'aa 10] [J 'bb 20] [I 'a 'bb]`,
+testAdd(example9, `[I 'a 'aa] [J 'aa 10] [J 'bb 20] [I 'a 'bb]`,
   `[Rsum 'a 30] [Rmax 'a 20]
   `);
 testIncrementalAdd(example9, `
@@ -541,7 +599,7 @@ const example10 =
 (rule [S a b c]
   [R a [V b c]])
 `;
-testInitialSolve(example10, `[I 1 2] [I 3 4]`,
+testAdd(example10, `[I 1 2] [I 3 4]`,
   `[R 1 [V 2 9]] [S 1 2 9]
    [R 3 [V 4 9]] [S 3 4 9]
   `);
@@ -554,7 +612,7 @@ const example11 =
 (rule [Step e1 ctx e2 ctx2] [Id e1 _] [Reachable e1 ctx] [Cont e1 ctx1 e2 ctx2])
 `;
 
-testInitialSolve(example11, ``, ``); 
+testAdd(example11, ``, ``); 
 
 // === 
 // const example12 =

@@ -1,5 +1,5 @@
 import { assertTrue, MutableSets, MutableMaps } from 'common';
-import { Atom, Neg, App } from './rsp.js';
+import { Atom, Neg, App, Assign, Lit } from './rsp.js';
 
 export class AnalysisError extends Error
 {
@@ -172,33 +172,45 @@ function collect(program)
   {
     const head = rule.head;
     const headPred = handleAtom(head, rule);
-    headPred.idb = true;
-    headPred.edb = false;
-    headPred.rules.add(rule);
-    for (const queryPart of rule.body)
+    if (rule.tupleArity() > 0)
     {
-      if (queryPart instanceof Atom)
+      headPred.idb = true;
+      headPred.edb = false;  
+    }
+    headPred.rules.add(rule);
+
+    for (const atom of rule.body)
+    {
+      if (atom instanceof Atom)
       {
-        const pred = handleAtom(queryPart, rule);
+        const pred = handleAtom(atom, rule);
         pred.precedes.add(headPred);
         headPred.posDependsOn.add(pred);
         pred.posAppearsIn.add(rule);
       }
-      else if (queryPart instanceof Neg)
+      else if (atom instanceof Neg)
       {
-        const atom = queryPart.atom;
-        const pred = handleAtom(atom);
+        const posAtom = atom.atom;
+        const pred = handleAtom(posAtom);
         pred.precedes.add(headPred, rule);
         headPred.negDependsOn.add(pred);
         pred.negAppearsIn.add(rule);
       }
-      else if (queryPart instanceof App)
+      else if (atom instanceof App)
+      {
+        // ignore
+      }
+      else if (atom instanceof Assign)
+      {
+        // ignore
+      }
+      else if (atom instanceof Lit)
       {
         // ignore
       }
       else
       {
-        throw new Error(`cannot handle ${queryPart} of type ${queryPart.constructor.name} in ${rule}`);
+        throw new Error(`cannot handle ${atom} of type ${atom.constructor.name} in ${rule}`);
       }
     }
   }
@@ -220,7 +232,10 @@ class Stratum
 
     this.posDependsOn = new Set(); // derived from this.preds
     this.negDependsOn = new Set(); // derived from this.preds
+
+    this.edb = preds.every(pred => pred.edb);
   }
+
   isStratumPredName(predName)
   {
     for (const pred of this.preds)
@@ -232,6 +247,7 @@ class Stratum
     }
     return false;
   }
+
   toString()
   {
     return `{stratum id:${this.id} preds:${this.preds.join(",")}}`;
@@ -298,6 +314,11 @@ export function analyzeProgram(program)
   const sccPreds = topoSort(predicates);
   const strata = sccPreds.map(makeStratum(name2pred));
   const preds = sccPreds.flat();
+
+  // for (const stratum of strata)
+  // {
+  //   console.log(stratum.id, stratum.preds.join());
+  // }
 
   const rule2stratum = new Map();
   strata.forEach(stratum =>
@@ -375,6 +396,11 @@ export function analyzeProgram(program)
     stratumHasRecursiveRule(stratum)
     {
       return stratum.recursiveRules.size > 0;
+    },
+
+    stratumIsEdb(stratum)
+    {
+      return stratum.edb;
     }
   };
 }

@@ -1,17 +1,4 @@
-/*
-program = rules
-
-rule = atom body?
-
-body = queryParts
-
-queryPart = exp | assign
-
-atom = name exps agg?
-
-exp = lit | var | atom | !exp | app
-
-*/
+// see js-frontend/js2rsp for abstract syntax
 
 export { Sym } from './sexp-reader.js';
 
@@ -169,7 +156,7 @@ export class Paren // Exp
 
   toString()
   {
-    return this.exp.toString(); // sexp structure is enough (paren is 'helper' for C-like languages with notational ambiguity
+    return this.exp.toString(); // sexp structure is enough (paren is 'helper' for C-like languages with notational ambiguity)
   }
 }
 
