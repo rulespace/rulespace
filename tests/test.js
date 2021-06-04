@@ -262,7 +262,6 @@ testAdd(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
 testAdd(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
 testAdd(`(rule [X] [I])`, `[I]`, `[X]`);
 testAdd(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
-// testInitialSolve(`(rule [X] [I])`, `[J]`, ``);  cannot add J! not an edb
 
 // apps
 testAdd(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);

@@ -2,6 +2,15 @@ import { assertTrue } from 'common';
 import { Null, Pair, Sym, Keyword, Tuple } from './sexp-reader.js';
 import { Program, Rule, Neg, Agg, Atom, Lit, Var, App, Assign } from './rsp.js';
 
+class SexpRspCompilationError extends Error
+{
+  constructor(msg)
+  {
+    super(msg);
+    this.name = 'SexpRspCompilationError';
+  }
+}
+
 export function sexp2rsp(sexps)
 {
   const rules = [];
@@ -71,52 +80,80 @@ function compileAtom(tuple)
   return new Atom(pred, terms);
 }
 
-export function compileTerm(term)
+function compileTerm(term)
 {
-  if (term instanceof Sym)
-  {
-    return new Var(term.name);
-  }
-
   if (term instanceof Tuple)
   {
     return compileAtom(term);
   }
 
-  if (term instanceof Pair)
+  return compileExp(term);
+}
+
+export function compileExp(exp)
+{
+  if (exp instanceof Number || exp instanceof String || exp instanceof Boolean)
   {
-    const rator = term.car;
-    assertTrue(rator instanceof Sym)
-    switch (rator.name)
+    return new Lit(exp.valueOf());
+  }
+
+  if (exp instanceof Sym)
+  {
+    return new Var(exp.name);
+  }
+
+  if (exp instanceof Pair)
+  {
+    const rator = exp.car;
+    if (rator instanceof Sym)
     {
-      case 'quote':
+      const name = rator.name;
+      switch (name)
       {
-        const quoted = term.cdr.car;
-        return new Lit(quoted.valueOf()); // TODO introduce Ref?
+        case 'quote':
+        {
+          const quoted = exp.cdr.car;
+          return new Lit(quoted.valueOf()); // TODO introduce Ref?
+        }
+        case 'not':  // TODO 'not' as app (= when arg is not an atom)
+        {
+          const atomOrExp = exp.cdr.car;
+          if (atomOrExp instanceof Tuple)
+          {
+            const negated = compileTerm(atomOrExp);
+            return new Neg(negated);      
+          }
+          else
+          {
+            return new App('not', compileTerm(atomOrExp));
+          }
+        }
+        case '=':
+        case '!=':
+        case '<':
+        case '>':
+        case '<=':
+        case '>=':
+        case '+':
+        case '-':
+        case '*':
+        case '/':
+        {
+          const lhs = compileTerm(exp.cdr.car);
+          const rhs = compileTerm(exp.cdr.cdr.car);
+          return new App(name, exp.cdr.properToArray().map(compileTerm)); // de-Symmed
+        }
+        case ':=':
+        {
+          const lhs = compileTerm(exp.cdr.car);
+          const rhs = compileTerm(exp.cdr.cdr.car);
+          return new Assign(name, lhs, rhs); // de-Symmed
+        }
       }
-      case 'not':  // TODO 'not' as app (= when arg is not an atom)
-      {
-        const negated = compileTerm(term.cdr.car);
-        return new Neg(negated);    
-      }
-      case ':=':
-      {
-        const lhs = compileTerm(term.cdr.car);
-        const rhs = compileTerm(term.cdr.cdr.car);
-        return new Assign(rator.name, lhs, rhs); // de-Symmed
-      }
-      default:
-      {
-        return new App(term.car, term.cdr.properToArray().map(compileTerm));
-      }
-      // default: throw new Error(`cannot handle term ${term} of type ${term.constructor.name}`);
     }
+
+    return new App(compileTerm(rator), exp.cdr.properToArray().map(compileTerm));
   }
 
-  if (term instanceof Array)
-  {
-    return term.map(compileTerm);
-  }
-
-  return new Lit(term.valueOf()); // TODO: valueOf needed?
+  throw new SexpRspCompilationError(`cannot handle expression ${exp} of type ${exp.constructor.name}`);
 }

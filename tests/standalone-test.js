@@ -2,7 +2,7 @@ import { compileToModule, sanityCheck, compileModuleTuples } from './test-common
 
 const src =
 `
-(rule [X 123] #f)
+(rule [R x] (:= x 1))
 `;
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {

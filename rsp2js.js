@@ -3,7 +3,7 @@ import { Atom, Neg, Agg, Var, Lit, Assign, App } from './rsp.js';
 import { analyzeProgram } from './analyzer.js';
 import { Sym } from './sexp-reader.js';
 
-export class RspJsCompilationError extends Error
+class RspJsCompilationError extends Error
 {
   constructor(msg)
   {
@@ -654,7 +654,7 @@ function compileCreateFunctor(functor, j, compileEnv, termExpsOut, rcIncs)
   const termExps = functor.terms;
   return `
       // functor ${functor}
-      const functor${j} = add_get_${functor.pred}(${termExps.map(compileTerm).join(', ')});
+      const functor${j} = add_get_${functor.pred}(${termExps.map(compileExpression).join(', ')});
   `;
 }
 
@@ -777,29 +777,50 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
   if (atom instanceof Neg)
   {
+    return compileNegAtom(atom, i, ptuples, compileEnv, rule, head, body, rcIncs);  
+  }
+
+
+  if (atom instanceof App)
+  {
+    return compileApplicationAtom(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, compileRuleFireBody);
+  }
+
+  if (atom instanceof Assign)
+  {
+    return compileAssignmentAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
+  }
+
+  if (atom instanceof Lit)
+  {
+    return compileLitAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
+  }
+
+  throw new Error(`cannot handle ${body[i]} of type ${body[i].constructor.name} in ${rule}`);
+}
+
+  function compileNegAtom(atom, i, ptuples, compileEnv, rule, head, body, rcIncs)
+  {
     const natom = atom.atom;
     const tuple = "tuple" + i;
     ptuples.push('NOT_' + tuple);
     const pred = natom.pred;
     const getValues = [];
     natom.terms.forEach((term, i) => {
-      if (term instanceof Var)
-      {
-        if (compileEnv.has(term.name))
-        {
+      if (term instanceof Var) {
+        if (compileEnv.has(term.name)) {
           getValues.push(`${nameEnc(term.name)}`);
         }
-        else
-        {
+
+        else {
           throw new Error(`unbound variable ${term.name} in negation in ${rule}`);
         }
       }
-      else if (term instanceof Lit)
-      {
+      else if (term instanceof Lit) {
         getValues.push(`${termToString(term.value)}`);
       }
-      else
-      {
+
+      else {
         throw new Error();
       }
     });
@@ -811,60 +832,23 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
       continue;
     }
     const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.map(t => nameEnc(t.name)).join(', ')});
-    ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-    `;  
-  }// Neg
-
-
-  if (atom instanceof App)
-  {
-    return compileApplication(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, compileRuleFireBody);
+    ${compileRuleFireBody(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
+    `;
   }
 
-  if (atom instanceof Assign)
+  function compileApplicationAtom(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, cont) 
   {
-    return compileAssignment(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
-  }
-
-  if (atom instanceof Lit)
-  {
-    return compileLit(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
-  }
-
-  throw new Error(`cannot handle ${body[i]} of type ${body[i].constructor.name} in ${rule}`);
-}
-
-  function compileApplication(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, cont) 
-  {
-    if (!(atom.operator instanceof Sym)) 
-    {
-      throw new Error(`cannot handle operator ${atom.operator} of type ${atom.operator.constructor.name} in ${rule}`);
-    }
-    assertTrue(atom.operands.length === 2); // nothing else supported at the moment
-    assertTrue(atom.operands[0] instanceof Var); // nothing else supported at the moment
-    let jsOperator;
-    switch (atom.operator.name) 
-    {
-      case '=':
-        jsOperator = "===";
-        break;
-      case '!=':
-        jsOperator = "!==";
-        break;
-      default:
-        throw new Error(`cannot handle operator ${atom.operator.name} in ${rule}`);
-    }
-
+    const appC = compileApplication(atom);
     return `
         // application ${atom}
-        if (${compileTerm(atom.operands[0])} ${jsOperator} ${compileTerm(atom.operands[1])})
+        if ((${appC}) !== false)
         {
           ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
         } // application ${atom}
     `;
   }
 
-  function compileAssignment(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
+  function compileAssignmentAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
   {
     const op = atom.operator;
     const name = atom.left;
@@ -877,8 +861,8 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
       throw new RspJsCompilationError(`assigning bound name '${name}'`);
     }
     compileEnv.add(name);
-    const nameC = compileTerm(name);
-    const rightC = compileTerm(right);
+    const nameC = compileExpression(name); // too broad
+    const rightC = compileExpression(right);
     return `
       // assign ${atom}
       const ${nameC} = ${rightC};
@@ -887,12 +871,12 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     `;
   }
 
-  function compileLit(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
+  function compileLitAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
   {
-    const litC = compileTerm(atom);
+    const litC = compileExpression(atom);
     return `
         // literal ${atom}
-        if (${litC} !== false)
+        if ((${litC}) !== false)
         {
           ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
         } // literal ${atom}
@@ -1061,12 +1045,12 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
 
   if (atom instanceof App)
   {
-    return compileApplication(atom, rule, head, body, i, compileEnv, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
+    return compileApplicationAtom(atom, rule, head, body, i, compileEnv, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
   }
 
   if (atom instanceof Assign)
   {
-    return compileAssignment(atom, compileEnv, rule, head, body, i, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
+    return compileAssignmentAtom(atom, compileEnv, rule, head, body, i, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
   }
 
   throw new Error(body[i]);
@@ -1191,22 +1175,44 @@ ${publicFunction('clear')}()
   `;
 }
 
-function compileTerm(term) // TODO term compiling is already present elsewhere
-// make distinction between head terms and body terms!
+function compileExpression(exp)
 {
-  if (term instanceof Var)
+  if (exp instanceof Var)
   {
-    return nameEnc(term.name);
+    return nameEnc(exp.name);
   }
-  // if (term instanceof Bin)
-  // {
-  //   return compileTerm(term.left) + term.operator + compileTerm(term.right);
-  // }
-  if (term instanceof Lit)
+  if (exp instanceof Lit)
   {
-    return String(term);
+    return String(exp);
   }
-  throw new Error(`cannot handle term ${term} of type ${term.constructor.name}`);
+  if (teexprm instanceof App)
+  {
+    return compileApplication(exp);
+  }
+  throw new Error(`cannot handle expression ${exp} of type ${exp.constructor.name}`);
+}
+
+function compileApplication(app)
+{
+  const rator = app.operator;
+  if (typeof rator === "string")
+  {
+    assertTrue(app.operands.length === 2); // nothing else supported at the moment
+    let jsOperator;
+    switch (rator) 
+    {
+      case '=':
+        jsOperator = "===";
+        break;
+      case '!=':
+        jsOperator = "!==";
+        break;
+      default:
+        throw new Error(`cannot handle operator ${rator} in ${rule}`);
+    }
+    return `${compileExpression(app.operands[0])} ${jsOperator} ${compileExpression(app.operands[1])}`;
+  }
+  throw new Error(`cannot handle application ${app}`);
 }
 
 function emitEdbAtom(atom, i, rule, producesPred, stratum)
