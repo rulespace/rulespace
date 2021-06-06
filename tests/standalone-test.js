@@ -1,19 +1,19 @@
 import { compileToModule, sanityCheck, compileModuleTuples } from './test-common.js';
 
-const src = `
-
-(rule [B] [A])
-(rule [A] (not [B]))
-`;
 // const src = `
 
-// (rule [C] [A])
-// (rule [D] [B])
-
-// (rule [E] [A] (not [C]) (not [D]))
-
-// (rule [B] [E])
+// (rule [B] [A])
+// (rule [A] (not [B]))
 // `;
+const src = `
+
+(rule [C] [A])
+(rule [D] [B])
+
+(rule [E] [A] (not [C]) (not [D]))
+
+(rule [B] [E])
+`;
 
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
