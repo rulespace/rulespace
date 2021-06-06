@@ -1,5 +1,7 @@
 // see js-frontend/js2rsp for abstract syntax
 
+import { assertTrue } from 'common';
+
 export { Sym } from './sexp-reader.js';
 
 export class Program
@@ -37,6 +39,10 @@ export class Rule
 
   toString()
   {
+    if (this.body.length === 0)
+    {
+      return `(rule ${this.head})`;
+    }
     return `(rule ${this.head} ${this.body.join(' ')})`;
   }
 }
@@ -56,6 +62,10 @@ export class Atom
 
   toString()
   {
+    if (this.terms.length === 0)
+    {
+      return `[${this.pred}]`;
+    }
     return `[${this.pred} ${this.terms.map(toTermString).join(' ')}]`;
   }
 }

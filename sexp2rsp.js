@@ -125,7 +125,7 @@ export function compileExp(exp)
           }
           else
           {
-            return new App('not', compileTerm(atomOrExp));
+            return new App('not', [compileTerm(atomOrExp)]);
           }
         }
         case '=':

@@ -78,6 +78,21 @@ export function rsp2js(rsp, options={})
   const analysis = analyzeProgram(rsp);
   const strata = analysis.strata;
   const preds = analysis.preds;
+
+  for (const pred of preds)
+  {
+    const predStratum = analysis.predStratum(pred);
+    const negAppearsIn = analysis.predNegativelyAppearsInRules(pred);
+    for (const rule of negAppearsIn)
+    {
+      const ruleStratum = analysis.ruleStratum(rule);
+      if (ruleStratum === predStratum)
+      {
+        throw new RspJsCompilationError(`unable to stratify program: cyclic negation involving predicate ${pred} in ${rule}`);
+      }
+    }
+  }
+
   const edbPreds = preds.filter(pred => pred.edb);
   const rules = analysis.program.rules;
 
@@ -1185,7 +1200,7 @@ function compileExpression(exp)
   {
     return String(exp);
   }
-  if (teexprm instanceof App)
+  if (exp instanceof App)
   {
     return compileApplication(exp);
   }
@@ -1197,20 +1212,59 @@ function compileApplication(app)
   const rator = app.operator;
   if (typeof rator === "string")
   {
-    assertTrue(app.operands.length === 2); // nothing else supported at the moment
-    let jsOperator;
-    switch (rator) 
+    if (app.operands.length === 2)
     {
-      case '=':
-        jsOperator = "===";
-        break;
-      case '!=':
+      let jsOperator;
+      switch (rator) 
+      {
+        case '=':
+          jsOperator = "===";
+          break;
+        case '!=':
         jsOperator = "!==";
-        break;
-      default:
-        throw new Error(`cannot handle operator ${rator} in ${rule}`);
+          break;
+        case '>':
+          jsOperator = ">";
+          break;
+        case '>=':
+          jsOperator = ">=";
+          break;
+        case '<':
+          jsOperator = "<";
+          break;
+        case '<=':
+          jsOperator = "<=";
+          break;
+        case '+':
+          jsOperator = "+";
+          break;
+        case '-':
+          jsOperator = "-";
+          break;
+        case '*':
+          jsOperator = "*";
+          break;
+        case '/':
+          jsOperator = "/";
+          break;
+        default:
+          throw new Error(`cannot handle operator ${rator}`);
+      }
+      return `${compileExpression(app.operands[0])} ${jsOperator} ${compileExpression(app.operands[1])}`;
     }
-    return `${compileExpression(app.operands[0])} ${jsOperator} ${compileExpression(app.operands[1])}`;
+    if (app.operands.length === 1)
+    {
+      let jsOperator;
+      switch (rator) 
+      {
+        case 'not':
+          jsOperator = "!";
+          break;
+        default:
+          throw new Error(`cannot handle operator ${rator}`);
+      }
+      return `${jsOperator} ${compileExpression(app.operands[0])}`;
+    }
   }
   throw new Error(`cannot handle application ${app}`);
 }
@@ -1489,6 +1543,14 @@ function stratumLogic(stratum)
 
     if (analysis.stratumHasRecursiveRule(stratum))
     {
+      if (!stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)))
+      {
+        stratum.preds.forEach(pred =>
+        {
+          console.log(`${pred} has recursive rule: ${analysis.predHasRecursiveRule(pred)}`);
+        })
+      }
+      
       assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));
 
       if (stratum.preds.length > 1)

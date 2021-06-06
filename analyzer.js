@@ -343,6 +343,16 @@ export function analyzeProgram(program)
       return [...name2functor.values()];
     },
 
+    predNegativelyAppearsInRules(pred)
+    {
+      return [...pred.negAppearsIn];
+    },
+
+    predStratum(pred)
+    {
+      return strata[pred.index];
+    },
+
     // is there at least one rule that produces pred that is not recursive
     // (i.e., rule from from a lower stratum)
     // => `true` for local edb preds that are not also global edb (latter don't have producing rules)
@@ -379,6 +389,11 @@ export function analyzeProgram(program)
         return aggregates;
       }
       return false;
+    },
+
+    ruleStratum(rule)
+    {
+      return rule2stratum.get(rule);
     },
 
     ruleIsNonRecursive(rule)

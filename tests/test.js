@@ -68,6 +68,23 @@ function remove(item, seq)
   return [...seq].filter(x => x !== item);
 }
 
+function test(src, expectedTuplesSrc)
+{
+  const ctr = compileToConstructor(src);
+  const expectedAtoms = compileAtoms(expectedTuplesSrc);
+
+  const module = ctr();
+  sanityCheck(module);
+
+  const expectedTuples = expectedAtoms.map(atom => atomToFreshModuleTuple(module, atom).get());
+  if (!equalTuples(module.tuples(), expectedTuples))
+  {
+    console.error("expected tuples: " + [...expectedTuples].join());
+    console.error("  module tuples: " + [...module.tuples()].join());
+    throw new Error("assertion failed");
+  }
+}
+
 function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
 {
   const ctr = compileToConstructor(src);
@@ -267,14 +284,22 @@ testAdd(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 testAdd(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);
 testAdd(`(rule [X a b] [I a b] (!= a 3))`, `[I 3 4] [I 5 6]`, `[X 5 6]`);
 
+test(`(rule [R x] (:= x (+ 1 2)))`, `[R 3]`);
+test(`(rule [R x] (:= x (- 3 2)))`, `[R 1]`);
+test(`(rule [R x] (:= x (* 4 2)))`, `[R 8]`);
+test(`(rule [R x] (:= x (/ 16 4)))`, `[R 4]`);
+
+test(`(rule [R x] (:= x (not #f)))`, `[R #t]`);
+
 // assign
 testAdd(`(rule [X y] [I x] (:= y 123))`, `[I 999]`, `[X 123]`);
 
 // fact rules
-testAddWithFacts(`(rule [X 123])`, ``, `[X 123]`, ``);
-testAddWithFacts(`(rule [X 123] #t)`, ``, `[X 123]`, ``);
-testAddWithFacts(`(rule [X 123] #f)`, ``, ``, ``);
-testAddWithFacts(`(rule [X 123]) (rule [Y x] [X x])`, ``, `[X 123]`, `[Y 123]`);
+test(`(rule [X 123])`, `[X 123]`);
+test(`(rule [X 123] #t)`, `[X 123]`);
+test(`(rule [X 123] #f)`, ``);
+test(`(rule [R] (not #f))`, `[R]`);
+test(`(rule [X 123]) (rule [Y x] [X x])`, `[X 123] [Y 123]`);
 testAddWithFacts(`(rule [X 123]) (rule [Y x] [X x])`, `[X 456]`, `[X 123]`, `[Y 123] [Y 456]`);
 
 // funny chars
