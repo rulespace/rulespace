@@ -72,23 +72,29 @@ class DynamicVars
 
 export function rsp2js(rsp, options={})
 {
-  // const parser = new SchemeParser();
-  // const program = parser.parse(src);
-
   const analysis = analyzeProgram(rsp);
   const strata = analysis.strata;
   const preds = analysis.preds;
 
-  for (const pred of preds)
+  for (const stratum of strata)
   {
-    const predStratum = analysis.predStratum(pred);
-    const negAppearsIn = analysis.predNegativelyAppearsInRules(pred);
-    for (const rule of negAppearsIn)
+    const stratumPreds = analysis.stratumPreds(stratum);
+    for (const pred of stratumPreds)
     {
-      const ruleStratum = analysis.ruleStratum(rule);
-      if (ruleStratum === predStratum)
+      for (const stratumRule of analysis.predRules(pred))
       {
-        throw new RspJsCompilationError(`unable to stratify program: cyclic negation involving predicate ${pred} in ${rule}`);
+        for (const atom of stratumRule.body)
+        {
+          if (atom instanceof Neg)
+          {
+            const posAtom = atom.atom;
+            const negatedPred = analysis.name2pred.get(posAtom.pred);
+            if (stratumPreds.includes(negatedPred))
+            {
+              throw new RspJsCompilationError(`unable to stratify program: cyclic negation of predicate ${negatedPred} in ${stratumRule}\n(stratum predicates: ${stratum.preds.join()})`);
+            }
+          }
+        }  
       }
     }
   }
@@ -617,7 +623,7 @@ function compileMatchFunctor(functor, target, compileEnv, bindUnboundVars, condi
     }
     else if (term instanceof Atom)
     {
-      compileMatchFunctor(term, `${target}.t${i}`, compileEnv, bindUnboundVars, condition);
+      compileMatchFunctor(term, `${target}.t${i}`, compileEnv, bindUnboundVars, conditions);
     }
     else
     {
@@ -662,15 +668,15 @@ function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
 }
 
 
-function compileCreateFunctor(functor, j, compileEnv, termExpsOut, rcIncs)
+function compileCreateFunctor(functor, j, termAids, rcIncs)
 {
-  termExpsOut.push(`functor${j}`);
   rcIncs.push(`functor${j}`);
   const termExps = functor.terms;
-  return `
-      // functor ${functor}
-      const functor${j} = add_get_${functor.pred}(${termExps.map(compileExpression).join(', ')});
-  `;
+  termAids.push(`
+  // functor ${functor}
+  const functor${j} = add_get_${functor.pred}(${termExps.map((exp, jj) => compileExpression(exp, `_${j}_${jj}`, termAids, rcIncs)).join(', ')});
+  `);
+  return `functor${j}`;
 }
 
 function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
@@ -679,29 +685,11 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
   {
     const pred = head.pred;
     const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
-    const termExps = [];
+    // const termExps = [];
     const termAids = [];
     const fact = rule.tupleArity() === 0;
 
-    head.terms.map((term, j) =>
-    {
-      if (term instanceof Var)
-      {
-        termExps.push(nameEnc(term.name));
-      }
-      else if (term instanceof Atom) // Functor
-      {
-        termAids.push(compileCreateFunctor(term, j, compileEnv, termExps, rcIncs));
-      }
-      else if (term instanceof Lit)
-      {
-        termExps.push(term);
-      }
-      else
-      {
-        throw new Error(`cannot handle term ${term}`);
-      }
-    })
+    const termExps = head.terms.map((exp, j) => compileExpression(exp, `_${j}`, termAids, rcIncs));
 
     let provenanceActions;
     if (fact)
@@ -727,7 +715,9 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
     return `
       // adding ${fact ? `edb` : `idb`} ${head}
-      ${termAids}
+      //// TERM AIDS
+      ${termAids.join('\n')}
+      //////////////
       const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
       if (existing_${pred}_tuple === null)
       {
@@ -1190,7 +1180,7 @@ ${publicFunction('clear')}()
   `;
 }
 
-function compileExpression(exp)
+function compileExpression(exp, j, termAids, rcIncs)
 {
   if (exp instanceof Var)
   {
@@ -1203,6 +1193,10 @@ function compileExpression(exp)
   if (exp instanceof App)
   {
     return compileApplication(exp);
+  }
+  if (exp instanceof Atom) // Functor
+  {
+    return compileCreateFunctor(exp, j, termAids, rcIncs);
   }
   throw new Error(`cannot handle expression ${exp} of type ${exp.constructor.name}`);
 }

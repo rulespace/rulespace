@@ -7,18 +7,18 @@ import { compileToModule, sanityCheck, compileModuleTuples } from './test-common
 // `;
 const src = `
 
-(rule [C] [A])
-(rule [D] [B])
+(rule [R x [L [V y 9]]]
+  [I x y])
 
-(rule [E] [A] (not [C]) (not [D]))
+(rule [S a b c]
+  [R a [L [V b c]]])
 
-(rule [B] [E])
 `;
 
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
-module.addTuples(compileModuleTuples(module, ``));
+module.addTuples(compileModuleTuples(module, `[I 1 2]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 sanityCheck(module);
 

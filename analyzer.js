@@ -348,9 +348,14 @@ export function analyzeProgram(program)
       return [...pred.negAppearsIn];
     },
 
-    predStratum(pred)
+    // predStratum(pred)
+    // {
+    //   return strata[pred.index]; WRONG! need pred2stratum during collect
+    // },
+
+    predRules(pred)
     {
-      return strata[pred.index];
+      return pred.rules;
     },
 
     // is there at least one rule that produces pred that is not recursive
@@ -416,6 +421,11 @@ export function analyzeProgram(program)
     stratumIsEdb(stratum)
     {
       return stratum.edb;
+    },
+
+    stratumPreds(stratum)
+    {
+      return stratum.preds;
     }
   };
 }

@@ -274,11 +274,16 @@ function testRemoveEdb(src, edbTuplesSrc)
 
 const start = performance.now();
 
+// matching
 testAdd(`(rule [X 123] [I 456])`, `[I 456]`, `[X 123]`);
 testAdd(`(rule [X "abc"] [I "def"])`, `[I "def"]`, `[X "abc"]`);
 testAdd(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
 testAdd(`(rule [X] [I])`, `[I]`, `[X]`);
 testAdd(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
+
+// functors
+testAdd(`(rule [R [X x]] [I x])`, `[I 123]`, `[R [X 123]]`);
+testAdd(`(rule [R [X [Y y]]] [I y])`, `[I 123]`, `[R [X [Y 123]]]`);
 
 // apps
 testAdd(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);
@@ -312,7 +317,7 @@ testAdd(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);
 testAdd(`(rule [Yes x] [A x]) (rule [No x] [B x] (not [A x]))`, ``, ``);
 
 
-// === analyzer errors
+// === AnalysisErrors
 
 // AnalysisError: predicate Root is already declared as fynction symbol
 testError(`(rule [Lookup x [Root k]] [J x k]) (rule [Root a] [I a b])`, ``, 'AnalysisError');
@@ -327,6 +332,15 @@ testError(`(rule [Root a] [I a b]) (rule [Lookup x [Root k]] [J x k])`, ``, 'Ana
 // resulting in a 'continue' being emitted that is outside iteration
 // this is really an edge case
 // testInitialSolve(`(rule [No] (not [A]))`, ``, ``);
+
+
+// === RspJsCompilationErrors
+
+// RspJsCompilationError: unable to stratify program: cyclic negation of predicate B in (rule [A] ¬[B])
+testError(`(rule [B] [A]) (rule [A] (not [B]))`, ``, 'RspJsCompilationError');
+
+// RspJsCompilationError: unable to stratify program: cyclic negation of predicate D in (rule [E] [A] ¬[C] ¬[D])
+testError(`(rule [C] [A]) (rule [D] [B]) (rule [E] [A] (not [C]) (not [D])) (rule [B] [E])`, ``, 'RspJsCompilationError');
 
 
 // ===
@@ -626,6 +640,20 @@ const example10 =
 testAdd(example10, `[I 1 2] [I 3 4]`,
   `[R 1 [V 2 9]] [S 1 2 9]
    [R 3 [V 4 9]] [S 3 4 9]
+  `);
+
+// ===
+const example10b =
+`
+(rule [R x [L [V y 9]]]
+  [I x y])
+
+(rule [S a b c]
+  [R a [L [V b c]]])
+`;
+testAdd(example10b, `[I 1 2] [I 3 4]`,
+  `[R 1 [L [V 2 9]]] [S 1 2 9]
+   [R 3 [L [V 4 9]]] [S 3 4 9]
   `);
 
 // === bug: duplicate identifier names in generated code for recursive rules
