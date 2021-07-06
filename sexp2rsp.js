@@ -125,7 +125,7 @@ export function compileExp(exp)
           }
           else
           {
-            return new App('not', [compileTerm(atomOrExp)]);
+            return new App(compileTerm(rator), [compileTerm(atomOrExp)]);
           }
         }
         case '=':
@@ -139,9 +139,7 @@ export function compileExp(exp)
         case '*':
         case '/':
         {
-          const lhs = compileTerm(exp.cdr.car);
-          const rhs = compileTerm(exp.cdr.cdr.car);
-          return new App(name, exp.cdr.properToArray().map(compileTerm)); // de-Symmed
+          return new App(compileTerm(rator), exp.cdr.properToArray().map(compileTerm));
         }
         case ':=':
         {

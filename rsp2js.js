@@ -37,7 +37,8 @@ function nameEnc(str) // TODO: too basic // TODO: register term names in map: su
     if (c === "‘" || c === "’" ||
         c === "“" || c === "”" ||
         c === "«" || c === "»" ||
-        c === "…")
+        c === "…" ||
+        c === "-")
     {
        sb += c.charCodeAt(0);
     }
@@ -584,6 +585,7 @@ ${publicFunction(functor)}(${tn.join(', ')})
   this._refs = [];
 }
 ${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
+${functor}.prototype.values = function () {return [${termFields}]};
 ${functor}.prototype._remove = function () {
   remove_${functor}(${termFields.join(', ')});
 };
@@ -862,7 +864,8 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     assertTrue(op === ':=');
     assertTrue(name instanceof Var);
 
-    if (compileEnv.has(name)) {
+    if (compileEnv.has(name))
+    {
       throw new RspJsCompilationError(`assigning bound name '${name}'`);
     }
     compileEnv.add(name);
@@ -1204,12 +1207,12 @@ function compileExpression(exp, j, termAids, rcIncs)
 function compileApplication(app)
 {
   const rator = app.operator;
-  if (typeof rator === "string")
+  if (rator instanceof Var)
   {
     if (app.operands.length === 2)
     {
       let jsOperator;
-      switch (rator) 
+      switch (rator.name) 
       {
         case '=':
           jsOperator = "===";
@@ -1249,7 +1252,7 @@ function compileApplication(app)
     if (app.operands.length === 1)
     {
       let jsOperator;
-      switch (rator) 
+      switch (rator.name) 
       {
         case 'not':
           jsOperator = "!";
