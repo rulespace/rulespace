@@ -285,6 +285,13 @@ testAdd(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 testAdd(`(rule [R [X x]] [I x])`, `[I 123]`, `[R [X 123]]`);
 testAdd(`(rule [R [X [Y y]]] [I y])`, `[I 123]`, `[R [X [Y 123]]]`);
 
+// matching with multiple occurrences of same var in single atom
+testAdd(`(rule [R x y z] [I x y x z])`, `[I 1 2 1 3]`, `[R 1 2 3]`);
+testAdd(`(rule [R x y z] [I x y y x z x])`, `[I 1 2 2 1 3 1]`, `[R 1 2 3]`);
+testAdd(`(rule [R x y z] [I x y x z])`, `[I 1 2 9 3]`, ``);
+testAdd(`(rule [R a b c d e f g] [I a b c e [S a c d f] a b d g])`, `[I 1 2 3 5 [S 1 3 4 6] 1 2 4 7]`, `[R 1 2 3 4 5 6 7]`);
+testAdd(`(rule [R a b c d e f g x y z] [H x y z] [I a b c e x [S a c d f y] a b d g z])`, `[H 11 22 33] [I 1 2 3 5 11 [S 1 3 4 6 22] 1 2 4 7 33]`, `[R 1 2 3 4 5 6 7 11 22 33]`);
+
 // apps
 testAdd(`(rule [X a b] [I a b] (= a 3))`, `[I 3 4] [I 5 6]`, `[X 3 4]`);
 testAdd(`(rule [X a b] [I a b] (!= a 3))`, `[I 3 4] [I 5 6]`, `[X 5 6]`);

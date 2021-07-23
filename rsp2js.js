@@ -638,27 +638,10 @@ ${emitRemove(`${functor}`, functor.arity)}
 }
 
 
-function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
+function compileAtom(atom, target, compileEnv, bindings, conditions)
 {
-  const varAnalysis = new Map(); // name -> (1st pos, cardinality)
-  // analysis
-  atom.terms.forEach((term, i) =>
-  {
-    if (term instanceof Var)
-    {
-      const current = varAnalysis.get(term.name);
-      if (current === undefined)
-      {
-        varAnalysis.set(term.name, [i, 1]);
-      }
-      else
-      {
-        varAnalysis.set(term.name, [current[0], current[1] + 1]);
-      }
-    }
-  });
+  // bindings: name -> {bindingEmit, card}
 
-  // compilation
   atom.terms.forEach((term, i) =>
   {
     if (term instanceof Var)
@@ -668,12 +651,18 @@ function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
         if (compileEnv.has(term.name))
         {
           conditions.push(`${target}.t${i} === ${nameEnc(term.name)}`);
+          const localBinding = bindings.get(term.name);
+          if (localBinding !== undefined)
+          {
+            // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
+            localBinding[1]++; // increase cardinality
+          }
         }
         else
         {
-          bindUnboundVars.push(`const ${nameEnc(term.name)} = ${target}.t${i};`);
+          bindings.set(term.name, [`const ${nameEnc(term.name)} = ${target}.t${i};`, 1]);
           compileEnv.add(term.name);
-        }  
+        }
       }
     }
     else if (term instanceof Lit)
@@ -683,7 +672,7 @@ function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
     else if (term instanceof Atom) // functor
     {
       conditions.push(`${target}.t${i} instanceof ${term.pred}`);
-      compileAtom(term, `${target}.t${i}`, compileEnv, bindUnboundVars, conditions);
+      compileAtom(term, `${target}.t${i}`, compileEnv, bindings, conditions);
     }
     else
     {
@@ -774,14 +763,31 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const tuple = "tuple" + i;
     ptuples.push(tuple);
     const pred = atom.pred;
-    const bindUnboundVars = [];
+    const bindings = new Map();
     const conditions = [];
+
+
     
     switch (pred)
     {
       default:
         {
-          compileAtom(atom, tuple, compileEnv, bindUnboundVars, conditions);
+          compileAtom(atom, tuple, compileEnv, bindings, conditions);
+
+          const preConditionBindings = [];
+          const postConditionBindings = [];
+
+          for (const [binding, card] of bindings.values())
+          {
+            if (card === 1)
+            {
+              postConditionBindings.push(binding);
+            }
+            else
+            {
+              preConditionBindings.push(binding);
+            }
+          }
 
           if (conditions.length === 0)
           {
@@ -789,7 +795,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
             // atom ${atom} (no conditions)
             for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
             {
-              ${bindUnboundVars.join('\n        ')}
+              ${postConditionBindings.join('\n        ')}
               ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
             }
             `;  
@@ -800,9 +806,10 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
             // atom ${atom} (conditions)
             for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
             {
+              ${preConditionBindings.join('\n        ')}
               if (${conditions.join(' && ')})
               {
-                ${bindUnboundVars.join('\n          ')}
+                ${postConditionBindings.join('\n          ')}
                 ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
               }
             }
