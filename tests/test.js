@@ -296,6 +296,24 @@ test(`(rule [R x] (:= x (/ 16 4)))`, `[R 4]`);
 
 test(`(rule [R x] (:= x (not #f)))`, `[R #t]`);
 
+test(`(rule [R x] (:= x (+ 1)))`, `[R 1]`);
+test(`(rule [R x] (:= x (+ 1 2 3)))`, `[R 6]`);
+test(`(rule [R x] (:= x (- 1 2 3)))`, `[R -4]`);
+test(`(rule [R x] (:= x (+ 1 (* 2 3) 4)))`, `[R 11]`);
+test(`(rule [R x] (:= x (* 1 (+ 2 3) 4)))`, `[R 20]`);
+test(`(rule [R x] (:= x (* 1 (+ 2 3) 4)))`, `[R 20]`);
+test(`(rule [R x] (:= x (< 3 4 5)))`, `[R #t]`);
+test(`(rule [R x] (:= x (< 3 2 5)))`, `[R #f]`);
+test(`(rule [R x] (:= x (= 3 3 3)))`, `[R #t]`);
+test(`(rule [R x] (:= x (= 3 2 3)))`, `[R #f]`);
+
+// first-class funs (retest because of different path for first-order ('direct') and h-o apps)
+test(`(rule [R x] (:= proc +) (:= x (proc 1 2 3)))`, `[R 6]`);
+test(`(rule [R x] (:= proc -) (:= x (proc 1 2 3)))`, `[R -4]`);
+test(`(rule [R x] (:= proc <) (:= x (proc 3 4)))`, `[R #t]`);
+//testAdd(`(rule [J [prim +]] [I]) (rule [R x] [J [prim proc]] (:= x (proc 1 2 3)))`, `[I]`, `[R 6]`); toString() of proc gives trouble (how to test/stabilize this?)
+// tests should have their own 'stable' toString
+
 // assign
 testAdd(`(rule [X y] [I x] (:= y 123))`, `[I 999]`, `[X 123]`);
 
@@ -315,6 +333,12 @@ testAdd(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);
 
 // bug: emit of deltaRemoveNOTTuple in globaEdbStratum used string iso. pred object
 testAdd(`(rule [Yes x] [A x]) (rule [No x] [B x] (not [A x]))`, ``, ``);
+
+// bug: adding more than one fact caused array/Set confusion
+test(`(rule [X 1]) (rule [X 2])`, `[X 1] [X 2]`);
+
+// bug (parser): parser confused by '-' before ']' (resulted in NaN)
+// test(`(rule [G "+" +]) (rule [G "-" -]) (rule [R x] [G _ proc] (:= x (proc 3 4 5)))`, `[G ...] [G ...] [R 12] [R -6]`); toString() of proc gives trouble (how to test/stabilize this?)
 
 
 // === AnalysisErrors

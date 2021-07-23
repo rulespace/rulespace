@@ -38,7 +38,8 @@ function nameEnc(str) // TODO: too basic // TODO: register term names in map: su
         c === "“" || c === "”" ||
         c === "«" || c === "»" ||
         c === "…" ||
-        c === "-")
+        c === "+" || c === "-" || c === "*" || c === "/" || c === "=" || c === "<" || c === ">"
+       )
     {
        sb += c.charCodeAt(0);
     }
@@ -70,6 +71,44 @@ class DynamicVars
     return [...this.vars].map(name => `let ${name} = ${this.initial}`).join('\n');
   }  
 }
+
+const nativeFuns = new Map([
+  ['+', (...args) => args.reduce((acc, x) => acc + x)],
+  ['-', (...args) => args.reduce((acc, x) => acc - x)],
+  ['*', (...args) => args.reduce((acc, x) => acc * x)],
+  ['<', (...args) => args.slice(1).every(x => args[0] < x)],
+  ['>', (...args) => args.slice(1).every(x => args[0] > x)],
+  ['<=', (...args) => args.slice(1).every(x => args[0] <= x)],
+  ['>=', (...args) => args.slice(1).every(x => args[0] >= x)],
+  ['=', (...args) => args.slice(1).every(x => args[0] === x)]
+]);
+
+const nativeFunNames = [...nativeFuns.keys()];
+
+function isNativeFunName(x)
+{
+  return nativeFunNames.includes(x);
+}
+
+class RequiredBuiltInFuns
+{
+  constructor()
+  {
+    this.set = new Set();
+  }
+
+  add(name)
+  {
+    this.set.add(name);
+    return nameEnc(name);
+  }
+
+  toString()
+  {
+    return [...this.set].map(name => `const ${nameEnc(name)} = ${nativeFuns.get(name)}; // ${name}`).join('\n');
+  }
+}
+const requiredBuiltInFunDefs = new RequiredBuiltInFuns();
 
 export function rsp2js(rsp, options={})
 {
@@ -136,7 +175,7 @@ export function rsp2js(rsp, options={})
   function main()
   {
 
-    const sb = [profileVars];
+    const sb = [profileVars, requiredBuiltInFunDefs];
 
     if (FLAG_compile_to_ctr)
     {
@@ -221,7 +260,7 @@ export function rsp2js(rsp, options={})
           const existing_Rule${rule._id}_tuples = facts.get(${pred});
           if (existing_Rule${rule._id}_tuples === undefined)
           {
-            facts.set(${pred}, new_Rule${rule._id}_tuples);
+            facts.set(${pred}, [...new_Rule${rule._id}_tuples]);
           }
           else
           {
@@ -599,44 +638,27 @@ ${emitRemove(`${functor}`, functor.arity)}
 }
 
 
-function compileMatchFunctor(functor, target, compileEnv, bindUnboundVars, conditions)
+function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
 {
-  conditions.push(`${target} instanceof ${functor.pred}`);
-  functor.terms.forEach((term, i) => // TODO cloned from compileAtom
+  const varAnalysis = new Map(); // name -> (1st pos, cardinality)
+  // analysis
+  atom.terms.forEach((term, i) =>
   {
     if (term instanceof Var)
     {
-      if (term.name !== '_')
+      const current = varAnalysis.get(term.name);
+      if (current === undefined)
       {
-        if (compileEnv.has(term.name))
-        {
-          conditions.push(`${target}.t${i} === ${nameEnc(term.name)}`);
-        }
-        else
-        {
-          bindUnboundVars.push(`const ${nameEnc(term.name)} = ${target}.t${i};`);
-          compileEnv.add(term.name);
-        }  
+        varAnalysis.set(term.name, [i, 1]);
+      }
+      else
+      {
+        varAnalysis.set(term.name, [current[0], current[1] + 1]);
       }
     }
-    else if (term instanceof Lit)
-    {
-      conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
-    }
-    else if (term instanceof Atom)
-    {
-      compileMatchFunctor(term, `${target}.t${i}`, compileEnv, bindUnboundVars, conditions);
-    }
-    else
-    {
-      throw new Error("cannot handle " + term);
-    }
-  })
-}
+  });
 
-
-function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
-{
+  // compilation
   atom.terms.forEach((term, i) =>
   {
     if (term instanceof Var)
@@ -660,7 +682,8 @@ function compileAtom(atom, target, compileEnv, bindUnboundVars, conditions)
     }
     else if (term instanceof Atom) // functor
     {
-      compileMatchFunctor(term, `${target}.t${i}`, compileEnv, bindUnboundVars, conditions);
+      conditions.push(`${target}.t${i} instanceof ${term.pred}`);
+      compileAtom(term, `${target}.t${i}`, compileEnv, bindUnboundVars, conditions);
     }
     else
     {
@@ -693,30 +716,29 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
     const termExps = head.terms.map((exp, j) => compileExpression(exp, `_${j}`, termAids, rcIncs));
 
-    let provenanceActions;
     if (fact)
     {
-      provenanceActions = `
-      // fact, no provenance stuff
-      `
+      return `
+      // adding edb ${head}
+      //// TERM AIDS
+      ${termAids.join('\n')}
+      //////////////
+      const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
+      if (existing_${pred}_tuple === null)
+      {
+        const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
+        newTuples.add(new_${pred}_tuple);
+        ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
+        ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
+      }
+      `;
     }
-    else
+    else // derived tuple: construct product, deal with provenance
     {
       const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
-      provenanceActions = `
-      else if (${noRecursionConditions.join(' && ')}) // remove direct recursion
-      {
-        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
-        ${t2ps.join('\n        ')}
-        product._outtuple = existing_${pred}_tuple;
-        existing_${pred}_tuple._inproducts.add(product);
-      }      
-      `
-    }
 
-
-    return `
-      // adding ${fact ? `edb` : `idb`} ${head}
+      return `
+      // adding idb ${head}
       //// TERM AIDS
       ${termAids.join('\n')}
       //////////////
@@ -732,8 +754,16 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
         ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
         ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
       }
-      ${provenanceActions}
+      else if (${noRecursionConditions.join(' && ')}) // remove direct recursion in product
+      {
+        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
+        ${t2ps.join('\n        ')}
+        product._outtuple = existing_${pred}_tuple;
+        existing_${pred}_tuple._inproducts.add(product);
+      }      
     `;
+    }
+
   }
 
 
@@ -902,7 +932,7 @@ function emitRule(rule)
   const recursive = analysis.ruleIsRecursive(rule);
 
   return `
-/* rule (tuple arity ${tupleArity}) (${recursive ? 'recursive' : 'non-recursive'} (non-aggregating)
+/* rule (tuple arity ${tupleArity}) (${recursive ? 'recursive' : 'non-recursive'}) (non-aggregating)
 ${rule} 
 */
 
@@ -1187,10 +1217,22 @@ function compileExpression(exp, j, termAids, rcIncs)
 {
   if (exp instanceof Var)
   {
+    if (isNativeFunName(exp.name))
+    {
+      return requiredBuiltInFunDefs.add(exp.name);
+    }
     return nameEnc(exp.name);
   }
   if (exp instanceof Lit)
   {
+    if (exp.value === true)
+    {
+      return 'true';
+    }
+    if (exp.value === false)
+    {
+      return 'false';
+    }
     return String(exp);
   }
   if (exp instanceof App)
@@ -1204,66 +1246,66 @@ function compileExpression(exp, j, termAids, rcIncs)
   throw new Error(`cannot handle expression ${exp} of type ${exp.constructor.name}`);
 }
 
+
 function compileApplication(app)
 {
+
+  function compileRatorRands(i)
+  {
+    if (i === rands.length - 2)
+    {
+      return `${compileExpression(rands[i])} ${rator.name} ${compileExpression(rands[i+1])}`;
+    }
+    return `${compileExpression(rands[0])} ${rator.name} ${compileRatorRands(i+1)}`;
+  }
+
+
+
   const rator = app.operator;
+  const rands = app.operands;
   if (rator instanceof Var)
   {
-    if (app.operands.length === 2)
+    if (rator.name === "=") 
     {
-      let jsOperator;
-      switch (rator.name) 
-      {
-        case '=':
-          jsOperator = "===";
-          break;
-        case '!=':
-        jsOperator = "!==";
-          break;
-        case '>':
-          jsOperator = ">";
-          break;
-        case '>=':
-          jsOperator = ">=";
-          break;
-        case '<':
-          jsOperator = "<";
-          break;
-        case '<=':
-          jsOperator = "<=";
-          break;
-        case '+':
-          jsOperator = "+";
-          break;
-        case '-':
-          jsOperator = "-";
-          break;
-        case '*':
-          jsOperator = "*";
-          break;
-        case '/':
-          jsOperator = "/";
-          break;
-        default:
-          throw new Error(`cannot handle operator ${rator}`);
-      }
-      return `${compileExpression(app.operands[0])} ${jsOperator} ${compileExpression(app.operands[1])}`;
+      return `${compileExpression(rands[0])} === ${compileExpression(rands[1])}`;
     }
-    if (app.operands.length === 1)
+    
+    if (rator.name === "!=") 
     {
-      let jsOperator;
-      switch (rator.name) 
+      return `${compileExpression(rands[0])} !== ${compileExpression(rands[1])}`;
+    }
+    
+    if (rator.name === ">" || rator.name === ">=" || rator.name === "<" || rator.name === "<=")
+    {
+      return `${compileExpression(rands[0])} ${rator.name} ${compileExpression(rands[1])}`;
+    }
+
+    if (rator.name === "+" || rator.name === "-") 
+    {
+      if (rands.length === 1)
       {
-        case 'not':
-          jsOperator = "!";
-          break;
-        default:
-          throw new Error(`cannot handle operator ${rator}`);
+        return `${compileExpression(app.operands[0])}`; // ignore + (?)
       }
-      return `${jsOperator} ${compileExpression(app.operands[0])}`;
+      if (rands.length > 1)
+      {
+        return rands.map(compileExpression).map(e => `(${e})`).join(rator.name);
+      }
+    }
+
+    if (rator.name === "*" || rator.name === "/") 
+    {
+      if (rands.length > 1)
+      {
+        return rands.map(compileExpression).map(e => `(${e})`).join(rator.name);
+      }
+    }
+    
+    if (rator.name === "not")
+    {
+      return `!${compileExpression(rands[0])}`;
     }
   }
-  throw new Error(`cannot handle application ${app}`);
+  return `(${compileExpression(rator)})(${rands.map(compileExpression).join(', ')})`;
 }
 
 function emitEdbAtom(atom, i, rule, producesPred, stratum)

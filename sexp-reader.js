@@ -318,7 +318,7 @@ SchemeTokenizer.prototype.parse =
       case "-" :
       {
         var d = this.reader.peek(); // peek?
-        if (Characters.isWhitespace(d) || d === ")" || d === "")
+        if (!Characters.isDigit(d))
         {
           var po = new Sym("-");
           po.tag = ++__nodeCounter__;
@@ -560,6 +560,9 @@ SchemeTokenizer.prototype.skipWhitespace =
     }
     return c;
   }
+
+
+// console.log(String(new SchemeParser().parse("[test 1 2]")));
 
 
 // following stuff is language- (Scheme-) specific

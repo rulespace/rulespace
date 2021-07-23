@@ -2,7 +2,7 @@
 
 import { assertTrue } from 'common';
 
-export { Sym } from './sexp-reader.js';
+//export { Sym } from './sexp-reader.js';
 
 export class Program
 {
@@ -110,6 +110,14 @@ export class Lit
     if (typeof value === "string")
     {
       return "\"" + value + "\"";
+    }
+    if (value === true)
+    {
+      return "#t";
+    }
+    if (value === false)
+    {
+      return "#f";
     }
     return String(value);
   }
