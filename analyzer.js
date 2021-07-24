@@ -233,7 +233,7 @@ class Stratum
     this.posDependsOn = new Set(); // derived from this.preds
     this.negDependsOn = new Set(); // derived from this.preds
 
-    this.edb = preds.every(pred => pred.edb);
+    this.edb = preds.every(pred => pred.edb); // TODO: is `every` correct?
   }
 
   isStratumPredName(predName)

@@ -1205,6 +1205,16 @@ ${publicFunctionStar('edbTuples')}()
 {
   ${edbTupleYielders.join('\n  ')}
 }
+
+${publicFunctionStar('rootTuples')}() 
+{
+  for (const tuples of facts.values())  // all idbs resulting from facts/ground rules
+  {
+    yield* tuples;
+  }
+  yield* edbTuples(); // all edbs
+}
+
 `;
 }
 
@@ -1589,6 +1599,7 @@ function stratumLogic(stratum)
 
     if (analysis.stratumHasRecursiveRule(stratum))
     {
+      sb.push(`// stratum has recursive rules`);
       if (!stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)))
       {
         stratum.preds.forEach(pred =>
@@ -1634,6 +1645,7 @@ function stratumLogic(stratum)
     }
     else // single-pred non-recursive stratum
     {
+      sb.push(`// single-pred non-recursive stratum`);
       assertTrue(stratum.preds.length === 1);
       const pred = stratum.preds[0];
       sb.push(`
@@ -1650,9 +1662,11 @@ function stratumLogic(stratum)
      
     for (const pred of stratum.preds)
     {
-      sb.push(`const added_${pred}_tuples = [];`);
-      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing non-recursive rules"')); 
-      for (const rule of pred.rules)
+      // sb.push(`const added_${pred}_tuples = [];`);// not sufficient when you have facts for recursive idb preds
+      sb.push(`const added_${pred}_tuples = addedTuplesMap.get(${pred})?.slice(0) ?? [];`); // `slice` for copying (need to keep original facts) TODO optimize by emitting only `[]` when no fact rules exist
+
+      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all non-recursive rules"')); // TODO could maybe fire *all* rules (rec + non-rec) already once?
+      for (const rule of pred.rules) // TODO: check this: also fires rec rules (once)
       {
         if (rule.aggregates())
         {

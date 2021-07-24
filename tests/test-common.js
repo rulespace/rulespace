@@ -229,13 +229,13 @@ export function reachableTuples(tuples)
 export function sanityCheck(module)
 {
   const tuples = new Set(module.tuples());
-  const rtuples = reachableTuples(module.edbTuples());
+  const rtuples = reachableTuples(module.rootTuples());
   const sameTuples = Sets.equals(tuples, rtuples);
   if (!sameTuples)
   {
     console.log(`
-    member tuples   : ${[...tuples].join(', ')}
-    reachable tuples: ${[...rtuples].join(', ')}
+    member tuples : ${[...tuples].join(', ')}
+    root tuples   : ${[...rtuples].join(', ')}
     `);
   }
   assertTrue(sameTuples);

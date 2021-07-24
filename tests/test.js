@@ -331,6 +331,7 @@ test(`(rule [X 123] #f)`, ``);
 test(`(rule [R] (not #f))`, `[R]`);
 test(`(rule [X 123]) (rule [Y x] [X x])`, `[X 123] [Y 123]`);
 testAddWithFacts(`(rule [X 123]) (rule [Y x] [X x])`, `[X 456]`, `[X 123]`, `[Y 123] [Y 456]`);
+test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2] [X 3] [X 4] [X 5]`);
 
 // funny chars
 testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
