@@ -94,16 +94,18 @@ function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
   {
     const module = ctr();
     sanityCheck(module);
+    const initialTuples = [...module.tuples()]; // only facts + computed idbs  
+
 
     const edbTuples = p.map(atom => atomToFreshModuleTuple(module, atom));
     const delta = module.addTuples(edbTuples);
     sanityCheck(module);
-    if (!equalTuples(module.edbTuples(), edbTuples)) // TODO we don't check whether tuples actually are sets (should not contain dupes)
-    {
-      console.error("expected edb tuples: " + edbTuples.join());
-      console.error("  module edb tuples: " + [...module.edbTuples()].join());
-      throw new Error("assertion failed");
-    }
+    // if (!equalTuples(module.edbTuples(), edbTuples)) // TODO we don't check whether tuples actually are sets (should not contain dupes)
+    // {
+    //   console.error("expected edb tuples: " + edbTuples.join());
+    //   console.error("  module edb tuples: " + [...module.edbTuples()].join());
+    //   throw new Error("assertion failed");
+    // }
     
     const expectedIdbTuples = expectedIdbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
     const expectedTuples = edbTuples.concat(expectedIdbTuples);
@@ -115,50 +117,7 @@ function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
     }
     
     const actualDeltaTuples = [...delta.added()].flatMap(kv => kv[1]);
-    if (!equalTuples(actualDeltaTuples, expectedTuples))
-    {
-      console.error("expected delta tuples: " + expectedTuples.join());
-      console.error("         delta tuples: " + actualDeltaTuples.join());
-      throw new Error("assertion failed");
-    }
-  }
-}
-
-function testAddWithFacts(src, edbTuplesSrc, expectedFactTuplesSrc, expectedIdbTuplesSrc)
-{
-  const ctr = compileToConstructor(src);
-  const edbAtoms = compileAtoms(edbTuplesSrc);
-  const expectedIdbAtoms = compileAtoms(expectedIdbTuplesSrc);
-  const expectedFactAtoms = compileAtoms(expectedFactTuplesSrc);
-  for (const p of permutations(edbAtoms))
-  {
-    const module = ctr();
-    sanityCheck(module);
-    const initialTuples = [...module.tuples()]; // only edbs from facts + computed idbs  
-
-    const edbTuples = p.map(atom => atomToFreshModuleTuple(module, atom));
-    const expectedFactTuples = expectedFactAtoms.map(atom => atomToFreshModuleTuple(module, atom));
-    const delta = module.addTuples(edbTuples);
-    sanityCheck(module);
-    const expectedEdbTuples = edbTuples.concat(expectedFactTuples);
-    if (!equalTuples(module.edbTuples(), expectedEdbTuples))
-    {
-      console.error("expected edb tuples: " + expectedEdbTuples.join());
-      console.error("  module edb tuples: " + [...module.edbTuples()].join());
-      throw new Error("assertion failed");
-    }
-    
-    const expectedIdbTuples = expectedIdbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
-    const expectedTuples = expectedEdbTuples.concat(expectedIdbTuples);
-    if (!equalTuples(module.tuples(), expectedTuples))
-    {
-      console.error("expected tuples: " + [...expectedTuples].join());
-      console.error("  module tuples: " + [...module.tuples()].join());
-      throw new Error("assertion failed");
-    }
-    
-    const expectedDeltaTuples = [...Sets.union(Sets.difference(expectedTuples.map(t => t.get()), initialTuples), edbTuples)];
-    const actualDeltaTuples = [...delta.added()].flatMap(kv => kv[1]);
+    const expectedDeltaTuples = [...Sets.difference(module.tuples(), initialTuples)];
     if (!equalTuples(actualDeltaTuples, expectedDeltaTuples))
     {
       console.error("expected delta tuples: " + expectedDeltaTuples.join());
@@ -167,6 +126,50 @@ function testAddWithFacts(src, edbTuplesSrc, expectedFactTuplesSrc, expectedIdbT
     }
   }
 }
+
+// function testAddWithFacts(src, edbTuplesSrc, expectedFactTuplesSrc, expectedIdbTuplesSrc)
+// {
+//   const ctr = compileToConstructor(src);
+//   const edbAtoms = compileAtoms(edbTuplesSrc);
+//   const expectedIdbAtoms = compileAtoms(expectedIdbTuplesSrc);
+//   const expectedFactAtoms = compileAtoms(expectedFactTuplesSrc);
+//   for (const p of permutations(edbAtoms))
+//   {
+//     const module = ctr();
+//     sanityCheck(module);
+//     const initialTuples = [...module.tuples()]; // only facts + computed idbs  
+
+//     const edbTuples = p.map(atom => atomToFreshModuleTuple(module, atom));
+//     const expectedFactTuples = expectedFactAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+//     const delta = module.addTuples(edbTuples);
+//     sanityCheck(module);
+//     const expectedEdbTuples = edbTuples.concat(expectedFactTuples);
+//     if (!equalTuples(module.edbTuples(), expectedEdbTuples))
+//     {
+//       console.error("expected edb tuples: " + expectedEdbTuples.join());
+//       console.error("  module edb tuples: " + [...module.edbTuples()].join());
+//       throw new Error("assertion failed");
+//     }
+    
+//     const expectedIdbTuples = expectedIdbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+//     const expectedTuples = expectedEdbTuples.concat(expectedIdbTuples);
+//     if (!equalTuples(module.tuples(), expectedTuples))
+//     {
+//       console.error("expected tuples: " + [...expectedTuples].join());
+//       console.error("  module tuples: " + [...module.tuples()].join());
+//       throw new Error("assertion failed");
+//     }
+    
+//     const expectedDeltaTuples = [...Sets.union(Sets.difference(expectedTuples.map(t => t.get()), initialTuples), edbTuples)];
+//     const actualDeltaTuples = [...delta.added()].flatMap(kv => kv[1]);
+//     if (!equalTuples(actualDeltaTuples, expectedDeltaTuples))
+//     {
+//       console.error("expected delta tuples: " + expectedDeltaTuples.join());
+//       console.error("         delta tuples: " + actualDeltaTuples.join());
+//       throw new Error("assertion failed");
+//     }
+//   }
+// }
 
 function testError(src, edbTuplesSrc, expectedErrorMessageStart)
 {
@@ -330,7 +333,7 @@ test(`(rule [X 123] #t)`, `[X 123]`);
 test(`(rule [X 123] #f)`, ``);
 test(`(rule [R] (not #f))`, `[R]`);
 test(`(rule [X 123]) (rule [Y x] [X x])`, `[X 123] [Y 123]`);
-testAddWithFacts(`(rule [X 123]) (rule [Y x] [X x])`, `[X 456]`, `[X 123]`, `[Y 123] [Y 456]`);
+testAdd(`(rule [X 123]) (rule [Y x] [X x])`, `[X 456]`, `[X 123] [Y 123] [Y 456]`);
 test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2] [X 3] [X 4] [X 5]`);
 
 // funny chars
@@ -698,13 +701,18 @@ const example11 =
 
 testAdd(example11, ``, ``); 
 
-// === 
-// const example12 =
-// `
-// `
+// === bug: when removing [I 10]: [F 5 120] depends on [F 4 24], and both depend on grounded [I 5]
+// for [F 5 120], [I 5] was discovered as grounded and added to seen set, and when checking [F 4 24] this wrongly triggered cycle detector
+const example12 =
+`
+(rule [F 0 1])
+(rule [F a x] [I n] [F b y] (:= a (+ b 1)) (<= a n) (:= x (* a y)))
+(rule [Factorial n x] [I n] [F n x])
+`
 
-// testInitialSolve(example12, ``, ``); 
-
+testAdd(example12, `[I 5] [I 10]`, `[F 0 1] [F 1 1] [F 2 2] [F 3 6] [F 4 24] [F 5 120]
+                                    [F 6 720] [F 7 5040] [F 8 40320] [F 9 362880] [F 10 3628800]
+                                    [Factorial 10 3628800] [Factorial 5 120]`); 
 
 // ============
 console.log("done: " + (performance.now() - start) + "ms");

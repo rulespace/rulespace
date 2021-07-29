@@ -1201,18 +1201,17 @@ ${publicFunctionStar('tuples')}()
   ${tupleYielders.join('\n  ')}
 }
 
-${publicFunctionStar('edbTuples')}() 
+${publicFunctionStar('rootTuples')}()   // all EDBs and IDB facts
 {
-  ${edbTupleYielders.join('\n  ')}
-}
-
-${publicFunctionStar('rootTuples')}() 
-{
-  for (const tuples of facts.values())  // all idbs resulting from facts/ground rules
+  // expensive impl: alternative would be to keep set of externally added EDBs and all IDB facts
+  // but, this is cheap as long as reachability stuff (tracing) is not required
+  for (const tuple of tuples())
   {
-    yield* tuples;
+    if (tuple._inproducts.size === 0)
+    {
+      yield tuple;
+    }
   }
-  yield* edbTuples(); // all edbs
 }
 
 `;
@@ -1821,21 +1820,36 @@ function computeDelta(addTuples, remTuples)
 function emitRemoveTuples(strata)
 {
   return `
+
+
 function tupleIsGrounded(tuple)
 {
   const seen = new Set();
+  const groundedCache = new Set(); // TODO: can we make this more global/incremental?
+                                    // now gets 'cleared' on every recursive check (see factorial example)
 
   function groundedTuple(tuple)
   {
+
+    // with recursive rules it's possible that the same grounded tuple is encountered when moving up the prov tree:
+    // therefore, cache known grounded tuples, and only declare cycle for re-encountered non-cached tuples 
+    if (groundedCache.has(tuple))
+    {
+      ${logDebug('`${tuple} grounded: in cache`')}
+      return true;
+    }
+
     if (seen.has(tuple))
     {
       ${logDebug('`${tuple} not grounded: cycle`')}
       return false;
     }
     seen.add(tuple);
+
     if (tuple._inproducts.size === 0)
     {
       ${logDebug('`${tuple} grounded: no inproducts`')}
+      groundedCache.add(tuple);
       return true;
     }
     for (const inproduct of tuple._inproducts)
@@ -1844,11 +1858,13 @@ function tupleIsGrounded(tuple)
       {
         // known to be grounded because of incoming product from lower stratum
         ${logDebug('`${tuple} grounded because of non-recursive product ${inproduct}`')}
+        groundedCache.add(tuple);
         return true;
       }
       if (groundedProduct(inproduct))
       {
         ${logDebug('`${tuple} grounded because of product ${inproduct}`')}
+        groundedCache.add(tuple);
         return true;
       }
     }  
@@ -1868,8 +1884,9 @@ function tupleIsGrounded(tuple)
     return true;
   }
 
+  ${logDebug('`is ${tuple} grounded? ...`')}
   const isGrounded = groundedTuple(tuple);
-  ${logDebug('`${tuple} is ${isGrounded ? "" : "not "}grounded`')}
+  ${logDebug('`... ${tuple} is ${isGrounded ? "" : "not "}grounded`')}
   return isGrounded;
 }
 `;
