@@ -305,6 +305,8 @@ test(`(rule [R x] (:= x (* 4 2)))`, `[R 8]`);
 test(`(rule [R x] (:= x (/ 16 4)))`, `[R 4]`);
 
 test(`(rule [R x] (:= x (not #f)))`, `[R #t]`);
+test(`(rule [R x] (:= x (even? 123)))`, `[R #f]`);
+test(`(rule [R x] (:= x (even? 124)))`, `[R #t]`);
 
 test(`(rule [R x] (:= x (+ 1)))`, `[R 1]`);
 test(`(rule [R x] (:= x (+ 1 2 3)))`, `[R 6]`);
@@ -321,6 +323,8 @@ test(`(rule [R x] (:= x (= 3 2 3)))`, `[R #f]`);
 test(`(rule [R x] (:= proc +) (:= x (proc 1 2 3)))`, `[R 6]`);
 test(`(rule [R x] (:= proc -) (:= x (proc 1 2 3)))`, `[R -4]`);
 test(`(rule [R x] (:= proc <) (:= x (proc 3 4)))`, `[R #t]`);
+test(`(rule [R x] (:= proc even?) (:= x (proc 5)))`, `[R #f]`);
+test(`(rule [R x] (:= proc even?) (:= x (proc 6)))`, `[R #t]`);
 //testAdd(`(rule [J [prim +]] [I]) (rule [R x] [J [prim proc]] (:= x (proc 1 2 3)))`, `[I]`, `[R 6]`); toString() of proc gives trouble (how to test/stabilize this?)
 // tests should have their own 'stable' toString
 

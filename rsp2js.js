@@ -37,7 +37,7 @@ function nameEnc(str) // TODO: too basic // TODO: register term names in map: su
     if (c === "‘" || c === "’" ||
         c === "“" || c === "”" ||
         c === "«" || c === "»" ||
-        c === "…" ||
+        c === "…" || c === "?" ||
         c === "+" || c === "-" || c === "*" || c === "/" || c === "=" || c === "<" || c === ">"
        )
     {
@@ -72,6 +72,7 @@ class DynamicVars
   }  
 }
 
+// when used as first-class values (else, they are directly compiled)
 const nativeFuns = new Map([
   ['+', (...args) => args.reduce((acc, x) => acc + x)],
   ['-', (...args) => args.reduce((acc, x) => acc - x)],
@@ -80,7 +81,9 @@ const nativeFuns = new Map([
   ['>', (...args) => args.slice(1).every(x => args[0] > x)],
   ['<=', (...args) => args.slice(1).every(x => args[0] <= x)],
   ['>=', (...args) => args.slice(1).every(x => args[0] >= x)],
-  ['=', (...args) => args.slice(1).every(x => args[0] === x)]
+  ['=', (...args) => args.slice(1).every(x => args[0] === x)],
+  ['even?', arg => arg % 2 === 0],
+  ['odd?', arg => arg % 2 === 1]
 ]);
 
 const nativeFunNames = [...nativeFuns.keys()];
@@ -974,7 +977,7 @@ ${emitAddGet2(`Rule${rule._id}Product`, `Rule${rule._id}Products`, tupleArity)}
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {
-  ${logDebug(`"fire ${rule}"`)}
+  ${logDebug(`'fire ${rule}'`)}
   ${logDebug('`deltaPos ${deltaPos} deltaTuples ${[...deltaTuples].join()}`')}
 
   ${profileStart(`fireRule${rule._id}`)}
@@ -1319,6 +1322,16 @@ function compileApplication(app)
     if (rator.name === "not")
     {
       return `!${compileExpression(rands[0])}`;
+    }
+
+    if (rator.name === "even?")
+    {
+      return `(${compileExpression(rands[0])}) % 2 === 0`;
+    }
+
+    if (rator.name === "odd?")
+    {
+      return `(${compileExpression(rands[0])}) % 2 === 1`;
     }
   }
   return `(${compileExpression(rator)})(${rands.map(compileExpression).join(', ')})`;
