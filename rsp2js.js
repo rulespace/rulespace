@@ -1,7 +1,7 @@
 import { MutableArrays, assertTrue } from 'common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App } from './rsp.js';
 import { analyzeProgram } from './analyzer.js';
-import { Sym } from './sexp-reader.js';
+// import { Sym } from './string2sexp.js/index.js';
 
 class RspJsCompilationError extends Error
 {

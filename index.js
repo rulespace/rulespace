@@ -4,5 +4,5 @@ export * from './rsp2js.js';
 
 // to bootstrap clients that want to use rsp to work with rsp: export sexp surface syntax and compiler to rsp
 export {sexp2rsp} from './sexp2rsp.js';
-export {SchemeParser as SexpParser} from './sexp-reader.js';
+export {SchemeParser as SexpParser} from './str2sexp.js';
 

@@ -1,6 +1,6 @@
 import { performance } from 'perf_hooks';
 import { assertTrue, Sets } from 'common';
-import { compileToConstructor, toModuleTuple, toModuleTupleFor } from './test-common.js';
+import { compileToConstructor } from './test-common.js';
 
 /**
  * 

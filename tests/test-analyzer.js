@@ -1,5 +1,5 @@
 import { assertTrue } from 'common';
-import { SchemeParser  } from '../sexp-reader.js';
+import { SchemeParser  } from '../str2sexp.js';
 import { sexp2rsp  } from '../sexp2rsp.js';
 import { analyzeProgram } from '../analyzer.js';
 
@@ -8,7 +8,7 @@ const src = `
   [I x 'y])
 
 (rule [S x y z]
-  [R x #('V y z)])
+  [R x [V y z]])
 `
 
 const parser = new SchemeParser();

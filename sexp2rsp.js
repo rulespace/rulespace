@@ -1,5 +1,5 @@
 import { assertTrue } from 'common';
-import { Null, Pair, Sym, Keyword, Tuple } from './sexp-reader.js';
+import { Null, Pair, Sym, Keyword, Tuple } from './str2sexp.js';
 import { Program, Rule, Neg, Agg, Atom, Lit, Var, App, Assign } from './rsp.js';
 
 class SexpRspCompilationError extends Error
