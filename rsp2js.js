@@ -1823,8 +1823,8 @@ function computeDelta(addTuples, remTuples)
   
   ${logDebug('"=== done"')}
   return {
-    added() {return [${[...deltaAddedTuplesEntries]}]},
-    removed() {return [${[...deltaRemovedTuplesEntries]}]}
+    added() {return new Map([${[...deltaAddedTuplesEntries]}])},
+    removed() {return new Map([${[...deltaRemovedTuplesEntries]}])}
     }
 } // computeDelta
 `;

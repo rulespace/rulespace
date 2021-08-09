@@ -1,14 +1,13 @@
 import fs from 'fs';
 import { Sets, assertTrue } from 'common';
-import { SchemeParser, Pair, Null } from '../str2sexp.js';
+import { str2sexp, Pair, Null } from '../str2sexp.js';
 import { sexp2rsp  } from '../sexp2rsp.js';
 import { rsp2js } from '../rsp2js.js';
 import { Atom, Lit } from '../rsp.js';
 
 export function compileToRsp(src)
 {
-  const parser = new SchemeParser();
-  const sexp = parser.parse(src);
+  const sexp = str2sexp(src);
   const rsp = sexp2rsp(sexp);
   return rsp;
 }

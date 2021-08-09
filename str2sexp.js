@@ -241,28 +241,21 @@ SchemeReader.prototype.read =
     return r;
   }
 
-export class SchemeParser
+export function str2sexp(str)
 {
-  constructor()
+  const tokenizer = new SchemeTokenizer(str);
+  const datas = [];
+  let data;
+  const sp = { pos: tokenizer.reader.pos, line: tokenizer.reader.line, linePos: tokenizer.reader.linePos };
+  while ((data = tokenizer.next()) !== null)
   {
+    datas.push(data);
   }
-
-  parse(str)
-  {
-    var tokenizer = new SchemeTokenizer(str);
-    var datas = [];
-    var data;
-    var sp = { pos: tokenizer.reader.pos, line: tokenizer.reader.line, linePos: tokenizer.reader.linePos };
-    while ((data = tokenizer.next()) !== null)
-    {
-      datas.push(data);
-    }
-    const po = Pair.toList(datas);
-    po.tag = ++__nodeCounter__;
-    sp.length = tokenizer.reader.pos - sp.pos + 1;
-    po.sp = sp;
-    return po;
-  }
+  const po = Pair.toList(datas);
+  po.tag = ++__nodeCounter__;
+  sp.length = tokenizer.reader.pos - sp.pos + 1;
+  po.sp = sp;
+  return po;
 }
 
 
