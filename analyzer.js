@@ -1,6 +1,8 @@
 import { assertTrue, MutableSets, MutableMaps } from 'common';
 import { Atom, Neg, App, Assign, Lit } from './rsp.js';
 
+// TODO: flag assignment to already bound identifier:  [X x] [Y y] [:= x y]
+
 export class AnalysisError extends Error
 {
   constructor(msg)
@@ -170,6 +172,7 @@ function collect(program)
 
   for (const rule of program.rules)
   {
+    // console.log(`${rule._id} ${rule}`);
     const head = rule.head;
     const headPred = handleAtom(head, rule);
     if (rule.tupleArity() > 0)

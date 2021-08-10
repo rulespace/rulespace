@@ -977,7 +977,7 @@ ${emitAddGet2(`Rule${rule._id}Product`, `Rule${rule._id}Products`, tupleArity)}
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {
-  ${logDebug(`'fire ${rule}'`)}
+  ${logDebug(`'fire ${rule._id} ${rule}'`)}
   ${logDebug('`deltaPos ${deltaPos} deltaTuples ${[...deltaTuples].join()}`')}
 
   ${profileStart(`fireRule${rule._id}`)}
