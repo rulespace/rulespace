@@ -172,7 +172,7 @@ function collect(program)
 
   for (const rule of program.rules)
   {
-    // console.log(`${rule._id} ${rule}`);
+    //console.log(`${rule._id} ${rule}`);
     const head = rule.head;
     const headPred = handleAtom(head, rule);
     if (rule.tupleArity() > 0)
@@ -337,10 +337,17 @@ export function analyzeProgram(program)
     });
 
   return { 
-    program, name2pred, strata,
+    program, name2pred,
     preds,
+
     
     // new design (to be phased in): methods on this obj instead of methods/props on objects)
+    strata()
+    {
+      return strata;
+    },
+
+
     functors()
     {
       return [...name2functor.values()];

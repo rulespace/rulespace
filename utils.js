@@ -2,6 +2,8 @@ import { str2sexp } from "./str2sexp.js";
 import { sexp2rsp } from "./sexp2rsp.js";
 import { rsp2js } from "./rsp2js.js";
 
+export { rsp2latex } from "./rsp2latex.js";
+
 
 export function compileToRsp(src)
 {

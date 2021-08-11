@@ -116,7 +116,7 @@ const requiredBuiltInFunDefs = new RequiredBuiltInFuns();
 export function rsp2js(rsp, options={})
 {
   const analysis = analyzeProgram(rsp);
-  const strata = analysis.strata;
+  const strata = analysis.strata();
   const preds = analysis.preds;
 
   for (const stratum of strata)
