@@ -1,6 +1,7 @@
 import { MutableArrays, assertTrue } from 'common';
-import { Atom, Neg, Agg, Var, Lit, Assign, App } from './rsp.js';
-import { analyzeProgram } from './analyzer.js';
+import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
+import { analyzeProgram, freeVariables } from './analyzer.js';
+import {  } from './str2sexp.js';
 // import { Sym } from './string2sexp.js/index.js';
 
 class RspJsCompilationError extends Error
@@ -29,25 +30,49 @@ class RspJsCompilationError extends Error
 //   }
 // }
 
-function nameEnc(str) // TODO: too basic // TODO: register term names in map: surface name -> compiled name (term0, term1, ...)
+let freshCounter = 0;
+function freshVariable(str) 
 {
-  let sb = "_";
+  let sb = "";
   for (const c of str)
   {
-    if (c === "‘" || c === "’" ||
-        c === "“" || c === "”" ||
-        c === "«" || c === "»" ||
-        c === "…" || c === "?" ||
-        c === "+" || c === "-" || c === "*" || c === "/" || c === "=" || c === "<" || c === ">"
-       )
+    switch (c)
     {
-       sb += c.charCodeAt(0);
-    }
-    else
-    {
-      sb += c;
-    }
+      case "‘":
+        sb += "_primeo_"; break;
+      case "’":
+        sb += "_prime_"; break;
+      case "“":
+        sb += "_dprimeo_"; break; 
+      case "”":
+        sb += "_dprime_"; break; 
+      case "«":
+        sb += "_openg_"; break; 
+      case "»":
+        sb += "_closeg_"; break; 
+      case "…":
+        sb += "_ellp_"; break;
+      case "?":
+        sb += "_qm_"; break;
+      case "+":
+        sb += "_plus_"; break;
+      case "-":
+        sb += "_minus_"; break;
+      case "*":
+        sb += "_star_"; break;
+      case "/":
+        sb += "_slash_"; break;
+      case "=":
+        sb += "_eq_"; break;
+      case "<":
+        sb += "_lt_"; break;
+      case ">":
+        sb += "_gt_"; break;
+      default:
+        sb += c;
+   }
   }
+  sb += String(freshCounter++);
   return sb;
 }
 
@@ -72,6 +97,24 @@ class DynamicVars
   }  
 }
 
+class Lines
+{
+  constructor()
+  {
+    this.lines = [];
+  }
+
+  add(line)
+  {
+    this.lines.push(line);
+  }
+
+  toString()
+  {
+    return this.lines.join('\n');
+  }
+}
+
 // when used as first-class values (else, they are directly compiled)
 const nativeFuns = new Map([
   ['+', (...args) => args.reduce((acc, x) => acc + x)],
@@ -87,6 +130,7 @@ const nativeFuns = new Map([
 ]);
 
 const nativeFunNames = [...nativeFuns.keys()];
+const nativeFunCompiledNames = nativeFunNames.map(freshVariable);
 
 function isNativeFunName(x)
 {
@@ -103,12 +147,12 @@ class RequiredBuiltInFuns
   add(name)
   {
     this.set.add(name);
-    return nameEnc(name);
+    return nativeFunCompiledNames[nativeFunNames.indexOf(name)];
   }
 
   toString()
   {
-    return [...this.set].map(name => `const ${nameEnc(name)} = ${nativeFuns.get(name)}; // ${name}`).join('\n');
+    return [...this.set].map(name => `const ${nativeFunCompiledNames[nativeFunNames.indexOf(name)]} = ${nativeFuns.get(name)}; // ${name}`).join('\n');
   }
 }
 const requiredBuiltInFunDefs = new RequiredBuiltInFuns();
@@ -175,10 +219,12 @@ export function rsp2js(rsp, options={})
   const assert = FLAG_assertions ? (condition, display='"(?)"', explanation='assertion failed') => `if (!(${condition})) {throw new Error(${display} + ': ${explanation}')} ` : () => ``;
   // end options + emitters
 
+  const lambdas = new Lines();
+
   function main()
   {
 
-    const sb = [profileVars, requiredBuiltInFunDefs];
+    const sb = [profileVars, requiredBuiltInFunDefs, lambdas];
 
     if (FLAG_compile_to_ctr)
     {
@@ -209,6 +255,7 @@ export function rsp2js(rsp, options={})
       sb.push(emitFunctorObject(functor));
     }
 
+    sb.push(emitLambdas.join('\n'));
 
     for (const pred of preds)
     {
@@ -289,6 +336,7 @@ export function rsp2js(rsp, options={})
 
     sb.push(emitComputeDelta(strata, preds));
     sb.push(emitRemoveTuples(strata));
+
     
     sb.push(emitIterators(preds, edbPreds, rules));
     sb.push(emitClear(edbPreds));
@@ -439,40 +487,55 @@ function add_get_external_${pred}(tuple)
     return sb.join('\n');
   }
 
-  // TODO this is the 'generic' tuples-as-map version, yet it doesn't handle 0-arity preds
-  function emitAddGet2(name, rootMapName, numFields)
+  // TODO this is the 'generic' tuples-as-map version (TODO fold emitAddGet into this, don't forget debugLog)
+  function emitAddGet2(name, rootMapName, numFields, newEntry = `new ${name}`)
   {
-    function emitEntry(i)
-    {
-      if (i === numFields)
-      {
-        return `entry`;
-      }
-      return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
-    }
-
     const tn = termNames2(numFields);
-    const maps = [rootMapName].concat(Array.from(Array(numFields), (_, i) => "l" + i));
     const sb = [`
 function addGet${name}(${tn.join(', ')})
 {
     `];
-    for (let i = 0; i < numFields; i++)
+
+
+    if (numFields === 0)
     {
       sb.push(`
-      const ${maps[i+1]} = ${maps[i]}.get(t${i});
-      if (${maps[i+1]} === undefined)
-      {
-        const entry = new ${name}(${tn.join(', ')});
-        ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
-        return entry;
-      }
-      `)
+        if (${rootMapName} === null)
+        {
+          ${rootMapName} = ${newEntry}();
+          ${logDebug(`\`addGet added ${name}() to members\``)}
+        }
+        return ${rootMapName};
+        `);
     }
-    sb.push(`
-    return ${maps[numFields]};
-}
-    `);
+    else
+    {
+      function emitEntry(i)
+      {
+        if (i === numFields)
+        {
+          return `entry`;
+        }
+        return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
+      }
+  
+      const maps = [rootMapName].concat(Array.from(Array(numFields), (_, i) => "l" + i));
+
+      for (let i = 0; i < numFields; i++)
+      {
+        sb.push(`
+        const ${maps[i+1]} = ${maps[i]}.get(t${i});
+        if (${maps[i+1]} === undefined)
+        {
+          const entry = ${newEntry}(${tn.join(', ')});
+          ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
+          return entry;
+        }
+        `)
+      }
+      sb.push(`return ${maps[numFields]};`);
+    }
+    sb.push(`}`);
     return sb.join('\n');
   }
 
@@ -653,7 +716,7 @@ function compileAtom(atom, target, compileEnv, bindings, conditions)
       {
         if (compileEnv.has(term.name))
         {
-          conditions.push(`${target}.t${i} === ${nameEnc(term.name)}`);
+          conditions.push(`${target}.t${i} === ${compileEnv.get(term.name)}`);
           const localBinding = bindings.get(term.name);
           if (localBinding !== undefined)
           {
@@ -663,8 +726,9 @@ function compileAtom(atom, target, compileEnv, bindings, conditions)
         }
         else
         {
-          bindings.set(term.name, [`const ${nameEnc(term.name)} = ${target}.t${i};`, 1]);
-          compileEnv.add(term.name);
+          const varName = freshVariable(term.name);
+          compileEnv.set(term.name, varName);
+          bindings.set(term.name, [`const ${varName} = ${target}.t${i};`, 1]);
         }
       }
     }
@@ -685,20 +749,22 @@ function compileAtom(atom, target, compileEnv, bindings, conditions)
 }
 
 
-function compileCreateFunctor(functor, j, termAids, rcIncs)
+function compileCreateFunctor(functor, env, termAids, rcIncs)
 {
-  rcIncs.push(`functor${j}`);
+  const functorName = freshVariable("functor");
+  rcIncs.push(functorName);
   const termExps = functor.terms;
   termAids.push(`
   // functor ${functor}
-  const functor${j} = add_get_${functor.pred}(${termExps.map((exp, jj) => compileExpression(exp, `_${j}_${jj}`, termAids, rcIncs)).join(', ')});
+  const ${functorName} = add_get_${functor.pred}(${termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')});
   `);
-  return `functor${j}`;
+  return functorName;
 }
 
 function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 {
-  if (i === body.length)
+  assertTrue(compileEnv instanceof Map);
+  if (i === body.length) // body evaluation completed, move to head to create tuple
   {
     const pred = head.pred;
     const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
@@ -706,7 +772,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const termAids = [];
     const fact = rule.tupleArity() === 0;
 
-    const termExps = head.terms.map((exp, j) => compileExpression(exp, `_${j}`, termAids, rcIncs));
+    const termExps = head.terms.map(exp => compileExpression(exp, compileEnv, termAids, rcIncs));
 
     if (fact)
     {
@@ -856,7 +922,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     natom.terms.forEach((term, i) => {
       if (term instanceof Var) {
         if (compileEnv.has(term.name)) {
-          getValues.push(`${nameEnc(term.name)}`);
+          getValues.push(compileEnv.get(term.name));
         }
 
         else {
@@ -878,14 +944,14 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     {
       continue;
     }
-    const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.map(t => nameEnc(t.name)).join(', ')});
+    const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.map(t => compileEnv.get(t.name)).join(', ')});
     ${compileRuleFireBody(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
     `;
   }
 
   function compileApplicationAtom(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, cont) 
   {
-    const appC = compileApplication(atom);
+    const appC = compileApplication(atom, compileEnv);
     return `
         // application ${atom}
         if ((${appC}) !== false)
@@ -897,6 +963,8 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
   function compileAssignmentAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
   {
+    assertTrue(compileEnv instanceof Map);
+
     const op = atom.operator;
     const name = atom.left;
     const right = atom.right;
@@ -908,9 +976,9 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     {
       throw new RspJsCompilationError(`assigning bound name '${name}'`);
     }
-    compileEnv.add(name);
-    const nameC = compileExpression(name); // too broad
-    const rightC = compileExpression(right);
+    compileEnv.set(name.name, freshVariable(name.name));
+    const nameC = compileExpression(name, compileEnv); // too broad
+    const rightC = compileExpression(right, compileEnv);
     return `
       // assign ${atom}
       const ${nameC} = ${rightC};
@@ -921,7 +989,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
   function compileLitAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
   {
-    const litC = compileExpression(atom);
+    const litC = compileExpression(atom, compileEnv);
     return `
         // literal ${atom}
         if ((${litC}) !== false)
@@ -933,7 +1001,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
 function emitRule(rule)
 {
-  const compileEnv = new Set();
+  const compileEnv = new Map();
 
   const tupleArity = rule.tupleArity();
   const tupleParams = Array.from({length:tupleArity}, (_, i) => `tuple${i}`);
@@ -997,6 +1065,7 @@ function fireRule${rule._id}(deltaPos, deltaTuples)
 
 function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO contains cloned code from `compileRule`
 {
+  assertTrue(compileEnv instanceof Map)
   if (i === body.length)
   {
     const agg = head.terms[head.terms.length - 1];
@@ -1007,7 +1076,7 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
     return `
       // updates for ${head}
       const productGB = addGetRule${rule._id}ProductGB(${ptuples.join()});
-      const groupby = add_get_Rule${rule._id}GB(${gb.map(t => nameEnc(t.name)).join()});
+      const groupby = add_get_Rule${rule._id}GB(${gb.map(t => compileEnv.get(t.name)).join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -1015,16 +1084,16 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
       }
       else
       {
-        productGB.value = ${nameEnc(aggregate.name)}; // TODO: aggregate is func dep on tuples, arrange this in another way (e.g. set in ctr)?
+        productGB.value = ${compileEnv.get(aggregate.name)}; // TODO: aggregate is func dep on tuples, arrange this in another way (e.g. set in ctr)?
         productGB._outgb = groupby;
         const currentAdditionalValues = updates.get(groupby);
         if (!currentAdditionalValues)
         {
-          updates.set(groupby, [${nameEnc(aggregate.name)}]);
+          updates.set(groupby, [${compileEnv.get(aggregate.name)}]);
         }
         else
         {
-          currentAdditionalValues.push(${nameEnc(aggregate.name)});
+          currentAdditionalValues.push(${compileEnv.get(aggregate.name)});
         }
         ${t2ps.join('\n        ')}
       }
@@ -1046,12 +1115,13 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
       {
         if (compileEnv.has(term.name))
         {
-          conditions.push(`${tuple}.t${i} === ${nameEnc(term.name)}`);
+          conditions.push(`${tuple}.t${i} === ${compileEnv.get(term.name)}`);
         }
         else
         {
-          bindUnboundVars.push(`const ${nameEnc(term.name)} = ${tuple}.t${i};`);
-          compileEnv.add(term.name);
+          const compiledName = freshVariable(term.name);
+          compileEnv.set(term.name, compiledName);
+          bindUnboundVars.push(`const ${compiledName} = ${tuple}.t${i};`);
         }
       }
       else if (term instanceof Lit)
@@ -1112,7 +1182,7 @@ function emitRuleGB(rule)
   const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
 
   const pred = rule.head.pred;
-  const compileEnv = new Set();
+  const compileEnv = new Map();
 
   const numGbTerms = rule.head.terms.length - 1;
   const tn = Array.from(Array(numGbTerms), (_, i) => "t" + i);
@@ -1232,15 +1302,16 @@ ${publicFunction('clear')}()
   `;
 }
 
-function compileExpression(exp, j, termAids, rcIncs)
+function compileExpression(exp, env, termAids, rcIncs)
 {
+  assertTrue(env instanceof Map);
   if (exp instanceof Var)
   {
     if (isNativeFunName(exp.name))
     {
       return requiredBuiltInFunDefs.add(exp.name);
     }
-    return nameEnc(exp.name);
+    return env.get(exp.name);
   }
   if (exp instanceof Lit)
   {
@@ -1256,26 +1327,67 @@ function compileExpression(exp, j, termAids, rcIncs)
   }
   if (exp instanceof App)
   {
-    return compileApplication(exp);
+    return compileApplication(exp, env);
   }
   if (exp instanceof Atom) // Functor
   {
-    return compileCreateFunctor(exp, j, termAids, rcIncs);
+    return compileCreateFunctor(exp, env, termAids, rcIncs);
+  }
+  if (exp instanceof Lam)
+  {
+    return compileLambda(exp, env);
   }
   throw new Error(`cannot handle expression ${exp} of type ${exp.constructor.name}`);
 }
 
+const syntacticLambdas = new Map();
+const emitLambdas = [];
 
-function compileApplication(app)
+function compileLambda(lam, env)
 {
+  assertTrue(env instanceof Map)
+  let name = syntacticLambdas.get(lam);
+  const closureVars = freeVariables(lam);
+  const closureCompiledVars = closureVars.map(varName => env.get(varName)); // should be "stable" (same order each time this is called)
+
+  if (name === undefined) // TODO: all lambdas are encountered only once?
+  {
+    name = freshVariable("lambda");
+    syntacticLambdas.set(lam, name); 
+    lambdas.add(closureVars.length === 0 ? `let ${name}_members = null;` : `const ${name}_members = new Map();`); // TODO: this is not good: fold init into emitter thingie
+
+    const extendedEnv = new Map(env);
+    for (const param of lam.params)
+    {
+      extendedEnv.set(lam.param.name, freshVariable(lam.param.name));
+    }
+
+    lambdas.add(`
+// ${lam}    
+function compiled_${name}(${closureCompiledVars.join(', ')})
+{
+  return function(${lam.params.map(param => extendedEnv.get(param.name)).join(', ')})
+  {
+    return ${compileExpression(lam.body, extendedEnv)};
+  }
+}
+    `);
+    lambdas.add(emitAddGet2(name, `${name}_members`, closureVars.length, `compiled_${name}`));
+  }
+  return `addGet${name}(${closureCompiledVars.join(', ')})`;
+}
+
+function compileApplication(app, env)
+{
+  assertTrue(env instanceof Map)
 
   function compileRatorRands(i)
   {
     if (i === rands.length - 2)
     {
-      return `${compileExpression(rands[i])} ${rator.name} ${compileExpression(rands[i+1])}`;
+      return `${compileExpression(rands[i], env)} ${rator.name} ${compileExpression(rands[i+1], env)}`;
     }
-    return `${compileExpression(rands[0])} ${rator.name} ${compileRatorRands(i+1)}`;
+    return `${compileExpression(rands[0], env)} ${rator.name} ${compileRatorRands(i+1, env)}`;
   }
 
 
@@ -1286,28 +1398,28 @@ function compileApplication(app)
   {
     if (rator.name === "=") 
     {
-      return `${compileExpression(rands[0])} === ${compileExpression(rands[1])}`;
+      return `${compileExpression(rands[0], env)} === ${compileExpression(rands[1], env)}`;
     }
     
     if (rator.name === "!=") 
     {
-      return `${compileExpression(rands[0])} !== ${compileExpression(rands[1])}`;
+      return `${compileExpression(rands[0], env)} !== ${compileExpression(rands[1], env)}`;
     }
     
     if (rator.name === ">" || rator.name === ">=" || rator.name === "<" || rator.name === "<=")
     {
-      return `${compileExpression(rands[0])} ${rator.name} ${compileExpression(rands[1])}`;
+      return `${compileExpression(rands[0], env)} ${rator.name} ${compileExpression(rands[1], env)}`;
     }
 
     if (rator.name === "+" || rator.name === "-") 
     {
       if (rands.length === 1)
       {
-        return `${compileExpression(app.operands[0])}`; // ignore + (?)
+        return `${compileExpression(app.operands[0], env)}`; // ignore + (?)
       }
       if (rands.length > 1)
       {
-        return rands.map(compileExpression).map(e => `(${e})`).join(rator.name);
+        return rands.map(exp => compileExpression(exp, env)).map(e => `(${e})`).join(rator.name);
       }
     }
 
@@ -1315,26 +1427,26 @@ function compileApplication(app)
     {
       if (rands.length > 1)
       {
-        return rands.map(compileExpression).map(e => `(${e})`).join(rator.name);
+        return rands.map(exp => compileExpression(exp, env)).map(e => `(${e})`).join(rator.name);
       }
     }
     
     if (rator.name === "not")
     {
-      return `!${compileExpression(rands[0])}`;
+      return `!${compileExpression(rands[0], env)}`;
     }
 
     if (rator.name === "even?")
     {
-      return `(${compileExpression(rands[0])}) % 2 === 0`;
+      return `(${compileExpression(rands[0], env)}) % 2 === 0`;
     }
 
     if (rator.name === "odd?")
     {
-      return `(${compileExpression(rands[0])}) % 2 === 1`;
+      return `(${compileExpression(rands[0], env)}) % 2 === 1`;
     }
   }
-  return `(${compileExpression(rator)})(${rands.map(compileExpression).join(', ')})`;
+  return `(${compileExpression(rator, env)})(${rands.map(exp => compileExpression(exp, env)).join(', ')})`;
 }
 
 function emitEdbAtom(atom, i, rule, producesPred, stratum)

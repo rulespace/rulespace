@@ -1,5 +1,5 @@
 import { assertTrue, MutableSets, MutableMaps } from 'common';
-import { Atom, Neg, App, Assign, Lit } from './rsp.js';
+import { Atom, Neg, App, Assign, Lit, Var, Lam } from './rsp.js';
 
 // TODO: flag assignment to already bound identifier:  [X x] [Y y] [:= x y]
 
@@ -439,3 +439,89 @@ export function analyzeProgram(program)
     }
   };
 }
+
+export function freeVariables(exp)
+{
+  const vars = new Set(); // Set has insertion order, so is 'stable'
+  
+  function fv(exp, env)
+  {
+    if (exp instanceof Lit)
+    {
+      // nothing
+    }
+    else if (exp instanceof Var)
+    {
+      if (!env.has(exp.name)) 
+      {
+        vars.add(exp.name);
+      }
+    }
+    else if (exp instanceof Lam)
+    {
+      const params = exp.params;
+      const env2 = new Set(env);
+      for (const param of params)
+      {
+        vars.add(param.name);
+      }
+      const body = exp.body;
+      fv(body, env2);
+    }
+    else
+    {
+      throw new Error(`cannot handle expression ${exp}`); 
+    }
+    // app
+    // var exps = exp;
+    // var free = [];
+    // while (!(exps instanceof Null))
+    // {
+    //   var exp = exps.car;
+    //   free = free.concat(fv(exp, env));
+    //   exps = exps.cdr;
+    // }
+    // return free;
+
+        // if (name === "let")
+        // {
+        //   var param = exp.cdr.car.car.car;
+        //   var exp =  exp.cdr.car.car.cdr.car;
+        //   var body = exp.cdr.cdr.car;
+
+        //   var env2 = new Set(env);
+        //   env2.add(param.name);
+        //   return fv(exp, env).concat(fv(body, env2));
+        // }
+        // if (name === "letrec")
+        // {
+        //   var param = exp.cdr.car.car.car;
+        //   var exp =  exp.cdr.car.car.cdr.car;
+        //   var body = exp.cdr.cdr.car;
+        //   var env2 = new Set(env);
+        //   env2.add(param.name);
+        //   return fv(exp, env2).concat(fv(body, env2));
+        // }
+        // if (name === "if")
+        // {
+        //   var cond = exp.cdr.car;
+        //   var cons = exp.cdr.cdr.car;
+        //   var alt = exp.cdr.cdr.cdr.car;
+        //   return fv(cond, env).concat(fv(cons, env)).concat(fv(alt, env));
+        // }
+        // if (name === "quote")
+        // {
+        //   return [];
+        // }
+        // if (name === "and" || name === "or")
+        // {
+        //   var exp1 = exp.cdr.car;
+        //   var exp2 = exp.cdr.cdr.car;
+        //   return fv(exp1, env).concat(fv(exp2, env));
+        // } 
+  }
+  
+  fv(exp);
+  return [...vars];
+}
+  

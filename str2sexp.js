@@ -570,7 +570,7 @@ SchemeTokenizer.prototype.skipWhitespace =
 //     }
 //     if (node instanceof Sym)
 //     {
-//       return env.contains(node.name) ? [] : [node.name];
+//       return env.has(node.name) ? [] : [node.name];
 //     }
 //     if (node instanceof Pair)
 //     {
@@ -581,11 +581,11 @@ SchemeTokenizer.prototype.skipWhitespace =
 //         if (name === "lambda")
 //         {
 //           var params = node.cdr.car;
-//           var env2 = env;
+//           var env2 = new Set(env);
 //           while (!(params instanceof Null))
 //           {
 //             var param = params.car;
-//             env2 = env2.add(param.name);
+//             env2.add(param.name);
 //             params = params.cdr;
 //           }
 //           var body = node.cdr.cdr.car;
@@ -596,7 +596,9 @@ SchemeTokenizer.prototype.skipWhitespace =
 //           var param = node.cdr.car.car.car;
 //           var exp =  node.cdr.car.car.cdr.car;
 //           var body = node.cdr.cdr.car;
-//           var env2 = env.add(param.name);
+
+//           var env2 = new Set(env);
+//           env2.add(param.name);
 //           return fv(exp, env).concat(fv(body, env2));
 //         }
 //         if (name === "letrec")
@@ -604,7 +606,8 @@ SchemeTokenizer.prototype.skipWhitespace =
 //           var param = node.cdr.car.car.car;
 //           var exp =  node.cdr.car.car.cdr.car;
 //           var body = node.cdr.cdr.car;
-//           var env2 = env.add(param.name);
+//           var env2 = new Set(env);
+//           env2.add(param.name);
 //           return fv(exp, env2).concat(fv(body, env2));
 //         }
 //         if (name === "if")
@@ -648,7 +651,7 @@ SchemeTokenizer.prototype.skipWhitespace =
 //     throw new Error("cannot handle node " + node); 
 //   }
   
-//   return fv(node, ArraySet.empty());
+//   return fv(node, new Set());
 // }
 
 

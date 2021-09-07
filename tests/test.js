@@ -1,6 +1,7 @@
 import { performance } from 'perf_hooks';
 import { assertTrue, Sets } from 'common';
 import { tupleEquals, compileAtoms, atomToFreshModuleTuple, compileToConstructor, sanityCheck } from './test-common.js';
+import { Atom, Lit, Var } from '../rsp.js';
 
 function containsTuple(t, ts)
 {
@@ -68,6 +69,111 @@ function remove(item, seq)
   return [...seq].filter(x => x !== item);
 }
 
+
+function containsMatchingAtom(t, ts)
+{
+  for (const tt of ts)
+  {
+    if (atomMatch(t, tt))
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+
+function mtupleToAtom(mtuple)
+{
+  const pred = mtuple.constructor.name;
+  const values = [];
+  for (const value of mtuple.values())
+  {
+    if (typeof value === "number" || typeof value === "string" || value === true || value === false)
+    {
+      values.push(new Lit(value));
+    }
+    else if (typeof value === 'object') 
+    {
+      if (value._inproducts || value._outproducts) // TODO: maybe replace by isXXX on the module interface
+      {
+        values.push(mtupleToAtom(value));
+      }
+      else 
+      {
+        values.push(value);
+      }
+    }
+    else if (typeof value === 'function')
+    {
+      values.push(value);
+    }
+    else
+    {
+      throw new Error(`cannot handle value ${value} in ${mtuple}`)
+    }
+  }
+  return new Atom(pred, values);
+}
+
+function atomMatch(actual, expected)
+{
+  if (actual.pred !== expected.pred)
+  {
+    return false;
+  }
+  if (actual.arity() !== expected.arity())
+  {
+    return false;
+  }
+  for (let i = 0; i < actual.arity(); i++)
+  {
+    const t1 = actual.terms[i];
+    const t2 = expected.terms[i];
+    if (!termMatch(t1, t2))
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+function termMatch(actual, expected)
+{
+  if (expected instanceof Var && expected.name === "_")
+  {
+    return true;
+  }
+  if (actual instanceof Lit && expected instanceof Lit)
+  {
+    return actual.value === expected.value;
+  }
+  if (actual instanceof Atom && expected instanceof Atom)
+  {
+    return atomMatch(actual, expected);
+  }
+  return false;
+}
+
+function equalAtoms(actual, expected)
+{
+  const as1 = [...actual]; // actual
+  const as2 = [...expected]; // expected
+  if (as1.length !== as2.length)
+  {
+    return false;
+  }
+  for (const t1 of as1)
+  {
+    if (!containsMatchingAtom(t1, as2))
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+
 function test(src, expectedTuplesSrc)
 {
   const ctr = compileToConstructor(src);
@@ -76,14 +182,33 @@ function test(src, expectedTuplesSrc)
   const module = ctr();
   sanityCheck(module);
 
-  const expectedTuples = expectedAtoms.map(atom => atomToFreshModuleTuple(module, atom).get());
-  if (!equalTuples(module.tuples(), expectedTuples))
+  const moduleAtoms = [...module.tuples()].map(mtupleToAtom);
+  if (!equalAtoms(moduleAtoms, expectedAtoms))
   {
-    console.error("expected tuples: " + [...expectedTuples].join());
-    console.error("  module tuples: " + [...module.tuples()].join());
+    console.error("expected atoms: " + expectedAtoms.join());
+    console.error("  module atoms: " + moduleAtoms.join());
     throw new Error("assertion failed");
   }
 }
+
+
+
+// function test(src, expectedTuplesSrc)
+// {
+//   const ctr = compileToConstructor(src);
+//   const expectedAtoms = compileAtoms(expectedTuplesSrc);
+
+//   const module = ctr();
+//   sanityCheck(module);
+
+//   const expectedTuples = expectedAtoms.map(atom => atomToFreshModuleTuple(module, atom).get());
+//   if (!equalTuples(module.tuples(), expectedTuples))
+//   {
+//     console.error("expected tuples: " + [...expectedTuples].join());
+//     console.error("  module tuples: " + [...module.tuples()].join());
+//     throw new Error("assertion failed");
+//   }
+// }
 
 function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
 {
@@ -326,7 +451,6 @@ test(`(rule [R x] (:= proc <) (:= x (proc 3 4)))`, `[R #t]`);
 test(`(rule [R x] (:= proc even?) (:= x (proc 5)))`, `[R #f]`);
 test(`(rule [R x] (:= proc even?) (:= x (proc 6)))`, `[R #t]`);
 //testAdd(`(rule [J [prim +]] [I]) (rule [R x] [J [prim proc]] (:= x (proc 1 2 3)))`, `[I]`, `[R 6]`); toString() of proc gives trouble (how to test/stabilize this?)
-// tests should have their own 'stable' toString
 
 // assign
 testAdd(`(rule [X y] [I x] (:= y 123))`, `[I 999]`, `[X 123]`);
@@ -339,6 +463,11 @@ test(`(rule [R] (not #f))`, `[R]`);
 test(`(rule [X 123]) (rule [Y x] [X x])`, `[X 123] [Y 123]`);
 testAdd(`(rule [X 123]) (rule [Y x] [X x])`, `[X 456]`, `[X 123] [Y 123] [Y 456]`);
 test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2] [X 3] [X 4] [X 5]`);
+
+// lambdas
+test(`(rule [F (lambda () 123)]) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
+test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
+
 
 // funny chars
 testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);

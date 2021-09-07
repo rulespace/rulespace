@@ -178,6 +178,21 @@ export class Paren // Exp
   }
 }
 
+export class Lam
+{
+  constructor(params, body)
+  {
+    this.params = params;
+    this.body = body;
+  }
+
+  toString()
+  {
+    return `(lambda (${this.params.join(' ')}) ${this.body})`;
+  }
+}
+
+
 
 function toTermString(x)
 {

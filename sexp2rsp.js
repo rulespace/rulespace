@@ -1,6 +1,6 @@
 import { assertTrue } from 'common';
 import { Null, Pair, Sym, Keyword, Tuple } from './str2sexp.js';
-import { Program, Rule, Neg, Agg, Atom, Lit, Var, App, Assign } from './rsp.js';
+import { Program, Rule, Neg, Agg, Atom, Lit, Var, App, Assign, Lam } from './rsp.js';
 
 class SexpRspCompilationError extends Error
 {
@@ -147,10 +147,16 @@ export function compileExp(exp)
           const rhs = compileTerm(exp.cdr.cdr.car);
           return new Assign(name, lhs, rhs); // de-Symmed
         }
+        case 'lambda':
+        {
+          const params = [...exp.cdr.car].map(compileExp);
+          const body = compileExp(exp.cdr.cdr.car); // only one body exp for now
+          return new Lam(params, body);
+        }
       }
     }
 
-    return new App(compileTerm(rator), exp.cdr.properToArray().map(compileTerm));
+    return new App(compileTerm(rator), [...exp.cdr].map(compileTerm));
   }
 
   throw new SexpRspCompilationError(`cannot handle expression ${exp} of type ${exp.constructor.name}`);
