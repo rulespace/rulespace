@@ -463,7 +463,7 @@ export function freeVariables(exp)
       const env2 = new Set(env);
       for (const param of params)
       {
-        vars.add(param.name);
+        env2.add(param.name);
       }
       const body = exp.body;
       fv(body, env2);
