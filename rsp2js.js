@@ -270,16 +270,10 @@ export function rsp2js(rsp, options={})
       `);
 
       sb.push(emitTupleObject(pred));
-      //sb.push(emitGetTuple(pred));
       if (pred.edb)
       {
         sb.push(emitDeltaAddTuple(pred));
       }
-
-      // if (pred.edb)
-      // {
-      //   sb.push(emitAddTuple(pred, strata));
-      // }
       for (const rule of pred.rules)
       {
         sb.push(`/* ${rule} */`);
@@ -289,7 +283,6 @@ export function rsp2js(rsp, options={})
         }
         else
         {
-          // sb.push(emitProposeTuple(rule));
           sb.push(emitRule(rule));
         }
       }
@@ -588,7 +581,7 @@ function remove_${pred}(${tn.join(', ')})
     {
       if (i === arity)
       {
-        return `yield ${maps[arity]}`;
+        return `result.push(${maps[arity]})`;
       }
       return `
         for (const ${maps[i+1]} of ${maps[i]}.values())
@@ -603,9 +596,11 @@ function remove_${pred}(${tn.join(', ')})
     
     // iterator
     return `
-function* select_${pred}()
+function select_${pred}()
 {
-    ${emitLookup(0)}
+  const result = [];
+  ${emitLookup(0)}
+  return result;
 }
     `;
   }
@@ -1304,7 +1299,7 @@ function compileLambda(lam, env) // TODO rcIncs and termAids: closure = allocate
     const extendedEnv = new Map(env);
     for (const param of lam.params)
     {
-      extendedEnv.set(lam.param.name, freshVariable(lam.param.name));
+      extendedEnv.set(param.name, freshVariable(param.name));
     }
 
     lambdas.add(`
