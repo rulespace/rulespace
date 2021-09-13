@@ -777,41 +777,32 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const tuple = "tuple" + i;
     ptuples.push(tuple);
     const pred = atom.pred;
-    // const bindings = new Map();
     const conditions = [];
-
-
+    const bindings = new Map();
     
-    switch (pred)
+    compileAtom(atom, tuple, compileEnv, bindings, conditions);      
+    
+    const postConditionBindings = [];
+    for (const [name, expEmit] of bindings)
     {
-      default:
-        {
-          const bindings = new Map();
-          compileAtom(atom, tuple, compileEnv, bindings, conditions);
-          
-          const postConditionBindings = [];
-          for (const [name, expEmit] of bindings)
-          {
-            const varName = freshVariable(name);
-            compileEnv.set(name, varName);
-            postConditionBindings.push(`const ${varName} = ${expEmit};`);
-          }
-
-          const tupleSelection = conditions.length === 0
-            ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
-            : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
-
-          return `
-          // atom ${atom}
-          const tuples${i} = ${tupleSelection};
-          for (const ${tuple} of tuples${i})
-          {
-            ${postConditionBindings.join('\n          ')}
-            ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-          }
-          `;  
-        }
+      const varName = freshVariable(name);
+      compileEnv.set(name, varName);
+      postConditionBindings.push(`const ${varName} = ${expEmit};`);
     }
+
+    const tupleSelection = conditions.length === 0
+      ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
+      : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
+
+    return `
+    // atom ${atom}
+    const tuples${i} = ${tupleSelection};
+    for (const ${tuple} of tuples${i})
+    {
+      ${postConditionBindings.join('\n          ')}
+      ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
+    }
+    `;  
   }
 
   if (atom instanceof Neg)
