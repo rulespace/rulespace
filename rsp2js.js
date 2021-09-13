@@ -1,4 +1,4 @@
-import { MutableArrays, assertTrue } from 'common';
+import { Arrays, assertTrue } from 'common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
 import {  } from './str2sexp.js';
@@ -275,7 +275,7 @@ export function rsp2js(rsp, options={})
       {
         sb.push(emitDeltaAddTuple(pred));
       }
-      
+
       // if (pred.edb)
       // {
       //   sb.push(emitAddTuple(pred, strata));
@@ -289,6 +289,7 @@ export function rsp2js(rsp, options={})
         }
         else
         {
+          // sb.push(emitProposeTuple(rule));
           sb.push(emitRule(rule));
         }
       }
@@ -766,64 +767,8 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
   assertTrue(compileEnv instanceof Map);
   if (i === body.length) // body evaluation completed, move to head to create tuple
   {
-    const pred = head.pred;
-    const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
-    // const termExps = [];
-    const termAids = [];
-    const fact = rule.tupleArity() === 0;
-
-    const termExps = head.terms.map(exp => compileExpression(exp, compileEnv, termAids, rcIncs));
-
-    if (fact)
-    {
-      return `
-      // adding edb ${head}
-      //// TERM AIDS
-      ${termAids.join('\n')}
-      //////////////
-      const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
-      if (existing_${pred}_tuple === null)
-      {
-        const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
-        newTuples.add(new_${pred}_tuple);
-        ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
-        ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
-      }
-      `;
-    }
-    else // derived tuple: construct product, deal with provenance
-    {
-      const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
-
-      return `
-      // adding idb ${head}
-      //// TERM AIDS
-      ${termAids.join('\n')}
-      //////////////
-      const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
-      if (existing_${pred}_tuple === null)
-      {
-        const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
-        newTuples.add(new_${pred}_tuple);
-        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
-        ${t2ps.join('\n        ')}
-        product._outtuple = new_${pred}_tuple;
-        new_${pred}_tuple._inproducts.add(product);
-        ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
-        ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
-      }
-      else if (${noRecursionConditions.join(' && ')}) // remove direct recursion in product
-      {
-        const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
-        ${t2ps.join('\n        ')}
-        product._outtuple = existing_${pred}_tuple;
-        existing_${pred}_tuple._inproducts.add(product);
-      }      
-    `;
-    }
-
+    return compileRuleHead(rule, compileEnv, ptuples);
   }
-
 
   const atom = body[i];
 
@@ -1343,7 +1288,7 @@ function compileExpression(exp, env, termAids, rcIncs)
 const syntacticLambdas = new Map();
 const emitLambdas = [];
 
-function compileLambda(lam, env)
+function compileLambda(lam, env) // TODO rcIncs and termAids: closure = allocated object
 {
   assertTrue(env instanceof Map)
   let name = syntacticLambdas.get(lam);
@@ -1678,6 +1623,68 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   return ${pred}_tuples;
 }
   `
+}
+
+function compileRuleHead(rule, compileEnv, ptuples)
+{
+  const head = rule.head;
+  const pred = head.pred;
+  const fact = rule.tupleArity() === 0;
+
+  // TODO: currently, only allocation by head expressions is tracked
+  const rcIncs = [];
+  const termAids = [];
+
+  const termExps = head.terms.map(exp => compileExpression(exp, compileEnv, termAids, rcIncs));
+
+  if (fact)
+  {
+    return `
+    // adding edb ${head}
+    //// TERM AIDS
+    ${termAids.join('\n')}
+    //////////////
+    const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
+    if (existing_${pred}_tuple === null)
+    {
+      const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
+      newTuples.add(new_${pred}_tuple);
+      ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
+      ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
+    }
+    `;
+  }
+  else // derived tuple: construct product, deal with provenance
+  {
+    const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
+    const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
+
+    return `
+    // adding idb ${head}
+    //// TERM AIDS
+    ${termAids.join('\n')}
+    //////////////
+    const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
+    if (existing_${pred}_tuple === null)
+    {
+      const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
+      newTuples.add(new_${pred}_tuple);
+      const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
+      ${t2ps.join('\n        ')}
+      product._outtuple = new_${pred}_tuple;
+      new_${pred}_tuple._inproducts.add(product);
+      ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
+      ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
+    }
+    else if (${noRecursionConditions.join(' && ')}) // remove direct recursion in product
+    {
+      const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
+      ${t2ps.join('\n        ')}
+      product._outtuple = existing_${pred}_tuple;
+      existing_${pred}_tuple._inproducts.add(product);
+    }      
+  `;
+  }  
 }
 
 function stratumLogic(stratum)
