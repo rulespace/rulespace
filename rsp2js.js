@@ -702,7 +702,10 @@ ${emitRemove(`${functor}`, functor.arity)}
 
 function compileAtom(atom, target, compileEnv, bindings, conditions)
 {
-  // bindings: name -> {bindingEmit, card}
+  // bindings: name -> expEmit
+  // bindings are things that are not yet named (in conditions)
+
+  // compileEnv is read-only
 
   atom.terms.forEach((term, i) =>
   {
@@ -716,15 +719,17 @@ function compileAtom(atom, target, compileEnv, bindings, conditions)
           const localBinding = bindings.get(term.name);
           if (localBinding !== undefined)
           {
-            // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
             localBinding[1]++; // increase cardinality
           }
         }
+        else if (bindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
+        {
+          conditions.push(`${target}.t${i} === ${bindings.get(term.name)}`);
+        }
         else
         {
-          const varName = freshVariable(term.name);
-          compileEnv.set(term.name, varName);
-          bindings.set(term.name, [`const ${varName} = ${target}.t${i};`, 1]);
+          // not encountered before (locally, externally): bind
+          bindings.set(term.name, `${target}.t${i}`);
         }
       }
     }
@@ -772,7 +777,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const tuple = "tuple" + i;
     ptuples.push(tuple);
     const pred = atom.pred;
-    const bindings = new Map();
+    // const bindings = new Map();
     const conditions = [];
 
 
@@ -781,49 +786,30 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     {
       default:
         {
+          const bindings = new Map();
           compileAtom(atom, tuple, compileEnv, bindings, conditions);
-
-          const preConditionBindings = [];
+          
           const postConditionBindings = [];
-
-          for (const [binding, card] of bindings.values())
+          for (const [name, expEmit] of bindings)
           {
-            if (card === 1)
-            {
-              postConditionBindings.push(binding);
-            }
-            else
-            {
-              preConditionBindings.push(binding);
-            }
+            const varName = freshVariable(name);
+            compileEnv.set(name, varName);
+            postConditionBindings.push(`const ${varName} = ${expEmit};`);
           }
 
-          if (conditions.length === 0)
+          const tupleSelection = conditions.length === 0
+            ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
+            : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
+
+          return `
+          // atom ${atom}
+          const tuples${i} = ${tupleSelection};
+          for (const ${tuple} of tuples${i})
           {
-            return `
-            // atom ${atom} (no conditions)
-            for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
-            {
-              ${postConditionBindings.join('\n        ')}
-              ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-            }
-            `;  
+            ${postConditionBindings.join('\n          ')}
+            ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
           }
-          else
-          {
-            return `
-            // atom ${atom} (conditions)
-            for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
-            {
-              ${preConditionBindings.join('\n        ')}
-              if (${conditions.join(' && ')})
-              {
-                ${postConditionBindings.join('\n          ')}
-                ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-              }
-            }
-            `;  
-          }      
+          `;  
         }
     }
   }
