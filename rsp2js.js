@@ -699,10 +699,90 @@ ${emitRemove(`${functor}`, functor.arity)}
   return sb;
 }
 
-
-function compileAtom(atom, target, compileEnv, bindings, conditions)
+class ConstraintIndex
 {
-  // bindings: name -> expEmit
+  constructor(indices)
+  {
+    this.indices = [...indices];
+  }
+
+  toString()
+  {
+    return `[${this.indices.join()}]`;
+  }
+}
+
+class ConstraintVar
+{
+  constructor(name)
+  {
+    this.name = name;
+  }
+
+  toString()
+  {
+    return this.name;
+  }
+}
+
+class ConstraintConstant
+{
+  constructor(value)
+  {
+    this.value = value;
+  }
+
+  toString()
+  {
+    return String(this.value);
+  }
+}
+
+class ConstraintPred
+{
+  constructor(pred)
+  {
+    this.pred = pred;
+  }
+
+  toString()
+  {
+    return `[${this.pred}]`;
+  }
+}
+
+class EqConstraint
+{
+  constructor(x, y)
+  {
+    this.x = x;
+    this.y = y;
+  }
+
+  toString()
+  {
+    return `${this.x} === ${this.y}`
+  }
+}
+
+class PredElementConstraint
+{
+  constructor(x, pred)
+  {
+    this.x = x;
+    this.pred = pred;
+  }
+
+  toString()
+  {
+    return `${this.x} ∈ ${this.pred}`
+  }
+
+}
+
+function compileAtom(atom, target, compileEnv, bindings, constraints)
+{
+  // bindings: name -> index
   // bindings are things that are not yet named (in conditions)
 
   // compileEnv is read-only
@@ -715,32 +795,31 @@ function compileAtom(atom, target, compileEnv, bindings, conditions)
       {
         if (compileEnv.has(term.name))
         {
-          conditions.push(`${target}.t${i} === ${compileEnv.get(term.name)}`);
-          const localBinding = bindings.get(term.name);
-          if (localBinding !== undefined)
-          {
-            localBinding[1]++; // increase cardinality
-          }
+          //conditions.push(`${target}.t${i} === ${compileEnv.get(term.name)}`);
+          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintVar(compileEnv.get(term.name))));
         }
         else if (bindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
         {
-          conditions.push(`${target}.t${i} === ${bindings.get(term.name)}`);
+          // conditions.push(`${target}.t${i} === ${bindings.get(term.name)}`);
+          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), bindings.get(term.name)));
         }
         else
         {
           // not encountered before (locally, externally): bind
-          bindings.set(term.name, `${target}.t${i}`);
+          bindings.set(term.name, new ConstraintIndex([...target, i]));
         }
       }
     }
     else if (term instanceof Lit)
     {
-      conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
+      constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintConstant(term.value)));
+      //conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
     }
     else if (term instanceof Atom) // functor
     {
-      conditions.push(`${target}.t${i} instanceof ${term.pred}`);
-      compileAtom(term, `${target}.t${i}`, compileEnv, bindings, conditions);
+      constraints.push(new PredElementConstraint(new ConstraintIndex([...target, i]), new ConstraintPred(term.pred)));
+      //conditions.push(`${target}.t${i} instanceof ${term.pred}`);
+      compileAtom(term, [...target, i], compileEnv, bindings, constraints);
     }
     else
     {
@@ -762,6 +841,30 @@ function compileCreateFunctor(functor, env, termAids, rcIncs)
   return functorName;
 }
 
+function compileConstraintElement(el, tuple)
+{
+  if (el instanceof ConstraintIndex)
+  {
+    return `${tuple}.${el.indices.map(i => `t${i}`).join('.')}`;
+  }
+  else if (el instanceof ConstraintVar)
+  {
+    return el.name;
+  }
+  else if (el instanceof ConstraintConstant)
+  {
+    return termToString(el.value);
+  }
+  else if (el instanceof ConstraintPred)
+  {
+    return el.pred;
+  }
+  else
+  {
+    throw new Error(`cannot handle constraint element ${el}`);
+  }
+}
+
 function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 {
   assertTrue(compileEnv instanceof Map);
@@ -777,25 +880,48 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const tuple = "tuple" + i;
     ptuples.push(tuple);
     const pred = atom.pred;
-    const conditions = [];
+    const constraints = [];
     const bindings = new Map();
     
-    compileAtom(atom, tuple, compileEnv, bindings, conditions);      
-    
+    compileAtom(atom, [], compileEnv, bindings, constraints);      
+
     const postConditionBindings = [];
-    for (const [name, expEmit] of bindings)
+    for (const [name, constraintValue] of bindings)
     {
       const varName = freshVariable(name);
       compileEnv.set(name, varName);
-      postConditionBindings.push(`const ${varName} = ${expEmit};`);
+      postConditionBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
     }
 
+    const conditions = constraints.map(
+      function (constraint)
+      {
+        if (constraint instanceof EqConstraint)
+        {
+          const left = compileConstraintElement(constraint.x, tuple);
+          const right = compileConstraintElement(constraint.y, tuple);
+          return `${left} === ${right}`;
+        }
+        else if (constraint instanceof PredElementConstraint)
+        {
+          const left = compileConstraintElement(constraint.x, tuple);
+          assertTrue(constraint.pred instanceof ConstraintPred);
+          const right = compileConstraintElement(constraint.pred, tuple);
+          return `${left} instanceof ${right}`;
+        }
+        else
+        {
+          throw new Error(`cannot handle constraint ${constraint}`);
+        }
+      });
+    
     const tupleSelection = conditions.length === 0
       ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
       : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
 
     return `
     // atom ${atom}
+    ${constraints.map(c => `/// ${c}`).join('\n    ')}
     const tuples${i} = ${tupleSelection};
     for (const ${tuple} of tuples${i})
     {
@@ -809,7 +935,6 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
   {
     return compileNegAtom(atom, i, ptuples, compileEnv, rule, head, body, rcIncs);  
   }
-
 
   if (atom instanceof App)
   {
