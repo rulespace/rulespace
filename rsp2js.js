@@ -865,6 +865,31 @@ function compileConstraintElement(el, tuple)
   }
 }
 
+function compileConstraintFor(tuple)
+{
+  return function (constraint)
+  {
+    if (constraint instanceof EqConstraint)
+    {
+      const left = compileConstraintElement(constraint.x, tuple);
+      const right = compileConstraintElement(constraint.y, tuple);
+      return `${left} === ${right}`;
+    }
+    else if (constraint instanceof PredElementConstraint)
+    {
+      const left = compileConstraintElement(constraint.x, tuple);
+      assertTrue(constraint.pred instanceof ConstraintPred);
+      const right = compileConstraintElement(constraint.pred, tuple);
+      return `${left} instanceof ${right}`;
+    }
+    else
+    {
+      throw new Error(`cannot handle constraint ${constraint}`);
+    }
+  };
+}
+
+
 function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 {
   assertTrue(compileEnv instanceof Map);
@@ -885,35 +910,15 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     
     compileAtom(atom, [], compileEnv, bindings, constraints);      
 
-    const postConditionBindings = [];
+    const postFilterBindings = [];
     for (const [name, constraintValue] of bindings)
     {
       const varName = freshVariable(name);
       compileEnv.set(name, varName);
-      postConditionBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
+      postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
     }
 
-    const conditions = constraints.map(
-      function (constraint)
-      {
-        if (constraint instanceof EqConstraint)
-        {
-          const left = compileConstraintElement(constraint.x, tuple);
-          const right = compileConstraintElement(constraint.y, tuple);
-          return `${left} === ${right}`;
-        }
-        else if (constraint instanceof PredElementConstraint)
-        {
-          const left = compileConstraintElement(constraint.x, tuple);
-          assertTrue(constraint.pred instanceof ConstraintPred);
-          const right = compileConstraintElement(constraint.pred, tuple);
-          return `${left} instanceof ${right}`;
-        }
-        else
-        {
-          throw new Error(`cannot handle constraint ${constraint}`);
-        }
-      });
+    const conditions = constraints.map(compileConstraintFor(tuple));
     
     const tupleSelection = conditions.length === 0
       ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
@@ -925,7 +930,7 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
     const tuples${i} = ${tupleSelection};
     for (const ${tuple} of tuples${i})
     {
-      ${postConditionBindings.join('\n          ')}
+      ${postFilterBindings.join('\n          ')}
       ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
     }
     `;  
@@ -2227,3 +2232,5 @@ ${publicFunction('profileResults')}()
   return main();
 
 } // end compile
+
+

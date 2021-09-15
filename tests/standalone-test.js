@@ -2,7 +2,8 @@ import { compileModuleTuples, compileToModule, sanityCheck } from './test-common
 
 const src = `
 
-(rule [R a b c d e f g] [I a b c e [S a c d f] a b d g])
+(rule [Reachable x y] [Link x y])
+(rule [Reachable x y] [Reachable x z] [Link z y])
 
   `;
 
@@ -10,7 +11,7 @@ const src = `
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
 
-module.addTuples(compileModuleTuples(module, `[I 1 2 3 5 [S 1 3 4 6] 1 2 4 7]`));
+module.addTuples(compileModuleTuples(module, `[Link 1 2] [Link 2 3]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 console.log("roots: " + [...module.rootTuples()].join('\n'));
 sanityCheck(module);
