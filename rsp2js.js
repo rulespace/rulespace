@@ -13,6 +13,17 @@ class RspJsCompilationError extends Error
   }
 }
 
+function addAllTuples(targetArray, x)
+{
+  return `MutableArrays.addAll(${targetArray}, ${x});`
+}
+
+function fireRuleInto(rule, deltaPos, deltaTuples, into)
+{
+  assertTrue(!rule.aggregates());
+  return `const ${into} = fireRule${rule._id}(${deltaPos}, ${deltaTuples})`
+}
+
 
 // class LineEmitter
 // {
@@ -300,7 +311,7 @@ export function rsp2js(rsp, options={})
 
           sb.push(`/* fact: ${rule} */`);// TODO delta pos and tuple not required for fact rules
           sb.push(`
-          const new_Rule${rule._id}_tuples = fireRule${rule._id}(-1, []);
+          ${fireRuleInto(rule, -1, `[]`, `new_Rule${rule._id}_tuples`)}
           const existing_Rule${rule._id}_tuples = facts.get(${pred});
           if (existing_Rule${rule._id}_tuples === undefined)
           {
@@ -308,7 +319,7 @@ export function rsp2js(rsp, options={})
           }
           else
           {
-            MutableArrays.addAll(existing_Rule${rule._id}_tuples, new_Rule${rule._id}_tuples);  
+            ${addAllTuples(`existing_Rule${rule._id}_tuples`, `new_Rule${rule._id}_tuples`)};  
           }
           `);
         }
@@ -780,7 +791,43 @@ class PredElementConstraint
 
 }
 
-function compileAtom(atom, target, compileEnv, bindings, constraints)
+function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
+{
+  const tuple = "tuple" + i;
+  ptuples.push(tuple);
+  const pred = atom.pred;
+  const constraints = [];
+  const bindings = new Map();
+
+  compilePositiveAtom(atom, [], compileEnv, bindings, constraints);
+
+  const postFilterBindings = [];
+  for (const [name, constraintValue] of bindings)
+  {
+    const varName = freshVariable(name);
+    compileEnv.set(name, varName);
+    postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
+  }
+
+  const conditions = constraints.map(compileConstraintFor(tuple));
+
+  const tupleSelection = conditions.length === 0
+    ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
+    : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
+
+  return `
+    // atom ${atom}
+    ${constraints.map(c => `/// ${c}`).join('\n    ')}
+    const tuples${i} = ${tupleSelection};
+    for (const ${tuple} of tuples${i})
+    {
+      ${postFilterBindings.join('\n          ')}
+      ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
+    }
+    `;
+}
+
+function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
 {
   // bindings: name -> index
   // bindings are things that are not yet named (in conditions)
@@ -819,7 +866,7 @@ function compileAtom(atom, target, compileEnv, bindings, constraints)
     {
       constraints.push(new PredElementConstraint(new ConstraintIndex([...target, i]), new ConstraintPred(term.pred)));
       //conditions.push(`${target}.t${i} instanceof ${term.pred}`);
-      compileAtom(term, [...target, i], compileEnv, bindings, constraints);
+      compilePositiveAtom(term, [...target, i], compileEnv, bindings, constraints);
     }
     else
     {
@@ -890,9 +937,9 @@ function compileConstraintFor(tuple)
 }
 
 
-function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
+function compileRuleFireBody(rule, i, compileEnv, ptuples, rcIncs)
 {
-  assertTrue(compileEnv instanceof Map);
+  const body = rule.body;
   if (i === body.length) // body evaluation completed, move to head to create tuple
   {
     return compileRuleHead(rule, compileEnv, ptuples);
@@ -902,149 +949,116 @@ function compileRuleFireBody(rule, head, body, i, compileEnv, ptuples, rcIncs)
 
   if (atom instanceof Atom)
   {
-    const tuple = "tuple" + i;
-    ptuples.push(tuple);
-    const pred = atom.pred;
-    const constraints = [];
-    const bindings = new Map();
-    
-    compileAtom(atom, [], compileEnv, bindings, constraints);      
-
-    const postFilterBindings = [];
-    for (const [name, constraintValue] of bindings)
-    {
-      const varName = freshVariable(name);
-      compileEnv.set(name, varName);
-      postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
-    }
-
-    const conditions = constraints.map(compileConstraintFor(tuple));
-    
-    const tupleSelection = conditions.length === 0
-      ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
-      : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
-
-    return `
-    // atom ${atom}
-    ${constraints.map(c => `/// ${c}`).join('\n    ')}
-    const tuples${i} = ${tupleSelection};
-    for (const ${tuple} of tuples${i})
-    {
-      ${postFilterBindings.join('\n          ')}
-      ${compileRuleFireBody(rule, head, body, i+1, compileEnv, ptuples, rcIncs)}
-    }
-    `;  
+    return compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, compileRuleFireBody);  
   }
 
   if (atom instanceof Neg)
   {
-    return compileNegAtom(atom, i, ptuples, compileEnv, rule, head, body, rcIncs);  
+    return compileNegAtom(atom, i, rule, compileEnv, ptuples, rcIncs, compileRuleFireBody);  
   }
 
   if (atom instanceof App)
   {
-    return compileApplicationAtom(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, compileRuleFireBody);
+    return compileApplicationAtom(atom, i, rule, compileEnv, ptuples, rcIncs, compileRuleFireBody);
   }
 
   if (atom instanceof Assign)
   {
-    return compileAssignmentAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
+    return compileAssignmentAtom(atom, i, rule, compileEnv, ptuples, rcIncs, compileRuleFireBody);
   }
 
   if (atom instanceof Lit)
   {
-    return compileLitAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, compileRuleFireBody);
+    return compileLitAtom(atom, i, rule, compileEnv, ptuples, rcIncs, compileRuleFireBody);
   }
 
   throw new Error(`cannot handle ${body[i]} of type ${body[i].constructor.name} in ${rule}`);
 }
 
-  function compileNegAtom(atom, i, ptuples, compileEnv, rule, head, body, rcIncs)
-  {
-    const natom = atom.atom;
-    const tuple = "tuple" + i;
-    ptuples.push('NOT_' + tuple);
-    const pred = natom.pred;
-    const getValues = [];
-    natom.terms.forEach((term, i) => {
-      if (term instanceof Var) {
-        if (compileEnv.has(term.name)) {
-          getValues.push(compileEnv.get(term.name));
-        }
-
-        else {
-          throw new Error(`unbound variable ${term.name} in negation in ${rule}`);
-        }
-      }
-      else if (term instanceof Lit) {
-        getValues.push(`${termToString(term.value)}`);
+function compileNegAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
+{
+  const natom = atom.atom;
+  const tuple = "tuple" + i;
+  ptuples.push('NOT_' + tuple);
+  const pred = natom.pred;
+  const getValues = [];
+  natom.terms.forEach((term, i) => {
+    if (term instanceof Var) {
+      if (compileEnv.has(term.name)) {
+        getValues.push(compileEnv.get(term.name));
       }
 
       else {
-        throw new Error();
+        throw new Error(`unbound variable ${term.name} in negation in ${rule}`);
       }
-    });
-
-    return `
-    // atom ${atom} (conditions)
-    if (get_${pred}(${getValues.join(', ')}) !== null)
-    {
-      continue;
     }
-    const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.map(t => compileEnv.get(t.name)).join(', ')});
-    ${compileRuleFireBody(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
-    `;
-  }
-
-  function compileApplicationAtom(atom, rule, head, body, i, compileEnv, ptuples, rcIncs, cont) 
-  {
-    const appC = compileApplication(atom, compileEnv);
-    return `
-        // application ${atom}
-        if ((${appC}) !== false)
-        {
-          ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
-        } // application ${atom}
-    `;
-  }
-
-  function compileAssignmentAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
-  {
-    assertTrue(compileEnv instanceof Map);
-
-    const op = atom.operator;
-    const name = atom.left;
-    const right = atom.right;
-
-    assertTrue(op === ':=');
-    assertTrue(name instanceof Var);
-
-    if (compileEnv.has(name))
-    {
-      throw new RspJsCompilationError(`assigning bound name '${name}'`);
+    else if (term instanceof Lit) {
+      getValues.push(`${termToString(term.value)}`);
     }
-    compileEnv.set(name.name, freshVariable(name.name));
-    const nameC = compileExpression(name, compileEnv); // too broad
-    const rightC = compileExpression(right, compileEnv);
-    return `
-      // assign ${atom}
-      const ${nameC} = ${rightC};
 
-      ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
-    `;
-  }
+    else {
+      throw new Error();
+    }
+  });
 
-  function compileLitAtom(atom, compileEnv, rule, head, body, i, ptuples, rcIncs, cont)
+  return `
+  // atom ${atom} (conditions)
+  if (get_${pred}(${getValues.join(', ')}) !== null)
   {
-    const litC = compileExpression(atom, compileEnv);
-    return `
-        // literal ${atom}
-        if ((${litC}) !== false)
-        {
-          ${cont(rule, head, body, i + 1, compileEnv, ptuples, rcIncs)}
-        } // literal ${atom}
-    `;
+    continue;
   }
+  const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.map(t => compileEnv.get(t.name)).join(', ')});
+  ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
+  `;
+}
+
+function compileApplicationAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont) 
+{
+  const appC = compileApplication(atom, compileEnv);
+  return `
+      // application ${atom}
+      if ((${appC}) !== false)
+      {
+        ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
+      } // application ${atom}
+  `;
+}
+
+function compileAssignmentAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
+{
+  const op = atom.operator;
+  const name = atom.left;
+  const right = atom.right;
+
+  assertTrue(op === ':=');
+  assertTrue(name instanceof Var);
+
+  if (compileEnv.has(name))
+  {
+    throw new RspJsCompilationError(`assigning bound name '${name}'`);
+  }
+  compileEnv.set(name.name, freshVariable(name.name));
+  const nameC = compileExpression(name, compileEnv); // too broad
+  const rightC = compileExpression(right, compileEnv);
+  return `
+    // assign ${atom}
+    const ${nameC} = ${rightC};
+
+    ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
+  `;
+}
+
+function compileLitAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
+{
+  const litC = compileExpression(atom, compileEnv);
+  return `
+      // literal ${atom}
+      if ((${litC}) !== false)
+      {
+        ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
+      } // literal ${atom}
+  `;
+}
 
 function emitRule(rule)
 {
@@ -1099,7 +1113,7 @@ function fireRule${rule._id}(deltaPos, deltaTuples)
 
   const newTuples = new Set();
 
-  ${compileRuleFireBody(rule, rule.head, rule.body, 0, compileEnv, [], [])}
+  ${compileRuleFireBody(rule, 0, compileEnv, [], [])}
 
   ${profileEnd(`fireRule${rule._id}`)}
 
@@ -1110,9 +1124,10 @@ function fireRule${rule._id}(deltaPos, deltaTuples)
   `;
 }
 
-function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO contains cloned code from `compileRule`
+function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cloned code from `compileRule`
 {
-  assertTrue(compileEnv instanceof Map)
+  const head = rule.head;
+  const body = rule.body;
   if (i === body.length)
   {
     const agg = head.terms[head.terms.length - 1];
@@ -1188,7 +1203,7 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
       for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
       {
         ${bindUnboundVars.join('\n        ')}
-        ${compileRuleGBFireBody(rule, head, body, i+1, compileEnv, ptuples)}
+        ${compileRuleGBFireBody(rule, i+1, compileEnv, ptuples)}
       }
       `;  
     }
@@ -1201,7 +1216,7 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
         if (${conditions.join('&&')})
         {
           ${bindUnboundVars.join('\n        ')}
-          ${compileRuleGBFireBody(rule, head, body, i+1, compileEnv, ptuples)}
+          ${compileRuleGBFireBody(rule, i+1, compileEnv, ptuples)}
         }
       }
       `;  
@@ -1210,12 +1225,12 @@ function compileRuleGBFireBody(rule, head, body, i, compileEnv, ptuples) // TODO
 
   if (atom instanceof App)
   {
-    return compileApplicationAtom(atom, rule, head, body, i, compileEnv, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
+    return compileApplicationAtom(atom, i, rule, compileEnv, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
   }
 
   if (atom instanceof Assign)
   {
-    return compileAssignmentAtom(atom, compileEnv, rule, head, body, i, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
+    return compileAssignmentAtom(atom, i, rule, compileEnv, ptuples, null /*rcIncs*/, compileRuleGBFireBody);
   }
 
   throw new Error(body[i]);
@@ -1299,7 +1314,7 @@ function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
 
   const newTuples = new Set();
 
-  ${compileRuleGBFireBody(rule, rule.head, rule.body, 0, compileEnv, [])}
+  ${compileRuleGBFireBody(rule, 0, compileEnv, [])}
   
   ${profileEnd(`fireRule${rule._id}GB`)}
 
@@ -1518,8 +1533,8 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
       // atom ${i} ${atom} (edb) (non-aggregating)
       if (added_${pred}_tuples.length > 0)
       {
-        const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, added_${pred}_tuples);
-        MutableArrays.addAll(added_${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+        ${fireRuleInto(rule, i, `added_${pred}_tuples`, `Rule${rule._id}_tuples${i}`)}
+        ${addAllTuples(`added_${producesPred}_tuples`, `Rule${rule._id}_tuples${i}`)}
       }
     `];
     }
@@ -1531,8 +1546,8 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
     // atom ${i} ${atom} (edb)
     if (removed_${pred}_tuples.length > 0)
     {
-      const Rule${rule._id}_tuples${i} = fireRule${rule._id}(${i}, removed_${pred}_tuples); // TODO inefficient: does full scan in lrnu
-      MutableArrays.addAll(added_${producesPred}_tuples, Rule${rule._id}_tuples${i});  
+      ${fireRuleInto(rule, i, `removed_${pred}_tuples`, `Rule${rule._id}_tuples${i}`)} // TODO inefficient: does full scan in lrnu
+      ${addAllTuples(`added_${producesPred}_tuples`, `Rule${rule._id}_tuples${i}`)}  
     }
   `];
   }
@@ -1625,9 +1640,9 @@ function emitRecursiveRuleAtom(atom, i, recursivePreds, rule, producesPred)
     if (recursivePreds.has(pred))
     {
       return [`
-        const ${producesPred}_tuples_${rule._id}_${i} = fireRule${rule._id}(${i}, local_${pred}_tuples);
-        MutableArrays.addAll(new_${producesPred}_tuples, ${producesPred}_tuples_${rule._id}_${i});
-        MutableArrays.addAll(added_${producesPred}_tuples, ${producesPred}_tuples_${rule._id}_${i}); // not reqd for rdb
+        ${fireRuleInto(rule, i, `local_${pred}_tuples`, `${producesPred}_tuples_${rule._id}_${i}`)};
+        ${addAllTuples(`new_${producesPred}_tuples`, `${producesPred}_tuples_${rule._id}_${i}`)};
+        ${addAllTuples(`added_${producesPred}_tuples`, `${producesPred}_tuples_${rule._id}_${i}`)}; // not reqd for rdb
       `];  
     }
     else
@@ -1743,9 +1758,11 @@ function compileRuleHead(rule, compileEnv, ptuples)
   {
     return `
     // adding edb ${head}
-    //// TERM AIDS
+    
+    // term aids
     ${termAids.join('\n')}
-    //////////////
+    
+    // actual adding
     const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
     if (existing_${pred}_tuple === null)
     {
@@ -1763,9 +1780,10 @@ function compileRuleHead(rule, compileEnv, ptuples)
 
     return `
     // adding idb ${head}
-    //// TERM AIDS
+    // term aids
     ${termAids.join('\n')}
-    //////////////
+
+    // actual adding
     const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
     if (existing_${pred}_tuple === null)
     {
@@ -1915,7 +1933,9 @@ function stratumLogic(stratum)
     if (stratum.recursiveRules.size > 0)
     {
       sb.push(logDebug('"adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
-      const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], new Set(stratum.preds.map(pred => pred.name)));
+      const recursivePreds = new Set(stratum.preds.map(pred => pred.name))
+      sb.push(`// recursive preds: ${[...recursivePreds].join()}`);
+      const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], recursivePreds);
       sb.push(recursiveRules);
     }
 
@@ -2232,5 +2252,4 @@ ${publicFunction('profileResults')}()
   return main();
 
 } // end compile
-
 

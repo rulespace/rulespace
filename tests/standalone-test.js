@@ -9,7 +9,7 @@ const src = `
 
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
-//import('./compiled/standalone.mjs').then(module => {
+// import('./compiled/standalone.mjs').then(module => {
 
 module.addTuples(compileModuleTuples(module, `[Link 1 2] [Link 2 3]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
