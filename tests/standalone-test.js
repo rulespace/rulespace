@@ -2,16 +2,16 @@ import { compileModuleTuples, compileToModule, sanityCheck } from './test-common
 
 const src = `
 
-(rule [Reachable x y] [Link x y])
-(rule [Reachable x y] [Reachable x z] [Link z y])
+(rule [R] (not [I 1]) [I 2])
+;(rule [Fact 1])
 
   `;
 
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
-// import('./compiled/standalone.mjs').then(module => {
+//import('./compiled/standalone.mjs').then(module => {
 
-module.addTuples(compileModuleTuples(module, `[Link 1 2] [Link 2 3]`));
+module.addTuples(compileModuleTuples(module, `[I 2] [I 1]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 console.log("roots: " + [...module.rootTuples()].join('\n'));
 sanityCheck(module);

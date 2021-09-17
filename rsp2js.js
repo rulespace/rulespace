@@ -13,6 +13,8 @@ class RspJsCompilationError extends Error
   }
 }
 
+////////////
+
 function addAllTuples(targetArray, x)
 {
   return `MutableArrays.addAll(${targetArray}, ${x});`
@@ -24,22 +26,7 @@ function fireRuleInto(rule, deltaPos, deltaTuples, into)
   return `const ${into} = fireRule${rule._id}(${deltaPos}, ${deltaTuples})`
 }
 
-
-// class LineEmitter
-// {
-//   constructor()
-//   {
-//     this.lines = [];
-//   }
-//   add(line)
-//   {
-//     this.lines.push(line);
-//   }
-//   toString()
-//   {
-//     return this.lines.join('\n');
-//   }
-// }
+////////////
 
 let freshCounter = 0;
 function freshVariable(str) 
@@ -168,12 +155,11 @@ class RequiredBuiltInFuns
 }
 const requiredBuiltInFunDefs = new RequiredBuiltInFuns();
 
-export function rsp2js(rsp, options={})
+// TODO: move to analysis
+function cyclicNegations(analysis)
 {
-  const analysis = analyzeProgram(rsp);
+  const result = [];
   const strata = analysis.strata();
-  const preds = analysis.preds;
-
   for (const stratum of strata)
   {
     const stratumPreds = analysis.stratumPreds(stratum);
@@ -189,13 +175,29 @@ export function rsp2js(rsp, options={})
             const negatedPred = analysis.name2pred.get(posAtom.pred);
             if (stratumPreds.includes(negatedPred))
             {
-              throw new RspJsCompilationError(`unable to stratify program: cyclic negation of predicate ${negatedPred} in ${stratumRule}\n(stratum predicates: ${stratum.preds.join()})`);
+              // throw new RspJsCompilationError(`unable to stratify program: cyclic negation of predicate ${negatedPred} in ${stratumRule}\n(stratum predicates: ${stratum.preds.join()})`);
+              result.push({negatedPred, stratumRule, stratum});
             }
           }
         }  
       }
     }
   }
+  return result;
+}
+
+export function rsp2js(rsp, options={})
+{
+  const analysis = analyzeProgram(rsp);
+  const strata = analysis.strata();
+  const preds = analysis.preds;
+
+  const cns = cyclicNegations(analysis);
+  if (cns.length > 0)
+  {
+    throw new RspJsCompilationError(`unable to stratify program: cyclic negations: ${cns.map(cn => `\npredicate ${cn.negatedPred} in ${cn.stratumRule}\n(stratum predicates: ${cn.stratum.preds.join()})`)}`);
+  }
+
 
   const edbPreds = preds.filter(pred => pred.edb);
   const rules = analysis.program.rules;
@@ -683,7 +685,6 @@ function emitFunctorObject(functor)
   const tn = termNames(functor);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
-  const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
   const init = (functor.arity === 0 ? `let ${functor}_member = null` : `const ${functor}_members = new Map()`);
 
   let sb = `
@@ -791,103 +792,6 @@ class PredElementConstraint
 
 }
 
-function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
-{
-  const tuple = "tuple" + i;
-  ptuples.push(tuple);
-  const pred = atom.pred;
-  const constraints = [];
-  const bindings = new Map();
-
-  compilePositiveAtom(atom, [], compileEnv, bindings, constraints);
-
-  const postFilterBindings = [];
-  for (const [name, constraintValue] of bindings)
-  {
-    const varName = freshVariable(name);
-    compileEnv.set(name, varName);
-    postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
-  }
-
-  const conditions = constraints.map(compileConstraintFor(tuple));
-
-  const tupleSelection = conditions.length === 0
-    ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
-    : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
-
-  return `
-    // atom ${atom}
-    ${constraints.map(c => `/// ${c}`).join('\n    ')}
-    const tuples${i} = ${tupleSelection};
-    for (const ${tuple} of tuples${i})
-    {
-      ${postFilterBindings.join('\n          ')}
-      ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
-    }
-    `;
-}
-
-function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
-{
-  // bindings: name -> index
-  // bindings are things that are not yet named (in conditions)
-
-  // compileEnv is read-only
-
-  atom.terms.forEach((term, i) =>
-  {
-    if (term instanceof Var)
-    {
-      if (term.name !== '_')
-      {
-        if (compileEnv.has(term.name))
-        {
-          //conditions.push(`${target}.t${i} === ${compileEnv.get(term.name)}`);
-          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintVar(compileEnv.get(term.name))));
-        }
-        else if (bindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
-        {
-          // conditions.push(`${target}.t${i} === ${bindings.get(term.name)}`);
-          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), bindings.get(term.name)));
-        }
-        else
-        {
-          // not encountered before (locally, externally): bind
-          bindings.set(term.name, new ConstraintIndex([...target, i]));
-        }
-      }
-    }
-    else if (term instanceof Lit)
-    {
-      constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintConstant(term.value)));
-      //conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
-    }
-    else if (term instanceof Atom) // functor
-    {
-      constraints.push(new PredElementConstraint(new ConstraintIndex([...target, i]), new ConstraintPred(term.pred)));
-      //conditions.push(`${target}.t${i} instanceof ${term.pred}`);
-      compilePositiveAtom(term, [...target, i], compileEnv, bindings, constraints);
-    }
-    else
-    {
-      throw new Error(`cannot handle ${term} of type ${term.constructor.name} in ${atom}`);
-    }
-  })
-}
-
-
-function compileCreateFunctor(functor, env, termAids, rcIncs)
-{
-  const functorName = freshVariable("functor");
-  rcIncs.push(functorName);
-  const termExps = functor.terms;
-  termAids.push(`
-  // functor ${functor}
-  const ${functorName} = add_get_${functor.pred}(${termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')});
-  `);
-  return functorName;
-}
-
 function compileConstraintElement(el, tuple)
 {
   if (el instanceof ConstraintIndex)
@@ -936,6 +840,99 @@ function compileConstraintFor(tuple)
   };
 }
 
+function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
+{
+  // bindings: name -> index
+  // bindings are things that are not yet named (in conditions)
+  // compileEnv is read-only
+  atom.terms.forEach((term, i) =>
+  {
+    if (term instanceof Var)
+    {
+      if (term.name !== '_')
+      {
+        if (compileEnv.has(term.name))
+        {
+          //conditions.push(`${target}.t${i} === ${compileEnv.get(term.name)}`);
+          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintVar(compileEnv.get(term.name))));
+        }
+        else if (bindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
+        {
+          // conditions.push(`${target}.t${i} === ${bindings.get(term.name)}`);
+          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), bindings.get(term.name)));
+        }
+        else
+        {
+          // not encountered before (locally, externally): bind
+          bindings.set(term.name, new ConstraintIndex([...target, i]));
+        }
+      }
+    }
+    else if (term instanceof Lit)
+    {
+      constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintConstant(term.value)));
+      //conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
+    }
+    else if (term instanceof Atom) // functor
+    {
+      constraints.push(new PredElementConstraint(new ConstraintIndex([...target, i]), new ConstraintPred(term.pred)));
+      //conditions.push(`${target}.t${i} instanceof ${term.pred}`);
+      compilePositiveAtom(term, [...target, i], compileEnv, bindings, constraints);
+    }
+    else
+    {
+      throw new Error(`cannot handle ${term} of type ${term.constructor.name} in ${atom}`);
+    }
+  })
+}
+
+function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
+{
+  const tuple = "tuple" + i;
+  ptuples.push(tuple);
+  const pred = atom.pred;
+  const constraints = [];
+  const bindings = new Map();
+
+  compilePositiveAtom(atom, [], compileEnv, bindings, constraints);
+
+  const postFilterBindings = [];
+  for (const [name, constraintValue] of bindings)
+  {
+    const varName = freshVariable(name);
+    compileEnv.set(name, varName);
+    postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
+  }
+
+  const conditions = constraints.map(compileConstraintFor(tuple));
+
+  const tupleSelection = conditions.length === 0
+    ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
+    : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
+
+  return `
+    // atom ${atom}
+    ${constraints.map(c => `/// ${c}`).join('\n    ')}
+    const tuples${i} = ${tupleSelection};
+    for (const ${tuple} of tuples${i})
+    {
+      ${postFilterBindings.join('\n          ')}
+      ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
+    }
+    `;
+}
+
+function compileCreateFunctor(functor, env, termAids, rcIncs)
+{
+  const functorName = freshVariable("functor");
+  rcIncs.push(functorName);
+  const termExps = functor.terms;
+  termAids.push(`
+  // functor ${functor}
+  const ${functorName} = add_get_${functor.pred}(${termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')});
+  `);
+  return functorName;
+}
 
 function compileRuleFireBody(rule, i, compileEnv, ptuples, rcIncs)
 {
@@ -977,38 +974,39 @@ function compileRuleFireBody(rule, i, compileEnv, ptuples, rcIncs)
 
 function compileNegAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 {
-  const natom = atom.atom;
+  const posAtom = atom.atom; // the negated atom (which is positive)
   const tuple = "tuple" + i;
   ptuples.push('NOT_' + tuple);
-  const pred = natom.pred;
+  const pred = posAtom.pred;
   const getValues = [];
-  natom.terms.forEach((term, i) => {
+  posAtom.terms.forEach((term, i) => {
     if (term instanceof Var) {
-      if (compileEnv.has(term.name)) {
+      if (compileEnv.has(term.name))
+      {
         getValues.push(compileEnv.get(term.name));
       }
-
-      else {
+      else 
+      {
         throw new Error(`unbound variable ${term.name} in negation in ${rule}`);
       }
     }
-    else if (term instanceof Lit) {
+    else if (term instanceof Lit)
+    {
       getValues.push(`${termToString(term.value)}`);
     }
-
-    else {
+    else
+    {
       throw new Error();
     }
   });
 
   return `
   // atom ${atom} (conditions)
-  if (get_${pred}(${getValues.join(', ')}) !== null)
+  if (get_${pred}(${getValues.join(', ')}) === null)
   {
-    continue;
+    const NOT_${tuple} = add_get_NOT_${pred}(${posAtom.terms.map(t => compileEnv.get(t.name)).join(', ')});
+    ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
   }
-  const NOT_${tuple} = add_get_NOT_${pred}(${natom.terms.map(t => compileEnv.get(t.name)).join(', ')});
-  ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
   `;
 }
 

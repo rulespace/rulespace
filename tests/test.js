@@ -409,6 +409,9 @@ testAdd(`(rule [X] [I "def"])`, `[I "def"]`, `[X]`);
 testAdd(`(rule [X] [I])`, `[I]`, `[X]`);
 testAdd(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 
+// negation
+// test(`(rule [R] (not [I 1]))`, `[I 2]`, `[R]`);
+
 // functors
 testAdd(`(rule [R [X x]] [I x])`, `[I 123]`, `[R [X 123]]`);
 testAdd(`(rule [R [X [Y y]]] [I y])`, `[I 123]`, `[R [X [Y 123]]]`);
@@ -468,7 +471,6 @@ test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2
 test(`(rule [F (lambda () 123)]) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
 test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
 
-
 // funny chars
 testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
 
@@ -482,12 +484,14 @@ testAdd(`(rule [Yes x] [A x]) (rule [No x] [B x] (not [A x]))`, ``, ``);
 test(`(rule [X 1]) (rule [X 2])`, `[X 1] [X 2]`);
 
 // bug (parser): parser confused by '-' before ']' (resulted in NaN)
-// test(`(rule [G "+" +]) (rule [G "-" -]) (rule [R x] [G _ proc] (:= x (proc 3 4 5)))`, `[G ...] [G ...] [R 12] [R -6]`); toString() of proc gives trouble (how to test/stabilize this?)
+test(`(rule [G "+" +]) (rule [G "-" -]) (rule [R x] [G _ proc] (:= x (proc 3 4 5)))`, `[G "+" _] [G "-" _] [R 12] [R -6]`);
 
+// bug: negation first in body cased  a 'continue' being emitted outside iteration
+test(`(rule [No] (not [A]))`, ``, ``);
 
 // === AnalysisErrors
 
-// AnalysisError: predicate Root is already declared as fynction symbol
+// AnalysisError: predicate Root is already declared as function symbol
 testError(`(rule [Lookup x [Root k]] [J x k]) (rule [Root a] [I a b])`, ``, 'AnalysisError');
 
 // AnalysisError: function symbol Root is already declared as predicate
@@ -495,12 +499,6 @@ testError(`(rule [Root a] [I a b]) (rule [Lookup x [Root k]] [J x k])`, ``, 'Ana
 
 // TODO: (strategy for) reserved js words
 //testInitialSolve(`(rule [if a b] [let a b] [while a b] [for a b] [const a b])`, ``);
-
-// TODO: when no terms, negation can appear first in body, meaning it's not in a for-loop (no indexing yet!),
-// resulting in a 'continue' being emitted that is outside iteration
-// this is really an edge case
-// testInitialSolve(`(rule [No] (not [A]))`, ``, ``);
-
 
 // === RspJsCompilationErrors
 
