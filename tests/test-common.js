@@ -233,8 +233,8 @@ export function sanityCheck(module)
   if (!sameTuples)
   {
     console.log(`
-    member tuples : ${[...tuples].join(', ')}
-    root tuples   : ${[...rtuples].join(', ')}
+    member tuples   : ${[...tuples].join(', ')}
+    reachable tuples: ${[...rtuples].join(', ')}
     `);
   }
   assertTrue(sameTuples);

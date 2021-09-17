@@ -180,7 +180,7 @@ function test(src, expectedTuplesSrc)
   const expectedAtoms = compileAtoms(expectedTuplesSrc);
 
   const module = ctr();
-  sanityCheck(module);
+  //sanityCheck(module);
 
   const moduleAtoms = [...module.tuples()].map(mtupleToAtom);
   if (!equalAtoms(moduleAtoms, expectedAtoms))
@@ -218,13 +218,13 @@ function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
   for (const p of permutations(edbAtoms))
   {
     const module = ctr();
-    sanityCheck(module);
+    // sanityCheck(module);
     const initialTuples = [...module.tuples()]; // only facts + computed idbs  
 
 
     const edbTuples = p.map(atom => atomToFreshModuleTuple(module, atom));
     const delta = module.addTuples(edbTuples);
-    sanityCheck(module);
+    // sanityCheck(module);
     // if (!equalTuples(module.edbTuples(), edbTuples)) // TODO we don't check whether tuples actually are sets (should not contain dupes)
     // {
     //   console.error("expected edb tuples: " + edbTuples.join());
@@ -410,7 +410,16 @@ testAdd(`(rule [X] [I])`, `[I]`, `[X]`);
 testAdd(`(rule [X a b] [I _ _ a _ _ b _ ])`, `[I 0 1 2 3 4 5 6]`, `[X 2 5]`);
 
 // negation
-// test(`(rule [R] (not [I 1]))`, `[I 2]`, `[R]`);
+test(`(rule [R] (not [I 1])) (rule [I 1])`, `[I 1]`);
+test(`(rule [R] (not [I 1])) (rule [I 2])`, `[R] [I 2]`);
+test(`(rule [R] (not [I 1]) [I 2]) (rule [I 2])`, `[R] [I 2]`);
+test(`(rule [R] (not [I 1]) [I 2]) (rule [I 1])`, `[I 1]`);
+test(`(rule [R] (not [I 1]) [I 2]) (rule [I 1]) (rule [I 2])`, `[I 1] [I 2]`);
+testAdd(`(rule [R] (not [I 1]))`, `[I 1]`, ``);
+testAdd(`(rule [R] (not [I 1]))`, `[I 2]`, `[R]`);
+testAdd(`(rule [R] (not [I 1]) [I 2])`, `[I 2]`, `[R]`);
+testAdd(`(rule [R] (not [I 1]) [I 2])`, `[I 1]`, ``);
+testAdd(`(rule [R] (not [I 1]) [I 2])`, `[I 1] [I 2]`, ``);
 
 // functors
 testAdd(`(rule [R [X x]] [I x])`, `[I 123]`, `[R [X 123]]`);
@@ -486,8 +495,9 @@ test(`(rule [X 1]) (rule [X 2])`, `[X 1] [X 2]`);
 // bug (parser): parser confused by '-' before ']' (resulted in NaN)
 test(`(rule [G "+" +]) (rule [G "-" -]) (rule [R x] [G _ proc] (:= x (proc 3 4 5)))`, `[G "+" _] [G "-" _] [R 12] [R -6]`);
 
-// bug: negation first in body cased  a 'continue' being emitted outside iteration
-test(`(rule [No] (not [A]))`, ``, ``);
+// bug: negation first in body caused a 'continue' being emitted outside iteration
+// bug: negation of 0-arity predicate caused wrong member emit (NOT_pred not following pred)
+test(`(rule [No] (not [A]))`, `[No]`);
 
 // === AnalysisErrors
 

@@ -2,8 +2,7 @@ import { compileModuleTuples, compileToModule, sanityCheck } from './test-common
 
 const src = `
 
-(rule [R] (not [I 1]) [I 2])
-;(rule [Fact 1])
+(rule [R] (not [I 1]))
 
   `;
 
@@ -11,10 +10,10 @@ const src = `
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
 
-module.addTuples(compileModuleTuples(module, `[I 2] [I 1]`));
+module.addTuples(compileModuleTuples(module, `[I 1]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 console.log("roots: " + [...module.rootTuples()].join('\n'));
-sanityCheck(module);
+sanityCheck(module); // reachableTuples is not always equal to members
 
 // console.log("\n\n\n");
 // module.removeTuples(compileModuleTuples(module, `[Link "a" "b"]`).map(t => t.get())); 

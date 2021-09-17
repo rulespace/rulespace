@@ -327,19 +327,27 @@ export function rsp2js(rsp, options={})
         }
       }
     }
+    // (1) even without initial facts, certain rules must be triggered, e.g. (rule [R] (not [Some-Edb]))
+    // if there is no (remove) delta on Some-Edb, then R will not be added
+    // therefore, strategy: treat all initial (facts+derived) tuples as delta additions and fire
+    // all rules once without specific deltas
+    // Note that the example rule is an edge case: only when the NegAtom does not contain variables,
+    // then you can have the situation that you need to add idb tuples without being triggered by edb additions.
+    // (2) the reason that computeInitialAdd takes the initial facts, is because (only!) when there are no tuples,
+    // computeInitialAdd can also be used when initially adding facts externally (i.e., through computeDelta)
+    // (3) although (1) is an edge case, it may still prove to be more optimal (faster) to have add-only logic
     sb.push(`
-    if (facts.size > 0)
-    {
-      ${logDebug('"computing idb tuples due to addition of fact edbs"')}; 
-      addTupleMap(facts);
-    }
+    ${logDebug('"computing initial idb tuples due to addition of fact edbs"')}; 
+    computeInitialAdd(facts);
     `)
 
     ////////////////
 
 
-    const pred2getters = preds.map(pred => `['${pred}', get_${pred}]`);
-    sb.push(`const pred2getter = new Map([${pred2getters.join()}])`);
+    // const pred2getters = preds.map(pred => `['${pred}', get_${pred}]`);
+    // sb.push(`const pred2getter = new Map([${pred2getters.join()}])`);
+
+    sb.push(emitComputeInitialAdd(strata, preds));
 
     sb.push(emitComputeDelta(strata, preds));
     sb.push(emitRemoveTuples(strata));
@@ -555,7 +563,7 @@ function remove_${pred}(${tn.join(', ')})
     `];
     if (arity === 0)
     {
-      sb.push(`${pred}_member === null;`);
+      sb.push(`${pred}_member = null;`);
     }
     else
     {
@@ -658,7 +666,7 @@ ${emitSelect(`${pred}`, pred.arity)}
   if (pred.negAppearsIn.size > 0)
   {
     sb += `
-const NOT_${pred}_members = new Map();
+${pred.arity === 0 ? `let NOT_${pred}_member = null` : `const NOT_${pred}_members = new Map()`}
 function NOT_${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}  
@@ -1004,7 +1012,7 @@ function compileNegAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
   // atom ${atom} (conditions)
   if (get_${pred}(${getValues.join(', ')}) === null)
   {
-    const NOT_${tuple} = add_get_NOT_${pred}(${posAtom.terms.map(t => compileEnv.get(t.name)).join(', ')});
+    const NOT_${tuple} = add_get_NOT_${pred}(${getValues.join(', ')});
     ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
   }
   `;
@@ -1552,6 +1560,129 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
   return [];
 }
 
+///////////// 
+
+function emitComputeInitialAdd(strata, preds) 
+{
+  const deltaAddedTuplesEntries = preds.map(pred => `[${pred}, added_${pred}_tuples]`);
+
+  return `
+function computeInitialAdd(addTuples)
+{
+  const addedTuplesMap = new Map(addTuples);
+  ${logDebug('"=== computeInitialAdd"')}
+  ${logDebug('"addedTupleMap " + [...addedTuplesMap.values()]')}
+
+  ${strata.map(stratumInitialAddLogic).join('\n')}
+  
+  ${logDebug('"=== done computeInitialAdd"')}
+  return {
+    added() {return new Map([${[...deltaAddedTuplesEntries]}])},
+    removed() {return new Map()}
+    }
+} // computeInitialAdd
+`;
+}
+
+function stratumInitialAddLogic(stratum)
+{
+  const globalEdbStratum = analysis.stratumIsEdb(stratum);
+
+  const sb = [`
+    ${logDebug(`"=== stratum ${stratum}"`)}
+    // stratum ${stratum.id} ${globalEdbStratum ? `(global edb)` : `(global idb)`}
+    // preds: ${stratum.preds.join(', ')}
+    // non-recursive rules: ${[...stratum.nonRecursiveRules].map(rule => "Rule" + rule._id)}
+    // recursive rules: ${[...stratum.recursiveRules].map(rule => "Rule" + rule._id)}  
+    `];
+
+
+  if (globalEdbStratum)
+  {
+    for (const pred of stratum.preds)
+    {
+      assertTrue(pred.edb);
+      // sb.push(emitDeltaRemoveTuple(pred));
+      // if (pred.negAppearsIn.size > 0)
+      // {
+      //   sb.push(emitDeltaRemoveNOTTuple(pred));
+      // }
+
+      sb.push(`
+
+      // adding initial ${pred} tuples
+      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) || []);
+      `);  
+    }      
+  }
+  else // global idb stratum
+  {
+    if (analysis.stratumHasRecursiveRule(stratum)) // TODO: this conditional only checks assumptions, keep?
+    {
+      sb.push(`// stratum has recursive rules`);
+      if (!stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)))
+      {
+        stratum.preds.forEach(pred =>
+        {
+          console.log(`${pred} has recursive rule: ${analysis.predHasRecursiveRule(pred)}`);
+        })
+      }
+      assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));
+    }
+    else // single-pred non-recursive stratum
+    {
+      sb.push(`// single-pred non-recursive stratum`);
+      assertTrue(stratum.preds.length === 1);
+    }
+     
+    for (const pred of stratum.preds)
+    {
+      // sb.push(`const added_${pred}_tuples = [];`);// not sufficient when you have facts for recursive idb preds
+      sb.push(`const added_${pred}_tuples = addedTuplesMap.get(${pred})?.slice(0) ?? [];`); // `slice` for copying (need to keep original facts) TODO optimize by emitting only `[]` when no fact rules exist
+
+      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all non-recursive rules"')); 
+      for (const rule of pred.rules) // TODO: check this: also fires rec rules (once)
+      {
+        if (rule.aggregates())
+        {
+          sb.push(emitDeltaEdbForAggregatingRule(rule, stratum)); // TODO: wrong !!!
+        }
+        else
+        {
+          // fire the rule with all available tuples (all tuples being added)
+          // all tuples are considered delta and therefore rule is fired once, with only delta tuples
+          // therefore, specific deltaPos and deltaTuples not required
+          const producesPred = rule.head.pred;
+          sb.push(`
+            /* Rule${rule._id} (non-aggregating)
+        ${rule}
+            */
+          ${fireRuleInto(rule, -1, `[]`, `${producesPred}_tuples_${rule._id}`)};
+          ${addAllTuples(`added_${producesPred}_tuples`, `${producesPred}_tuples_${rule._id}`)}; // not reqd for rdb
+        `);
+        }
+      }
+    }
+  
+    if (stratum.recursiveRules.size > 0)
+    {
+      sb.push(logDebug('"adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
+      const recursivePreds = new Set(stratum.preds.map(pred => pred.name))
+      sb.push(`// recursive preds: ${[...recursivePreds].join()}`);
+      // here we can use emitRecursiveRules (also used for deltas),
+      // because there will be no negation involved
+      const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], recursivePreds);
+      sb.push(recursiveRules);
+    }    
+  }
+
+  return sb.join('\n');
+}
+
+///////////// 
+
+
+
 function emitDeltaEdbForRule(rule, stratum)
 {
   const producesPred = rule.head.pred;
@@ -1805,7 +1936,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
   }  
 }
 
-function stratumLogic(stratum)
+function stratumDeltaLogic(stratum)
 {
   const globalEdbStratum = analysis.stratumIsEdb(stratum);
 
@@ -1824,10 +1955,6 @@ function stratumLogic(stratum)
     {
       assertTrue(pred.edb);
       sb.push(emitDeltaRemoveTuple(pred));
-      if (pred.negAppearsIn.size > 0)
-      {
-        sb.push(emitDeltaRemoveNOTTuple(pred));
-      }
 
       sb.push(`
 
@@ -1840,7 +1967,26 @@ function stratumLogic(stratum)
       
       // adding ${pred} tuples because of user delta
       const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) || []);
-      `);  
+      `);
+      
+      if (pred.negAppearsIn.size > 0)
+      {
+        // TODO also happens in global idb stratum (cloned)
+        sb.push(emitDeltaRemoveNOTTuple(pred));
+        const tn = termNames2(pred.arity);
+        const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);    
+        sb.push(`
+          ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
+          for (const added_${pred}_tuple of added_${pred}_tuples)
+          {
+            const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
+            if (NOT_${pred}_tuple !== null)
+            {
+              deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
+            }
+          }
+        `);
+      }      
     }      
   }
   else // global idb stratum
@@ -2033,6 +2179,7 @@ function emitDeltaRemoveNOTTuple(pred)
   }`;
 }
 
+
 function emitComputeDelta(strata, preds) 
 {
   const deltaAddedTuplesEntries = preds.map(pred => `[${pred}, added_${pred}_tuples]`);
@@ -2043,6 +2190,7 @@ function computeDelta(addTuples, remTuples)
 {
   const addedTuplesMap = new Map(addTuples);
   const removedTuplesMap = new Map(remTuples);
+  ${logDebug('"=== computeDelta"')}
   ${logDebug('"addedTupleMap " + [...addedTuplesMap.values()]')}
   ${logDebug('"removedTupleMap " + [...removedTuplesMap.values()]')}
 
@@ -2058,9 +2206,9 @@ function computeDelta(addTuples, remTuples)
   }
 
 
-  ${strata.map(stratumLogic).join('\n')}
+  ${strata.map(stratumDeltaLogic).join('\n')}
   
-  ${logDebug('"=== done"')}
+  ${logDebug('"=== done computeDelta"')}
   return {
     added() {return new Map([${[...deltaAddedTuplesEntries]}])},
     removed() {return new Map([${[...deltaRemovedTuplesEntries]}])}
@@ -2068,6 +2216,7 @@ function computeDelta(addTuples, remTuples)
 } // computeDelta
 `;
 }
+
 
 function emitRemoveTuples(strata)
 {
