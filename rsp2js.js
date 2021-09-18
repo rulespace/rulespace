@@ -373,60 +373,6 @@ export function rsp2js(rsp, options={})
     return sb.join('\n');
   } // main
 
-
-  // TODO this is the 'generic' tuples-as-map version (TODO fold emitAddGet into this, don't forget debugLog)
-  function emitAddGet2(name, rootMapName, numFields, newEntry = `new ${name}`)
-  {
-    const tn = termNames2(numFields);
-    const sb = [`
-function addGet${name}(${tn.join(', ')})
-{
-    `];
-
-
-    if (numFields === 0)
-    {
-      sb.push(`
-        if (${rootMapName} === null)
-        {
-          ${rootMapName} = ${newEntry}();
-          ${logDebug(`\`addGet added ${name}() to members\``)}
-        }
-        return ${rootMapName};
-        `);
-    }
-    else
-    {
-      function emitEntry(i)
-      {
-        if (i === numFields)
-        {
-          return `entry`;
-        }
-        return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
-      }
-  
-      const maps = [rootMapName].concat(Array.from(Array(numFields), (_, i) => "l" + i));
-
-      for (let i = 0; i < numFields; i++)
-      {
-        sb.push(`
-        const ${maps[i+1]} = ${maps[i]}.get(t${i});
-        if (${maps[i+1]} === undefined)
-        {
-          const entry = ${newEntry}(${tn.join(', ')});
-          ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
-          return entry;
-        }
-        `)
-      }
-      sb.push(`return ${maps[numFields]};`);
-    }
-    sb.push(`}`);
-    return sb.join('\n');
-  }
-
-
 class RelationEmitter
 {
   constructor()
@@ -484,7 +430,7 @@ function add_get_${pred}(${tn.join(', ')})
     }
     else
     {
-      sb.push(relationEmitter.addGet_(pred, arity));
+      sb.push(this.addGet_(pred, arity));
     }
     sb.push(`}`);
     return sb.join('\n');
@@ -503,7 +449,7 @@ function remove_${pred}(${tn.join(', ')})
     }
     else
     {
-      sb.push(relationEmitter.remove_(pred, arity));
+      sb.push(this.remove_(pred, arity));
     }
     sb.push(logDebug(`\`removed ${pred}(${tn.map(t => `\${${t}}`)}) from members\``));
     sb.push(`}`);
@@ -701,8 +647,8 @@ class NestedMaps extends RelationEmitter
   }
 }
 
-//const relationEmitter = new NestedMaps();
 const relationEmitter = new SimpleArray();
+const productEmitter = new NestedMaps();
 
 function emitTupleObject(pred)
 {
@@ -712,8 +658,8 @@ function emitTupleObject(pred)
   const termFields = tn.map(t => `this.${t}`);
   
   let sb = `
-${relationEmitter.initialize(pred, arity)}
-${publicFunction(pred)}(${tn.join(', ')})
+
+  ${publicFunction(pred)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
   this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
@@ -729,7 +675,7 @@ ${pred}.prototype.get = function () { // also internally used
 ${pred}.prototype._remove = function () {
   remove_${pred}(${termFields.join(', ')});
 };
-
+${relationEmitter.initialize(pred, arity)}
 ${relationEmitter.get(`${pred}`, arity)}
 ${relationEmitter.addGet(`${pred}`, arity)}
 ${relationEmitter.remove(`${pred}`, arity)}
@@ -741,7 +687,6 @@ ${relationEmitter.select(`${pred}`, arity)}
   if (pred.negAppearsIn.size > 0)
   {
     sb += `
-${relationEmitter.initialize(`NOT_${pred}`, arity)}
 function NOT_${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}  
@@ -752,8 +697,7 @@ NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${te
 NOT_${pred}.prototype._remove = function () {
   remove_NOT_${pred}(${termFields.join(', ')});
 };
-
-
+${relationEmitter.initialize(`NOT_${pred}`, arity)}
 ${relationEmitter.get(`NOT_${pred}`, arity)}
 ${relationEmitter.addGet(`NOT_${pred}`, arity)}
 ${relationEmitter.remove(`NOT_${pred}`, arity)}
@@ -771,7 +715,6 @@ function emitFunctorObject(functor)
   const termFields = tn.map(t => `this.${t}`);
 
   let sb = `
-${relationEmitter.initialize(`${functor}`, arity)};
 ${publicFunction(functor)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
@@ -785,7 +728,7 @@ ${functor}.prototype.values = function () {return [${termFields}]};
 ${functor}.prototype._remove = function () {
   remove_${functor}(${termFields.join(', ')});
 };
-
+${relationEmitter.initialize(`${functor}`, arity)};
 ${relationEmitter.get(`${functor}`, arity)}
 ${relationEmitter.addGet(`${functor}`, arity)}
 ${relationEmitter.remove(`${functor}`, arity)}
@@ -1180,9 +1123,9 @@ class Rule${rule._id}Product
     return "r${rule._id}:" + this.tuples().join('.');
   }
 }
-
-const Rule${rule._id}Products = new Map();
-${emitAddGet2(`Rule${rule._id}Product`, `Rule${rule._id}Products`, tupleArity)}
+${productEmitter.initialize(`Rule${rule._id}Product`, tupleArity)}
+${productEmitter.get(`Rule${rule._id}Product`, tupleArity)}
+${productEmitter.addGet(`Rule${rule._id}Product`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
@@ -1218,7 +1161,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     const t2ps = ptuples.map(tuple => `${tuple}._outproductsgb.add(productGB);`);
     return `
       // updates for ${head}
-      const productGB = addGetRule${rule._id}ProductGB(${ptuples.join()});
+      const productGB = add_get_Rule${rule._id}ProductGB(${ptuples.join()});
       const groupby = add_get_Rule${rule._id}GB(${gb.map(t => compileEnv.get(t.name)).join()});
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
@@ -1320,11 +1263,10 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
 function emitRuleGB(rule)
 {
   const tupleArity = rule.tupleArity();
-  const tupleParams = Array.from({length:tupleArity}, (_, i) => `tuple${i}`);
-  const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
+  const tupleParams = Array.from({length:tupleArity}, (_, i) => `t${i}`);
+  const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp}; // tuple`);
   const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
 
-  const pred = rule.head.pred;
   const compileEnv = new Map();
 
   const numGbTerms = rule.head.terms.length - 1;
@@ -1358,10 +1300,9 @@ class Rule${rule._id}GB
     return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"}));
   }
 }
-
-${relationEmitter.initialize(`Rule${rule._id}GB`,numGbTerms)}
-${relationEmitter.get(`Rule${rule._id}GB`, numGbTerms)}
-${relationEmitter.addGet(`Rule${rule._id}GB`, numGbTerms)}
+${productEmitter.initialize(`Rule${rule._id}GB`,numGbTerms)}
+${productEmitter.get(`Rule${rule._id}GB`, numGbTerms)}
+${productEmitter.addGet(`Rule${rule._id}GB`, numGbTerms)}
 
 class Rule${rule._id}ProductGB
 {
@@ -1382,9 +1323,9 @@ class Rule${rule._id}ProductGB
     return "r${rule._id}:" + this.tuples().join('.');
   }
 }
-
-const Rule${rule._id}ProductGBs = new Map();
-${emitAddGet2(`Rule${rule._id}ProductGB`, `Rule${rule._id}ProductGBs`, tupleArity)}
+${productEmitter.initialize(`Rule${rule._id}ProductGB`, tupleArity)}
+${productEmitter.get(`Rule${rule._id}ProductGB`, tupleArity)}
+${productEmitter.addGet(`Rule${rule._id}ProductGB`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
@@ -1498,8 +1439,6 @@ function compileLambda(lam, env) // TODO rcIncs and termAids: closure = allocate
   {
     name = freshVariable("lambda");
     syntacticLambdas.set(lam, name); 
-    lambdas.add(closureVars.length === 0 ? `let ${name}_members = null;` : `const ${name}_members = new Map();`); // TODO: this is not good: fold init into emitter thingie
-
     const extendedEnv = new Map(env);
     for (const param of lam.params)
     {
@@ -1508,7 +1447,7 @@ function compileLambda(lam, env) // TODO rcIncs and termAids: closure = allocate
 
     lambdas.add(`
 // ${lam}    
-function compiled_${name}(${closureCompiledVars.join(', ')})
+function ${name}(${closureCompiledVars.join(', ')})
 {
   return function(${lam.params.map(param => extendedEnv.get(param.name)).join(', ')})
   {
@@ -1516,9 +1455,11 @@ function compiled_${name}(${closureCompiledVars.join(', ')})
   }
 }
     `);
-    lambdas.add(emitAddGet2(name, `${name}_members`, closureVars.length, `compiled_${name}`));
+    lambdas.add(relationEmitter.initialize(name, closureVars.length));
+    lambdas.add(relationEmitter.get(name, closureVars.length));   
+    lambdas.add(relationEmitter.addGet(name, closureVars.length));   
   }
-  return `addGet${name}(${closureCompiledVars.join(', ')})`;
+  return `add_get_${name}(${closureCompiledVars.join(', ')})`;
 }
 
 function compileApplication(app, env)
@@ -1993,7 +1934,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
     {
       const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
       newTuples.add(new_${pred}_tuple);
-      const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
+      const product = add_get_Rule${rule._id}Product(${ptuples.join(', ')});
       ${t2ps.join('\n        ')}
       product._outtuple = new_${pred}_tuple;
       new_${pred}_tuple._inproducts.add(product);
@@ -2002,7 +1943,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
     }
     else if (${noRecursionConditions.join(' && ')}) // remove direct recursion in product
     {
-      const product = addGetRule${rule._id}Product(${ptuples.join(', ')});
+      const product = add_get_Rule${rule._id}Product(${ptuples.join(', ')});
       ${t2ps.join('\n        ')}
       product._outtuple = existing_${pred}_tuple;
       existing_${pred}_tuple._inproducts.add(product);
