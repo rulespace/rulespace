@@ -373,54 +373,6 @@ export function rsp2js(rsp, options={})
     return sb.join('\n');
   } // main
 
-  function emitAddGetExternal(pred, arity)
-  {
-    const tn = termNames2(arity);
-    const sb = [`
-function add_get_external_${pred}(tuple)
-{
-    `];
-
-    if (arity === 0)
-    {
-      sb.push(`
-        if (${pred}_member === null)
-        {
-          ${pred}_member = tuple;
-          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
-        }
-        return ${pred}_member;
-        `);
-    }
-    else
-    {
-      function emitEntry(i)
-      {
-        if (i === arity)
-        {
-          return `tuple`;
-        }
-        return `new Map([[tuple.t${i}, ${emitEntry(i+1)}]])`;
-      }
-  
-      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
-      for (let i = 0; i < arity; i++)
-      {
-        sb.push(`
-        const ${maps[i+1]} = ${maps[i]}.get(tuple.t${i});
-        if (${maps[i+1]} === undefined)
-        {
-          ${maps[i]}.set(tuple.t${i}, ${emitEntry(i+1)});
-          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${tuple.${t}}`)}) to members\``)}
-          return tuple;
-        }
-        `)
-      }
-      sb.push(`return ${maps[arity]};`)  
-    }
-    sb.push(`}`);
-    return sb.join('\n');
-  }
 
   // TODO this is the 'generic' tuples-as-map version (TODO fold emitAddGet into this, don't forget debugLog)
   function emitAddGet2(name, rootMapName, numFields, newEntry = `new ${name}`)
@@ -590,6 +542,57 @@ class SimpleArray extends RelationEmitter
   {
     return `[]`;
   }
+
+  get_(pred, arity)
+  {
+    return `
+      for (let i = 0; i < ${pred}_members.length; i++)
+      {
+        const item = ${pred}_members[i];
+        if (${Arrays.range(arity).map(i => `t${i} === item.t${i}`).join(' && ')})
+        {
+          return item;
+        }
+      }
+      return null;
+    `;
+  }
+
+  addGet_(pred, arity)
+  {
+    return `
+      const item = get_${pred}(${termNames2(arity)});
+      if (item === null)
+      {
+        const newItem = new ${pred}(${termNames2(arity)});
+        ${pred}_members.push(newItem);
+        return newItem
+      }
+      return item;
+    `;
+  }
+
+  remove_(pred, arity)
+  {
+    return `
+      for (let i = 0; i < ${pred}_members.length; i++)
+      {
+        const item = ${pred}_members[i];
+        if (${Arrays.range(arity).map(i => `t${i} === item.t${i}`).join(' && ')})
+        {
+          ${pred}_members.splice(i, 1);
+          return;
+        }
+      }
+  `;
+  }
+
+  select_(pred, arity)
+  {
+    return `
+      return ${pred}_members;
+    `;
+  }
 }
 
 class NestedMaps extends RelationEmitter
@@ -698,7 +701,8 @@ class NestedMaps extends RelationEmitter
   }
 }
 
-const relationEmitter = new NestedMaps();
+//const relationEmitter = new NestedMaps();
+const relationEmitter = new SimpleArray();
 
 function emitTupleObject(pred)
 {
@@ -737,7 +741,7 @@ ${relationEmitter.select(`${pred}`, arity)}
   if (pred.negAppearsIn.size > 0)
   {
     sb += `
-${pred.arity === 0 ? `let NOT_${pred}_member = null` : `const NOT_${pred}_members = new Map()`}
+${relationEmitter.initialize(`NOT_${pred}`, arity)}
 function NOT_${pred}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}  
@@ -1355,7 +1359,8 @@ class Rule${rule._id}GB
   }
 }
 
-const Rule${rule._id}GB_members = new Map();
+${relationEmitter.initialize(`Rule${rule._id}GB`,numGbTerms)}
+${relationEmitter.get(`Rule${rule._id}GB`, numGbTerms)}
 ${relationEmitter.addGet(`Rule${rule._id}GB`, numGbTerms)}
 
 class Rule${rule._id}ProductGB
@@ -1922,17 +1927,16 @@ function termToString(x)
 function emitDeltaAddTuple(pred)
 {
   const tn = termNames(pred);
-  const termProperties = Array.from(Array(pred.arity), (_, i) => `proposed.t${i+1}`);
+  const termProperties = Array.from(Arrays.range(pred.arity)).map(i => `proposed.t${i}`);
   return `
 
-${emitAddGetExternal(pred, pred.arity)}
 function delta_add_${pred}_tuples(proposedEdbTuples)
 {
   const ${pred}_tuples = [];
   for (const proposed of proposedEdbTuples)
   {
-    const actual = add_get_external_${pred}(proposed);
-    if (actual === proposed) // freshly added
+    const actual = add_get_${pred}(${termProperties.join(', ')});
+    if (actual !== proposed)
     {
       ${pred}_tuples.push(actual);
     }
