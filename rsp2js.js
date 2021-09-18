@@ -350,7 +350,7 @@ export function rsp2js(rsp, options={})
     sb.push(emitComputeInitialAdd(strata, preds));
 
     sb.push(emitComputeDelta(strata, preds));
-    sb.push(emitRemoveTuples(strata));
+    sb.push(emitIsGrounded(strata));
 
     
     sb.push(emitIterators(preds, edbPreds, rules));
@@ -1936,6 +1936,26 @@ function compileRuleHead(rule, compileEnv, ptuples)
   }  
 }
 
+function emitRemoveIdbDueToAddition(pred)
+{
+  const sb = [];
+  sb.push(emitDeltaRemoveNOTTuple(pred));
+  const tn = termNames2(pred.arity);
+  const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);    
+  sb.push(`
+  ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
+  for (const added_${pred}_tuple of added_${pred}_tuples)
+  {
+    const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
+    if (NOT_${pred}_tuple !== null)
+    {
+      deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
+    }
+  }
+  `);
+  return sb.join('\n');
+}
+
 function stratumDeltaLogic(stratum)
 {
   const globalEdbStratum = analysis.stratumIsEdb(stratum);
@@ -1948,62 +1968,40 @@ function stratumDeltaLogic(stratum)
     // recursive rules: ${[...stratum.recursiveRules].map(rule => "Rule" + rule._id)}  
     `];
 
+  
+  for (const pred of stratum.preds)
+  {
+    sb.push(emitDeltaRemoveTuple(pred));
+  }
 
   if (globalEdbStratum)
   {
     for (const pred of stratum.preds)
     {
       assertTrue(pred.edb);
-      sb.push(emitDeltaRemoveTuple(pred));
-
       sb.push(`
-
       // removing ${pred} tuples because of user delta
       const ${pred}_tuples_to_be_removed = (removedTuplesMap.get(${pred}) || []);
       for (const ${pred}_tuple of ${pred}_tuples_to_be_removed)
       {
         deltaRemove_${pred}(${pred}_tuple);
       }
-      
       // adding ${pred} tuples because of user delta
       const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) || []);
       `);
-      
-      if (pred.negAppearsIn.size > 0)
-      {
-        // TODO also happens in global idb stratum (cloned)
-        sb.push(emitDeltaRemoveNOTTuple(pred));
-        const tn = termNames2(pred.arity);
-        const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);    
-        sb.push(`
-          ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
-          for (const added_${pred}_tuple of added_${pred}_tuples)
-          {
-            const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
-            if (NOT_${pred}_tuple !== null)
-            {
-              deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
-            }
-          }
-        `);
-      }      
     }      
   }
   else // global idb stratum
   {
+    for (const pred of stratum.preds)
+    {
+      assertTrue(!pred.stratumIsEdb);      
+    }
 
     if (analysis.stratumHasRecursiveRule(stratum))
     {
-      sb.push(`// stratum has recursive rules`);
-      if (!stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)))
-      {
-        stratum.preds.forEach(pred =>
-        {
-          console.log(`${pred} has recursive rule: ${analysis.predHasRecursiveRule(pred)}`);
-        })
-      }
-      
       assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));
+      sb.push(`// stratum has recursive rules`);
 
       if (stratum.preds.length > 1)
       {
@@ -2081,31 +2079,15 @@ function stratumDeltaLogic(stratum)
       sb.push(`// recursive preds: ${[...recursivePreds].join()}`);
       const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], recursivePreds);
       sb.push(recursiveRules);
-    }
+    }    
+  }
 
-    for (const pred of stratum.preds)
+  for (const pred of stratum.preds)
+  {
+    if (pred.negAppearsIn.size > 0)
     {
-      sb.push(emitDeltaRemoveTuple(pred));
-      if (pred.negAppearsIn.size > 0)
-      {
-        sb.push(emitDeltaRemoveNOTTuple(pred));
-
-        const tn = termNames(pred);
-        const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);    
-        sb.push(`
-        ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
-        for (const added_${pred}_tuple of added_${pred}_tuples)
-        {
-          const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
-          if (NOT_${pred}_tuple !== null)
-          {
-            deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
-          }
-        }
-        `);
-      }
+      sb.push(emitRemoveIdbDueToAddition(pred));
     }
-    
   }
 
   return sb.join('\n');
@@ -2218,7 +2200,7 @@ function computeDelta(addTuples, remTuples)
 }
 
 
-function emitRemoveTuples(strata)
+function emitIsGrounded(strata)
 {
   return `
 
