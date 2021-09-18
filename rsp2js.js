@@ -373,86 +373,6 @@ export function rsp2js(rsp, options={})
     return sb.join('\n');
   } // main
 
-  function emitGet(pred, arity)
-  {
-    const tn = termNames2(arity);
-    const sb = [`
-function get_${pred}(${tn.join(', ')})
-{
-    `];
-    if (arity === 0)
-    {
-      sb.push(`return ${pred}_member;`);
-    }
-    else
-    {
-      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
-      for (let i = 0; i < arity; i++)
-      {
-        sb.push(`
-        const ${maps[i+1]} = ${maps[i]}.get(t${i});
-        if (${maps[i+1]} === undefined)
-        {
-          return null;
-        }
-        `)
-      }
-      sb.push(`return ${maps[arity]};`);
-    }
-    sb.push(`}`);
-    return sb.join('\n');
-  }
-
-  function emitAddGet(pred, arity)
-  {
-    const tn = termNames2(arity);
-    const sb = [`
-function add_get_${pred}(${tn.join(', ')})
-{
-    `];
-
-    if (arity === 0)
-    {
-      sb.push(`
-        if (${pred}_member === null)
-        {
-          ${pred}_member = new ${pred}(${tn.join(', ')});
-          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
-        }
-        return ${pred}_member;
-        `);
-    }
-    else
-    {
-      function emitEntry(i)
-      {
-        if (i === arity)
-        {
-          return `tuple`;
-        }
-        return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
-      }
-  
-      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
-      for (let i = 0; i < arity; i++)
-      {
-        sb.push(`
-        const ${maps[i+1]} = ${maps[i]}.get(t${i});
-        if (${maps[i+1]} === undefined)
-        {
-          const tuple = new ${pred}(${tn.join(', ')});
-          ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
-          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
-          return tuple;
-        }
-        `)
-      }
-      sb.push(`return ${maps[arity]};`)  
-    }
-    sb.push(`}`);
-    return sb.join('\n');
-  }
-
   function emitAddGetExternal(pred, arity)
   {
     const tn = termNames2(arity);
@@ -554,7 +474,71 @@ function addGet${name}(${tn.join(', ')})
     return sb.join('\n');
   }
 
-  function emitRemove(pred, arity)
+
+class RelationEmitter
+{
+  constructor()
+  {
+  }
+
+  initialize(pred, arity)
+  {
+    if (arity === 0)
+    {
+      return `let ${pred}_member = null`;
+    }
+    return `const ${pred}_members = ${this.empty_()}`;
+  }
+
+  get(pred, arity)
+  {
+    const tn = termNames2(arity);
+    const sb = [`
+function get_${pred}(${tn.join(', ')})
+{
+    `];
+    if (arity === 0)
+    {
+      sb.push(`return ${pred}_member;`);
+    }
+    else
+    {
+
+      sb.push(this.get_(pred, arity))
+
+    }
+    sb.push(`}`);
+    return sb.join('\n');
+  }
+
+  addGet(pred, arity)
+  {
+    const tn = termNames2(arity);
+    const sb = [`
+function add_get_${pred}(${tn.join(', ')})
+{
+    `];
+
+    if (arity === 0)
+    {
+      sb.push(`
+        if (${pred}_member === null)
+        {
+          ${pred}_member = new ${pred}(${tn.join(', ')});
+          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
+        }
+        return ${pred}_member;
+        `);
+    }
+    else
+    {
+      sb.push(relationEmitter.addGet_(pred, arity));
+    }
+    sb.push(`}`);
+    return sb.join('\n');
+  }
+
+  remove(pred, arity)
   {
     const tn = termNames2(arity);
     const sb = [`
@@ -567,36 +551,125 @@ function remove_${pred}(${tn.join(', ')})
     }
     else
     {
-      const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
-      for (let i = 0; i < arity-1; i++)
-      {
-        sb.push(`
-        const ${maps[i+1]} = ${maps[i]}.get(t${i});
-        `)
-      }
-      sb.push(`
-      ${maps[arity - 1]}.set(t${arity-1}, undefined);`);  
+      sb.push(relationEmitter.remove_(pred, arity));
     }
     sb.push(logDebug(`\`removed ${pred}(${tn.map(t => `\${${t}}`)}) from members\``));
     sb.push(`}`);
     return sb.join('\n');
   }
 
-  function emitSelect(pred, arity)
+  select(pred, arity)
   {
     if (arity === 0)
     {
-      // TODO: this returns iterable(?), not iterator (as when arity > 0)
       return `
-      function select_${pred}()
+function select_${pred}()
+{
+    return ${pred}_member === null ? [] : [${pred}_member];
+}
+    `;      
+    }
+    
+    return `
+function select_${pred}()
+{
+  ${this.select_(pred, arity)}
+}
+    `;
+  }
+}
+
+class SimpleArray extends RelationEmitter
+{
+  constructor()
+  {
+    super();
+  }
+
+  empty_()
+  {
+    return `[]`;
+  }
+}
+
+class NestedMaps extends RelationEmitter
+{
+  constructor()
+  {
+    super();
+  }
+
+  empty_()
+  {
+    return `new Map()`;
+  }
+
+  get_(pred, arity)
+  {
+    const sb = [];
+    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
+    for (let i = 0; i < arity; i++)
+    {
+      sb.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(t${i});
+      if (${maps[i+1]} === undefined)
       {
-          return ${pred}_member === null ? [] : [${pred}_member];
+        return null;
       }
-          `;      
+      `)
+    }
+    sb.push(`return ${maps[arity]};`);
+    return sb.join('\n');
+  }
+
+  addGet_(pred, arity)
+  {
+    function emitEntry(i)
+    {
+      if (i === arity)
+      {
+        return `tuple`;
+      }
+      return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
     }
 
+    const sb = [];
+    const tn = termNames2(arity);
+    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
+    for (let i = 0; i < arity; i++)
+    {
+      sb.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(t${i});
+      if (${maps[i+1]} === undefined)
+      {
+        const tuple = new ${pred}(${tn.join(', ')});
+        ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
+        ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
+        return tuple;
+      }
+      `)
+    }
+    sb.push(`return ${maps[arity]};`);
+    return sb.join('\n');
+  }
 
-    const maps = [`${pred}_members`].concat(Array.from(Array(arity), (_, i) => "l" + i));
+  remove_(pred, arity)
+  {
+    const sb = [];
+    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
+    for (let i = 0; i < arity-1; i++)
+    {
+      sb.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(t${i});
+      `)
+    }
+    sb.push(`
+    ${maps[arity - 1]}.set(t${arity-1}, undefined);`);  
+    return sb.join('\n');
+  }
+
+  select_(pred, arity)
+  {
 
     function emitLookup(i)
     {
@@ -614,30 +687,28 @@ function remove_${pred}(${tn.join(', ')})
         }
         `;
     }
-    
-    // iterator
+
+    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
+
     return `
-function select_${pred}()
-{
-  const result = [];
-  ${emitLookup(0)}
-  return result;
-}
+    const result = [];
+    ${emitLookup(0)}
+    return result;
     `;
   }
+}
 
-
+const relationEmitter = new NestedMaps();
 
 function emitTupleObject(pred)
 {
-  const tn = termNames(pred);
+  const arity = pred.arity;
+  const tn = termNames2(arity);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
-  const termEqualities = tn.map(t => `Object.is(member.${t}, ${t})`);
-  const init = (pred.arity === 0 ? `let ${pred}_member = null` : `const ${pred}_members = new Map()`);
-
+  
   let sb = `
-${init};
+${relationEmitter.initialize(pred, arity)}
 ${publicFunction(pred)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
@@ -655,10 +726,10 @@ ${pred}.prototype._remove = function () {
   remove_${pred}(${termFields.join(', ')});
 };
 
-${emitGet(`${pred}`, pred.arity)}
-${emitAddGet(`${pred}`, pred.arity)}
-${emitRemove(`${pred}`, pred.arity)}
-${emitSelect(`${pred}`, pred.arity)}
+${relationEmitter.get(`${pred}`, arity)}
+${relationEmitter.addGet(`${pred}`, arity)}
+${relationEmitter.remove(`${pred}`, arity)}
+${relationEmitter.select(`${pred}`, arity)}
 
 
 `;
@@ -679,9 +750,9 @@ NOT_${pred}.prototype._remove = function () {
 };
 
 
-${emitGet(`NOT_${pred}`, pred.arity)}
-${emitAddGet(`NOT_${pred}`, pred.arity)}
-${emitRemove(`NOT_${pred}`, pred.arity)}
+${relationEmitter.get(`NOT_${pred}`, arity)}
+${relationEmitter.addGet(`NOT_${pred}`, arity)}
+${relationEmitter.remove(`NOT_${pred}`, arity)}
     `;
   }
 
@@ -690,13 +761,13 @@ ${emitRemove(`NOT_${pred}`, pred.arity)}
 
 function emitFunctorObject(functor)
 {
+  const arity = functor.arity;
   const tn = termNames(functor);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
-  const init = (functor.arity === 0 ? `let ${functor}_member = null` : `const ${functor}_members = new Map()`);
 
   let sb = `
-${init};
+${relationEmitter.initialize(`${functor}`, arity)};
 ${publicFunction(functor)}(${tn.join(', ')})
 {
   ${termAssignments.join('\n  ')}
@@ -711,9 +782,9 @@ ${functor}.prototype._remove = function () {
   remove_${functor}(${termFields.join(', ')});
 };
 
-${emitGet(`${functor}`, functor.arity)}
-${emitAddGet(`${functor}`, functor.arity)}
-${emitRemove(`${functor}`, functor.arity)}
+${relationEmitter.get(`${functor}`, arity)}
+${relationEmitter.addGet(`${functor}`, arity)}
+${relationEmitter.remove(`${functor}`, arity)}
 `;
 
   return sb;
@@ -1285,7 +1356,7 @@ class Rule${rule._id}GB
 }
 
 const Rule${rule._id}GB_members = new Map();
-${emitAddGet(`Rule${rule._id}GB`, numGbTerms)}
+${relationEmitter.addGet(`Rule${rule._id}GB`, numGbTerms)}
 
 class Rule${rule._id}ProductGB
 {
