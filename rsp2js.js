@@ -344,9 +344,6 @@ export function rsp2js(rsp, options={})
     ////////////////
 
 
-    // const pred2getters = preds.map(pred => `['${pred}', get_${pred}]`);
-    // sb.push(`const pred2getter = new Map([${pred2getters.join()}])`);
-
     sb.push(emitComputeInitialAdd(strata, preds));
 
     sb.push(emitComputeDelta(strata, preds));
@@ -379,22 +376,23 @@ class RelationEmitter
   {
   }
 
-  initialize(pred, arity)
+  initialDeclaration(pred, arity)
   {
     if (arity === 0)
     {
       return `let ${pred}_member = null`;
     }
-    return `const ${pred}_members = ${this.empty_()}`;
+    return `const ${pred}_members = ${this.emptyDecl_()}`;
   }
 
-  get(pred, arity)
+  getDeclaration(pred, arity)
   {
     const tn = termNames2(arity);
-    const sb = [`
+    const sb = [];
+    sb.push(`
 function get_${pred}(${tn.join(', ')})
 {
-    `];
+    `);
     if (arity === 0)
     {
       sb.push(`return ${pred}_member;`);
@@ -402,20 +400,26 @@ function get_${pred}(${tn.join(', ')})
     else
     {
 
-      sb.push(this.get_(pred, arity))
+      sb.push(this.getDecl_(pred, arity))
 
     }
     sb.push(`}`);
     return sb.join('\n');
   }
 
-  addGet(pred, arity)
+  get(pred, fieldValues)
+  {
+    return `get_${pred}(${fieldValues.join(', ')})`;
+  }
+
+  addGetDeclaration(pred, arity)
   {
     const tn = termNames2(arity);
-    const sb = [`
-function add_get_${pred}(${tn.join(', ')})
-{
-    `];
+    const sb = [];
+    sb.push(`
+      function add_get_${pred}(${tn.join(', ')})
+      {
+    `);
 
     if (arity === 0)
     {
@@ -430,33 +434,40 @@ function add_get_${pred}(${tn.join(', ')})
     }
     else
     {
-      sb.push(this.addGet_(pred, arity));
+      sb.push(this.addGetDecl_(pred, arity));
     }
     sb.push(`}`);
     return sb.join('\n');
   }
 
-  remove(pred, arity)
+  addGet(pred, fieldValues)
+  {
+    return `add_get_${pred}(${fieldValues.join(', ')})`;
+  }
+
+
+  removeDeclaration(pred, arity)
   {
     const tn = termNames2(arity);
-    const sb = [`
+    const sb = [];
+    sb.push(`
 function remove_${pred}(${tn.join(', ')})
 {
-    `];
+    `);
     if (arity === 0)
     {
       sb.push(`${pred}_member = null;`);
     }
     else
     {
-      sb.push(this.remove_(pred, arity));
+      sb.push(this.removeDecl_(pred, arity));
     }
     sb.push(logDebug(`\`removed ${pred}(${tn.map(t => `\${${t}}`)}) from members\``));
     sb.push(`}`);
     return sb.join('\n');
   }
 
-  select(pred, arity)
+  selectDeclaration(pred, arity)
   {
     if (arity === 0)
     {
@@ -471,7 +482,7 @@ function select_${pred}()
     return `
 function select_${pred}()
 {
-  ${this.select_(pred, arity)}
+  ${this.selectDecl_(pred, arity)}
 }
     `;
   }
@@ -484,12 +495,12 @@ class SimpleArray extends RelationEmitter
     super();
   }
 
-  empty_()
+  emptyDecl_()
   {
     return `[]`;
   }
 
-  get_(pred, arity)
+  getDecl_(pred, arity)
   {
     return `
       for (let i = 0; i < ${pred}_members.length; i++)
@@ -504,10 +515,10 @@ class SimpleArray extends RelationEmitter
     `;
   }
 
-  addGet_(pred, arity)
+  addGetDecl_(pred, arity)
   {
     return `
-      const item = get_${pred}(${termNames2(arity)});
+      const item = ${this.get(pred, termNames2(arity))};
       if (item === null)
       {
         const newItem = new ${pred}(${termNames2(arity)});
@@ -518,7 +529,7 @@ class SimpleArray extends RelationEmitter
     `;
   }
 
-  remove_(pred, arity)
+  removeDecl_(pred, arity)
   {
     return `
       for (let i = 0; i < ${pred}_members.length; i++)
@@ -533,7 +544,7 @@ class SimpleArray extends RelationEmitter
   `;
   }
 
-  select_(pred, arity)
+  selectDecl_(pred, arity)
   {
     return `
       return ${pred}_members;
@@ -548,12 +559,12 @@ class NestedMaps extends RelationEmitter
     super();
   }
 
-  empty_()
+  emptyDecl_()
   {
     return `new Map()`;
   }
 
-  get_(pred, arity)
+  getDecl_(pred, arity)
   {
     const sb = [];
     const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
@@ -571,7 +582,7 @@ class NestedMaps extends RelationEmitter
     return sb.join('\n');
   }
 
-  addGet_(pred, arity)
+  addGetDecl_(pred, arity)
   {
     function emitEntry(i)
     {
@@ -602,7 +613,7 @@ class NestedMaps extends RelationEmitter
     return sb.join('\n');
   }
 
-  remove_(pred, arity)
+  removeDecl_(pred, arity)
   {
     const sb = [];
     const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
@@ -617,7 +628,7 @@ class NestedMaps extends RelationEmitter
     return sb.join('\n');
   }
 
-  select_(pred, arity)
+  selectDecl_(pred, arity)
   {
 
     function emitLookup(i)
@@ -670,16 +681,16 @@ function emitTupleObject(pred)
 ${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
 ${pred}.prototype.values = function () {return [${termFields}]};
 ${pred}.prototype.get = function () { // also internally used
-  return get_${pred}(${termFields.join(', ')});
+  return ${relationEmitter.get(pred, termFields)};
 };
 ${pred}.prototype._remove = function () {
   remove_${pred}(${termFields.join(', ')});
 };
-${relationEmitter.initialize(pred, arity)}
-${relationEmitter.get(`${pred}`, arity)}
-${relationEmitter.addGet(`${pred}`, arity)}
-${relationEmitter.remove(`${pred}`, arity)}
-${relationEmitter.select(`${pred}`, arity)}
+${relationEmitter.initialDeclaration(pred, arity)}
+${relationEmitter.getDeclaration(`${pred}`, arity)}
+${relationEmitter.addGetDeclaration(`${pred}`, arity)}
+${relationEmitter.removeDeclaration(`${pred}`, arity)}
+${relationEmitter.selectDeclaration(`${pred}`, arity)}
 
 
 `;
@@ -697,10 +708,10 @@ NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${te
 NOT_${pred}.prototype._remove = function () {
   remove_NOT_${pred}(${termFields.join(', ')});
 };
-${relationEmitter.initialize(`NOT_${pred}`, arity)}
-${relationEmitter.get(`NOT_${pred}`, arity)}
-${relationEmitter.addGet(`NOT_${pred}`, arity)}
-${relationEmitter.remove(`NOT_${pred}`, arity)}
+${relationEmitter.initialDeclaration(`NOT_${pred}`, arity)}
+${relationEmitter.getDeclaration(`NOT_${pred}`, arity)}
+${relationEmitter.addGetDeclaration(`NOT_${pred}`, arity)}
+${relationEmitter.removeDeclaration(`NOT_${pred}`, arity)}
     `;
   }
 
@@ -728,10 +739,10 @@ ${functor}.prototype.values = function () {return [${termFields}]};
 ${functor}.prototype._remove = function () {
   remove_${functor}(${termFields.join(', ')});
 };
-${relationEmitter.initialize(`${functor}`, arity)};
-${relationEmitter.get(`${functor}`, arity)}
-${relationEmitter.addGet(`${functor}`, arity)}
-${relationEmitter.remove(`${functor}`, arity)}
+${relationEmitter.initialDeclaration(`${functor}`, arity)};
+${relationEmitter.getDeclaration(`${functor}`, arity)}
+${relationEmitter.addGetDeclaration(`${functor}`, arity)}
+${relationEmitter.removeDeclaration(`${functor}`, arity)}
 `;
 
   return sb;
@@ -955,7 +966,7 @@ function compileCreateFunctor(functor, env, termAids, rcIncs)
   const termExps = functor.terms;
   termAids.push(`
   // functor ${functor}
-  const ${functorName} = add_get_${functor.pred}(${termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')});
+  const ${functorName} = ${relationEmitter.addGet(functor.pred, termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)))};
   `);
   return functorName;
 }
@@ -1028,9 +1039,9 @@ function compileNegAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 
   return `
   // atom ${atom} (conditions)
-  if (get_${pred}(${getValues.join(', ')}) === null)
+  if (${relationEmitter.get(pred, getValues)} === null)
   {
-    const NOT_${tuple} = add_get_NOT_${pred}(${getValues.join(', ')});
+    const NOT_${tuple} = ${relationEmitter.addGet(`NOT_${pred}`, getValues)}
     ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
   }
   `;
@@ -1123,9 +1134,9 @@ class Rule${rule._id}Product
     return "r${rule._id}:" + this.tuples().join('.');
   }
 }
-${productEmitter.initialize(`Rule${rule._id}Product`, tupleArity)}
-${productEmitter.get(`Rule${rule._id}Product`, tupleArity)}
-${productEmitter.addGet(`Rule${rule._id}Product`, tupleArity)}
+${productEmitter.initialDeclaration(`Rule${rule._id}Product`, tupleArity)}
+${productEmitter.getDeclaration(`Rule${rule._id}Product`, tupleArity)}
+${productEmitter.addGetDeclaration(`Rule${rule._id}Product`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
@@ -1161,8 +1172,8 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     const t2ps = ptuples.map(tuple => `${tuple}._outproductsgb.add(productGB);`);
     return `
       // updates for ${head}
-      const productGB = add_get_Rule${rule._id}ProductGB(${ptuples.join()});
-      const groupby = add_get_Rule${rule._id}GB(${gb.map(t => compileEnv.get(t.name)).join()});
+      const productGB = ${productEmitter.addGet(`Rule${rule._id}ProductGB`, ptuples)};
+      const groupby = ${productEmitter.addGet(`Rule${rule._id}GB`, gb.map(t => compileEnv.get(t.name)))};
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -1300,9 +1311,9 @@ class Rule${rule._id}GB
     return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"}));
   }
 }
-${productEmitter.initialize(`Rule${rule._id}GB`,numGbTerms)}
-${productEmitter.get(`Rule${rule._id}GB`, numGbTerms)}
-${productEmitter.addGet(`Rule${rule._id}GB`, numGbTerms)}
+${productEmitter.initialDeclaration(`Rule${rule._id}GB`,numGbTerms)}
+${productEmitter.getDeclaration(`Rule${rule._id}GB`, numGbTerms)}
+${productEmitter.addGetDeclaration(`Rule${rule._id}GB`, numGbTerms)}
 
 class Rule${rule._id}ProductGB
 {
@@ -1323,9 +1334,9 @@ class Rule${rule._id}ProductGB
     return "r${rule._id}:" + this.tuples().join('.');
   }
 }
-${productEmitter.initialize(`Rule${rule._id}ProductGB`, tupleArity)}
-${productEmitter.get(`Rule${rule._id}ProductGB`, tupleArity)}
-${productEmitter.addGet(`Rule${rule._id}ProductGB`, tupleArity)}
+${productEmitter.initialDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${productEmitter.getDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${productEmitter.addGetDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
@@ -1455,11 +1466,12 @@ function ${name}(${closureCompiledVars.join(', ')})
   }
 }
     `);
-    lambdas.add(relationEmitter.initialize(name, closureVars.length));
-    lambdas.add(relationEmitter.get(name, closureVars.length));   
-    lambdas.add(relationEmitter.addGet(name, closureVars.length));   
+    // TODO lambdaEmitter
+    lambdas.add(relationEmitter.initialDeclaration(name, closureVars.length));
+    lambdas.add(relationEmitter.getDeclaration(name, closureVars.length));   
+    lambdas.add(relationEmitter.addGetDeclaration(name, closureVars.length));   
   }
-  return `add_get_${name}(${closureCompiledVars.join(', ')})`;
+  return relationEmitter.addGet(name, closureCompiledVars);
 }
 
 function compileApplication(app, env)
@@ -1762,7 +1774,7 @@ ${rule}
       const currentResultTuple = groupby._outtuple;
       ${logDebug('`currentResultTuple ${currentResultTuple}`')}
       const updatedValue = ${updateOperation};
-      const updatedResultTuple = add_get_${pred}(${gbNames.join()}, updatedValue);  
+      const updatedResultTuple = ${relationEmitter.addGet(pred, [...gbNames, `updatedValue`])}  
       ${logDebug('`updatedResultTuple ${updatedResultTuple}`')}
       if (groupby._outtuple !== updatedResultTuple)
       {
@@ -1876,7 +1888,7 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   const ${pred}_tuples = [];
   for (const proposed of proposedEdbTuples)
   {
-    const actual = add_get_${pred}(${termProperties.join(', ')});
+    const actual = ${relationEmitter.addGet(pred, termProperties)}
     if (actual !== proposed)
     {
       ${pred}_tuples.push(actual);
@@ -1908,10 +1920,10 @@ function compileRuleHead(rule, compileEnv, ptuples)
     ${termAids.join('\n')}
     
     // actual adding
-    const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
+    const existing_${pred}_tuple = ${relationEmitter.get(pred, termExps)};
     if (existing_${pred}_tuple === null)
     {
-      const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
+      const new_${pred}_tuple = ${relationEmitter.addGet(pred, termExps)}
       newTuples.add(new_${pred}_tuple);
       ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
       ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
@@ -1929,12 +1941,12 @@ function compileRuleHead(rule, compileEnv, ptuples)
     ${termAids.join('\n')}
 
     // actual adding
-    const existing_${pred}_tuple = get_${pred}(${termExps.join(', ')});
+    const existing_${pred}_tuple = ${relationEmitter.get(pred, termExps)};
     if (existing_${pred}_tuple === null)
     {
-      const new_${pred}_tuple = add_get_${pred}(${termExps.join(', ')});
+      const new_${pred}_tuple = ${relationEmitter.addGet(pred, termExps)};
       newTuples.add(new_${pred}_tuple);
-      const product = add_get_Rule${rule._id}Product(${ptuples.join(', ')});
+      const product = ${productEmitter.addGet(`Rule${rule._id}Product`, ptuples)};
       ${t2ps.join('\n        ')}
       product._outtuple = new_${pred}_tuple;
       new_${pred}_tuple._inproducts.add(product);
@@ -1943,7 +1955,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
     }
     else if (${noRecursionConditions.join(' && ')}) // remove direct recursion in product
     {
-      const product = add_get_Rule${rule._id}Product(${ptuples.join(', ')});
+      const product = ${productEmitter.addGet(`Rule${rule._id}Product`, ptuples)};
       ${t2ps.join('\n        ')}
       product._outtuple = existing_${pred}_tuple;
       existing_${pred}_tuple._inproducts.add(product);
@@ -1962,7 +1974,7 @@ function emitRemoveIdbDueToAddition(pred)
   ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
   for (const added_${pred}_tuple of added_${pred}_tuples)
   {
-    const NOT_${pred}_tuple = get_NOT_${pred}(${fieldAccesses.join()});
+    const NOT_${pred}_tuple = ${relationEmitter.get(`NOT_${pred}`, fieldAccesses)};
     if (NOT_${pred}_tuple !== null)
     {
       deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
