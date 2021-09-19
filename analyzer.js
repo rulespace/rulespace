@@ -75,7 +75,7 @@ class Pred
     this.arity = arity;
     this.edb = true;
     this.idb = false;
-    this.rules = new Set();
+    this.rules = [];
     this.posDependsOn = new Set();
     this.negDependsOn = new Set();
     this.posAppearsIn = new Set();
@@ -180,7 +180,7 @@ function collect(program)
       headPred.idb = true;
       headPred.edb = false;  
     }
-    headPred.rules.add(rule);
+    headPred.rules.push(rule);
 
     for (const atom of rule.body)
     {

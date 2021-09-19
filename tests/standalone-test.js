@@ -2,11 +2,7 @@ import { compileModuleTuples, compileToModule, sanityCheck } from './test-common
 
 const src = `
 
-(rule [Rsum x #:sum y]
-  [I x z] [J z y])
-
-(rule [Rmax x #:max y]
-  [I x z] [J z y])
+(rule [R x] (:= proc +) (:= x (proc 1 2 3)))
 
   `;
 
@@ -14,7 +10,7 @@ const src = `
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
 //import('./compiled/standalone.mjs').then(module => {
 
-module.addTuples(compileModuleTuples(module, `[I 'a 'aa] [J 'aa 10] [J 'bb 20] [I 'a 'bb]`));
+// module.addTuples(compileModuleTuples(module, `[I 456]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 console.log("roots: " + [...module.rootTuples()].join('\n'));
 // sanityCheck(module); // reachableTuples is not always equal to members

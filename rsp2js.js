@@ -344,92 +344,112 @@ function addGetProd(name, arity)
 
 function main()
 {
-  const sb = [profileVars, requiredBuiltInFunDefs, lambdas];
+  const sb = [profileVars, requiredBuiltInFunDefs, lambdas, `
+  
+  ${FLAG_compile_to_ctr ? `"use strict"` : ``}
+  ${FLAG_compile_to_module && FLAG_profile ? `import { performance } from 'perf_hooks` : ``}
+  ${FLAG_profile ? `console.log("profiling on")` : ``}
+  ${FLAG_assertions ? `console.log("assertions on")` : ``}
 
-  if (FLAG_compile_to_ctr)
+  const MutableArrays =
   {
-    sb.push(`"use strict";`);
-  }
-  if (FLAG_compile_to_module && FLAG_profile)
-  {
-    sb.push(`import { performance } from 'perf_hooks'`);
-  }
-
-  if (FLAG_profile)
-  {
-    sb.push(`console.log("profiling on")`);
-  }
-  if (FLAG_assertions)
-  {
-    sb.push(`console.log("assertions on")`);
-  }
-
-  sb.push(emitFirst());
-
-  for (const functor of analysis.functors())
-  {
-    sb.push(emitFunctorObject(functor));
-  }
-
-  sb.push(emitLambdas.join('\n'));
-
-  for (const pred of preds)
-  {
-    sb.push(`
-//////////////////////////////////////////////////
-// ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
-// precedes: ${[...pred.precedes].join(',')}
-// posDependsOn: ${[...pred.posDependsOn].join(',')}
-// negDependsOn: ${[...pred.negDependsOn].join(',')}
-// posAppearsIn: ${[...pred.posAppearsIn].join(',')}
-// negAppearsIn: ${[...pred.negAppearsIn].join(',')}
-    `);
-
-    sb.push(emitTupleObject(pred));
-    if (pred.edb)
+    addAll(x, y)
     {
-      sb.push(emitDeltaAddTuple(pred));
-    }
-    for (const rule of pred.rules)
-    {
-      sb.push(`/* ${rule} */`);
-      if (rule.aggregates())
+      ${assert('Array.isArray(x)', 'x')}
+      for (const elem of y)
       {
-        sb.push(emitRuleGB(rule));
+        x.push(elem);
+      }
+    }
+  }
+  
+  const MutableSets =
+  {
+    addAll(x, y)
+    {
+      for (const elem of y)
+      {
+        x.add(elem);
+      }
+    }
+  }
+  
+  function atomString(predicateName, ...termValues)
+  {
+    return '[' + predicateName + ' ' + termValues.map(termString).join(' ') + ']';
+  }
+  
+  function termString(termValue)
+  {
+    if (typeof termValue === "string")
+    {
+      return "'" + termValue + "'";
+    }
+  
+    return String(termValue);
+  }
+  
+  
+  function toTupleMap(tuples)
+  {
+    const map = new Map();
+  
+    function add(tuple)
+    {
+      const key = tuple.constructor;
+      const currentValue = map.get(key);
+      if (currentValue === undefined)
+      {
+        map.set(key, [tuple]);
       }
       else
       {
-        sb.push(emitRule(rule));
+        currentValue.push(tuple);
       }
     }
+    [...tuples].forEach(add);
+    return map;
   }
 
-  sb.push(`const facts = new Map();`); 
-  sb.push(logDebug('"adding edb tuples due to fact addition by firing fact rule"')); 
-  for (const pred of preds)
-  {
-    for (const rule of pred.rules)
-    {
-      if (rule.tupleArity() === 0)
+  ${analysis.functors().map(emitFunctorObject).join('\n')}
+  ${emitLambdas.join('\n')}
+
+  ${preds.map(pred => `
+    //////////////////////////////////////////////////
+    // ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
+    // precedes: ${[...pred.precedes].join(',')}
+    // posDependsOn: ${[...pred.posDependsOn].join(',')}
+    // negDependsOn: ${[...pred.negDependsOn].join(',')}
+    // posAppearsIn: ${[...pred.posAppearsIn].join(',')}
+    // negAppearsIn: ${[...pred.negAppearsIn].join(',')}
+
+    ${emitTupleObject(pred)}
+    ${pred.edb ? emitDeltaAddTuple(pred) : ''}
+
+    ${pred.rules.map(rule => `
+      /* ${rule} */
+      ${rule.aggregates() ? emitRuleGB(rule) : emitRule(rule)}
+      `).join('\n')}
+    `).join('\n')}
+
+  const facts = new Map();
+  ${logDebug('"adding edb tuples due to fact addition by firing fact rule"')}
+  ${preds.map(pred => `
+    ${pred.rules.filter(rule => rule.tupleArity() === 0).map(rule => `
+      /* fact: ${rule} */
+      ${fireRuleInto(rule, -1, `[]`, `new_Rule${rule._id}_tuples`)} // TODO delta pos and tuple not required for fact rules
+      const existing_Rule${rule._id}_tuples = facts.get(${pred});
+      if (existing_Rule${rule._id}_tuples === undefined)
       {
-        const producesPred = rule.head.pred;
-
-        sb.push(`/* fact: ${rule} */`);// TODO delta pos and tuple not required for fact rules
-        sb.push(`
-        ${fireRuleInto(rule, -1, `[]`, `new_Rule${rule._id}_tuples`)}
-        const existing_Rule${rule._id}_tuples = facts.get(${pred});
-        if (existing_Rule${rule._id}_tuples === undefined)
-        {
-          facts.set(${pred}, [...new_Rule${rule._id}_tuples]);
-        }
-        else
-        {
-          ${addAllTuples(`existing_Rule${rule._id}_tuples`, `new_Rule${rule._id}_tuples`)};  
-        }
-        `);
+        facts.set(${pred}, [...new_Rule${rule._id}_tuples]);
       }
-    }
-  }
+      else
+      {
+        ${addAllTuples(`existing_Rule${rule._id}_tuples`, `new_Rule${rule._id}_tuples`)};  
+      }
+      `).join('\n')}
+    `).join('\n')}
+
   // (1) even without initial facts, certain rules must be triggered, e.g. (rule [R] (not [Some-Edb]))
   // if there is no (remove) delta on Some-Edb, then R will not be added
   // therefore, strategy: treat all initial (facts+derived) tuples as delta additions and fire
@@ -439,35 +459,42 @@ function main()
   // (2) the reason that computeInitialAdd takes the initial facts, is because (only!) when there are no tuples,
   // computeInitialAdd can also be used when initially adding facts externally (i.e., through computeDelta)
   // (3) although (1) is an edge case, it may still prove to be more optimal (faster) to have add-only logic
-  sb.push(`
   ${logDebug('"computing initial idb tuples due to addition of fact edbs"')}; 
   computeInitialAdd(facts);
-  `)
-
-  ////////////////
-
-  sb.push(emitComputeInitialAdd(strata, preds));
-
-  sb.push(emitComputeDelta(strata, preds));
-  sb.push(emitIsGrounded(strata));
-
+  ${emitComputeInitialAdd(strata, preds)}
+  ${emitComputeDelta(strata, preds)}
+  ${emitIsGrounded(strata)}
+  ${emitIterators(preds, edbPreds, rules)}
+  ${emitClear(edbPreds)}
   
-  sb.push(emitIterators(preds, edbPreds, rules));
-  sb.push(emitClear(edbPreds));
-
-  ////////////////
-
-  if (FLAG_profile)
+  ${publicFunction('addTupleMap')}(addTuples)
   {
-    sb.push(emitProfileResults());
+    return computeDelta(addTuples, []);
+  }
+  
+  ${publicFunction('addTuples')}(edbTuples)
+  {
+    return addTupleMap(toTupleMap(edbTuples));
+  }
+  
+  ${publicFunction('getTuple')}(tuple)
+  {
+    return tuple.get();
+  }
+  
+  ${publicFunction('removeTupleMap')}(remTuples)
+  {
+    return computeDelta([], remTuples);
+  } 
+  
+  ${publicFunction('removeTuples')}(edbTuples)
+  {
+    return removeTupleMap(toTupleMap(edbTuples));
   }
 
-  if (FLAG_compile_to_ctr)
-  {
-    sb.push(`return {${publicFunctions.join(', ')}};`);
-  }
-
-  sb.push(`// the end`);
+  ${FLAG_profile ? emitProfileResults() : ``}
+  ${FLAG_compile_to_ctr ? `return {${publicFunctions.join(', ')}};` : ``}
+  // the end`];
 
   return sb.join('\n');
 } // main
@@ -502,8 +529,6 @@ ${getDeclarationPred(pred, arity)}
 ${addGetDeclarationPred(pred, arity)}
 ${removeDeclarationPred(pred, arity)}
 ${selectDeclarationPred(pred, arity)}
-
-
 `;
 
   if (pred.negAppearsIn.size > 0)
@@ -2108,99 +2133,7 @@ function tupleIsGrounded(tuple)
 `;
 }
 
-function emitFirst()
-{
-  return `
-
-//const IMM_EMPTY_COLLECTION = Object.freeze([]);
-
-const MutableArrays =
-{
-  addAll(x, y)
-  {
-    ${assert('Array.isArray(x)', 'x')}
-    for (const elem of y)
-    {
-      x.push(elem);
-    }
-  }
-}
-
-const MutableSets =
-{
-  addAll(x, y)
-  {
-    for (const elem of y)
-    {
-      x.add(elem);
-    }
-  }
-}
-
-function atomString(predicateName, ...termValues)
-{
-  return '[' + predicateName + ' ' + termValues.map(termString).join(' ') + ']';
-}
-
-function termString(termValue)
-{
-  if (typeof termValue === "string")
-  {
-    return "'" + termValue + "'";
-  }
-
-  return String(termValue);
-}
-
-
-function toTupleMap(tuples)
-{
-  const map = new Map();
-
-  function add(tuple)
-  {
-    const key = tuple.constructor;
-    const currentValue = map.get(key);
-    if (currentValue === undefined)
-    {
-      map.set(key, [tuple]);
-    }
-    else
-    {
-      currentValue.push(tuple);
-    }
-  }
-  [...tuples].forEach(add);
-  return map;
-}
-
-${publicFunction('addTupleMap')}(addTuples)
-{
-  return computeDelta(addTuples, []);
-}
-
-${publicFunction('addTuples')}(edbTuples)
-{
-  return addTupleMap(toTupleMap(edbTuples));
-}
-
-${publicFunction('getTuple')}(tuple)
-{
-  return tuple.get();
-}
-
-${publicFunction('removeTupleMap')}(remTuples)
-{
-  return computeDelta([], remTuples);
-} 
-
-${publicFunction('removeTuples')}(edbTuples)
-{
-  return removeTupleMap(toTupleMap(edbTuples));
-}
-`} // emitFirst
-
-  function emitProfileResults()
+function emitProfileResults()
   {
     const vars = profileVars.names().map(name => `${name}`);
     return `    

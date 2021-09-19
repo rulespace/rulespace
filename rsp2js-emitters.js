@@ -1,6 +1,6 @@
 import { Arrays, assertTrue } from 'common';
 
-function termNames2(arity)
+function termNames(arity)
 {
   return Arrays.range(arity).map(i => "t" + i);
 }
@@ -23,7 +23,7 @@ class RelationEmitter
 
   getDeclaration(pred, arity)
   {
-    const tn = termNames2(arity);
+    const tn = termNames(arity);
     const sb = [];
     sb.push(`
 function get_${pred}(${tn.join(', ')})
@@ -35,9 +35,7 @@ function get_${pred}(${tn.join(', ')})
     }
     else
     {
-
       sb.push(this.getDecl_(pred, arity))
-
     }
     sb.push(`}`);
     return sb.join('\n');
@@ -50,7 +48,7 @@ function get_${pred}(${tn.join(', ')})
 
   addGetDeclaration(pred, arity)
   {
-    const tn = termNames2(arity);
+    const tn = termNames(arity);
     const sb = [];
     sb.push(`
       function add_get_${pred}(${tn.join(', ')})
@@ -84,7 +82,7 @@ function get_${pred}(${tn.join(', ')})
 
   removeDeclaration(pred, arity)
   {
-    const tn = termNames2(arity);
+    const tn = termNames(arity);
     const sb = [];
     sb.push(`
 function remove_${pred}(${tn.join(', ')})
@@ -164,10 +162,10 @@ export class SimpleArray extends RelationEmitter
   addGetDecl_(pred, arity)
   {
     return `
-      const item = ${this.get(pred, termNames2(arity))};
+      const item = ${this.get(pred, termNames(arity))};
       if (item === null)
       {
-        const newItem = new ${pred}(${termNames2(arity)});
+        const newItem = new ${pred}(${termNames(arity)});
         ${pred}_members.push(newItem);
         return newItem
       }
@@ -197,6 +195,8 @@ export class SimpleArray extends RelationEmitter
     `;
   }
 }
+
+
 
 export class NestedMaps extends RelationEmitter
 {
@@ -240,7 +240,7 @@ export class NestedMaps extends RelationEmitter
     }
 
     const sb = [];
-    const tn = termNames2(arity);
+    const tn = termNames(arity);
     const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
     for (let i = 0; i < arity; i++)
     {
