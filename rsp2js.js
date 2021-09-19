@@ -1,8 +1,7 @@
 import { Arrays, assertTrue } from 'common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
-import {  } from './str2sexp.js';
-// import { Sym } from './string2sexp.js/index.js';
+import { SimpleArray, NestedMaps } from './rsp2js-emitters.js';
 
 class RspJsCompilationError extends Error
 {
@@ -12,21 +11,6 @@ class RspJsCompilationError extends Error
     this.name = 'RspJsCompilationError';
   }
 }
-
-////////////
-
-function addAllTuples(targetArray, x)
-{
-  return `MutableArrays.addAll(${targetArray}, ${x});`
-}
-
-function fireRuleInto(rule, deltaPos, deltaTuples, into)
-{
-  assertTrue(!rule.aggregates());
-  return `const ${into} = fireRule${rule._id}(${deltaPos}, ${deltaTuples})`
-}
-
-////////////
 
 let freshCounter = 0;
 function freshVariable(str) 
@@ -234,432 +218,259 @@ export function rsp2js(rsp, options={})
 
   const lambdas = new Lines();
 
-  function main()
+
+////////////
+
+function addAllTuples(targetArray, x)
+{
+  return `MutableArrays.addAll(${targetArray}, ${x});`
+}
+
+function fireRuleInto(rule, deltaPos, deltaTuples, into)
+{
+  assertTrue(!rule.aggregates());
+  return `const ${into} = fireRule${rule._id}(${deltaPos}, ${deltaTuples})`
+}
+
+///
+
+const relationEmitter = new SimpleArray(logDebug);
+const productEmitter = new NestedMaps(logDebug);
+
+function initialDeclarationPred(name, arity)
+{
+  return relationEmitter.initialDeclaration(name, arity);
+}
+
+function getDeclarationPred(name, arity)
+{
+  return relationEmitter.getDeclaration(name, arity);
+}
+
+function addGetDeclarationPred(name, arity)
+{
+  return relationEmitter.addGetDeclaration(name, arity);
+}
+
+function selectDeclarationPred(name, arity)
+{
+  return relationEmitter.selectDeclaration(name, arity);
+}
+
+function removeDeclarationPred(name, arity)
+{
+  return relationEmitter.removeDeclaration(name, arity);
+}
+
+function getPred(pred, values)
+{
+  return relationEmitter.get(pred, values);
+}
+
+function addGetPred(pred, values)
+{
+  return relationEmitter.addGet(pred, values);
+}
+
+function selectPred(pred)
+{
+  return relationEmitter.select(pred);
+}
+
+function removePred(pred, values)
+{
+  return relationEmitter.remove(pred, values);
+}
+
+
+function initialDeclarationFunctor(name, arity)
+{
+  return relationEmitter.initialDeclaration(name, arity);
+}
+
+function getDeclarationFunctor(name, arity)
+{
+  return relationEmitter.getDeclaration(name, arity);
+}
+
+function addGetDeclarationFunctor(name, arity)
+{
+  return relationEmitter.addGetDeclaration(name, arity);
+}
+
+function removeDeclarationFunctor(name, arity)
+{
+  return relationEmitter.removeDeclaration(name, arity);
+}
+
+
+function initialDeclarationLambda(name, arity)
+{
+  return relationEmitter.initialDeclaration(name, arity);
+}
+
+function getDeclarationLambda(name, arity)
+{
+  return relationEmitter.getDeclaration(name, arity);
+}
+
+function addGetDeclarationLambda(name, arity)
+{
+  return relationEmitter.addGetDeclaration(name, arity);
+}
+
+
+function initialDeclarationProd(name, arity)
+{
+  return productEmitter.initialDeclaration(name, arity);
+}
+
+function getDeclarationProd(name, arity)
+{
+  return productEmitter.getDeclaration(name, arity);
+}
+
+function addGetDeclarationProd(name, arity)
+{
+  return productEmitter.addGetDeclaration(name, arity);
+}
+
+function addGetProd(name, arity)
+{
+  return productEmitter.addGet(name, arity);
+}
+
+////////////
+
+function main()
+{
+  const sb = [profileVars, requiredBuiltInFunDefs, lambdas];
+
+  if (FLAG_compile_to_ctr)
   {
+    sb.push(`"use strict";`);
+  }
+  if (FLAG_compile_to_module && FLAG_profile)
+  {
+    sb.push(`import { performance } from 'perf_hooks'`);
+  }
 
-    const sb = [profileVars, requiredBuiltInFunDefs, lambdas];
+  if (FLAG_profile)
+  {
+    sb.push(`console.log("profiling on")`);
+  }
+  if (FLAG_assertions)
+  {
+    sb.push(`console.log("assertions on")`);
+  }
 
-    if (FLAG_compile_to_ctr)
+  sb.push(emitFirst());
+
+  for (const functor of analysis.functors())
+  {
+    sb.push(emitFunctorObject(functor));
+  }
+
+  sb.push(emitLambdas.join('\n'));
+
+  for (const pred of preds)
+  {
+    sb.push(`
+//////////////////////////////////////////////////
+// ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
+// precedes: ${[...pred.precedes].join(',')}
+// posDependsOn: ${[...pred.posDependsOn].join(',')}
+// negDependsOn: ${[...pred.negDependsOn].join(',')}
+// posAppearsIn: ${[...pred.posAppearsIn].join(',')}
+// negAppearsIn: ${[...pred.negAppearsIn].join(',')}
+    `);
+
+    sb.push(emitTupleObject(pred));
+    if (pred.edb)
     {
-      sb.push(`"use strict";`);
+      sb.push(emitDeltaAddTuple(pred));
     }
-
-    if (FLAG_compile_to_module && FLAG_profile)
+    for (const rule of pred.rules)
     {
-      sb.push(`import { performance } from 'perf_hooks'`);
-    }
-
-    // const dynamicEmitFirst = new LineEmitter();
-    // sb.push(dynamicEmitFirst);
-
-    if (FLAG_profile)
-    {
-      sb.push(`console.log("profiling on")`);
-    }
-    if (FLAG_assertions)
-    {
-      sb.push(`console.log("assertions on")`);
-    }
-
-    sb.push(emitFirst());
-
-    for (const functor of analysis.functors())
-    {
-      sb.push(emitFunctorObject(functor));
-    }
-
-    sb.push(emitLambdas.join('\n'));
-
-    for (const pred of preds)
-    {
-      sb.push(`
-  //////////////////////////////////////////////////
-  // ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
-  // precedes: ${[...pred.precedes].join(',')}
-  // posDependsOn: ${[...pred.posDependsOn].join(',')}
-  // negDependsOn: ${[...pred.negDependsOn].join(',')}
-  // posAppearsIn: ${[...pred.posAppearsIn].join(',')}
-  // negAppearsIn: ${[...pred.negAppearsIn].join(',')}
-      `);
-
-      sb.push(emitTupleObject(pred));
-      if (pred.edb)
+      sb.push(`/* ${rule} */`);
+      if (rule.aggregates())
       {
-        sb.push(emitDeltaAddTuple(pred));
+        sb.push(emitRuleGB(rule));
       }
-      for (const rule of pred.rules)
+      else
       {
-        sb.push(`/* ${rule} */`);
-        if (rule.aggregates())
+        sb.push(emitRule(rule));
+      }
+    }
+  }
+
+  sb.push(`const facts = new Map();`); 
+  sb.push(logDebug('"adding edb tuples due to fact addition by firing fact rule"')); 
+  for (const pred of preds)
+  {
+    for (const rule of pred.rules)
+    {
+      if (rule.tupleArity() === 0)
+      {
+        const producesPred = rule.head.pred;
+
+        sb.push(`/* fact: ${rule} */`);// TODO delta pos and tuple not required for fact rules
+        sb.push(`
+        ${fireRuleInto(rule, -1, `[]`, `new_Rule${rule._id}_tuples`)}
+        const existing_Rule${rule._id}_tuples = facts.get(${pred});
+        if (existing_Rule${rule._id}_tuples === undefined)
         {
-          sb.push(emitRuleGB(rule));
+          facts.set(${pred}, [...new_Rule${rule._id}_tuples]);
         }
         else
         {
-          sb.push(emitRule(rule));
+          ${addAllTuples(`existing_Rule${rule._id}_tuples`, `new_Rule${rule._id}_tuples`)};  
         }
-      }
-    }
-
-    sb.push(`const facts = new Map();`); 
-    sb.push(logDebug('"adding edb tuples due to fact addition by firing fact rule"')); 
-    for (const pred of preds)
-    {
-      for (const rule of pred.rules)
-      {
-        if (rule.tupleArity() === 0)
-        {
-          const producesPred = rule.head.pred;
-
-          sb.push(`/* fact: ${rule} */`);// TODO delta pos and tuple not required for fact rules
-          sb.push(`
-          ${fireRuleInto(rule, -1, `[]`, `new_Rule${rule._id}_tuples`)}
-          const existing_Rule${rule._id}_tuples = facts.get(${pred});
-          if (existing_Rule${rule._id}_tuples === undefined)
-          {
-            facts.set(${pred}, [...new_Rule${rule._id}_tuples]);
-          }
-          else
-          {
-            ${addAllTuples(`existing_Rule${rule._id}_tuples`, `new_Rule${rule._id}_tuples`)};  
-          }
-          `);
-        }
-      }
-    }
-    // (1) even without initial facts, certain rules must be triggered, e.g. (rule [R] (not [Some-Edb]))
-    // if there is no (remove) delta on Some-Edb, then R will not be added
-    // therefore, strategy: treat all initial (facts+derived) tuples as delta additions and fire
-    // all rules once without specific deltas
-    // Note that the example rule is an edge case: only when the NegAtom does not contain variables,
-    // then you can have the situation that you need to add idb tuples without being triggered by edb additions.
-    // (2) the reason that computeInitialAdd takes the initial facts, is because (only!) when there are no tuples,
-    // computeInitialAdd can also be used when initially adding facts externally (i.e., through computeDelta)
-    // (3) although (1) is an edge case, it may still prove to be more optimal (faster) to have add-only logic
-    sb.push(`
-    ${logDebug('"computing initial idb tuples due to addition of fact edbs"')}; 
-    computeInitialAdd(facts);
-    `)
-
-    ////////////////
-
-
-    sb.push(emitComputeInitialAdd(strata, preds));
-
-    sb.push(emitComputeDelta(strata, preds));
-    sb.push(emitIsGrounded(strata));
-
-    
-    sb.push(emitIterators(preds, edbPreds, rules));
-    sb.push(emitClear(edbPreds));
-
-    ////////////////
-
-    if (FLAG_profile)
-    {
-      sb.push(emitProfileResults());
-    }
-
-    if (FLAG_compile_to_ctr)
-    {
-      sb.push(`return {${publicFunctions.join(', ')}};`);
-    }
-
-    sb.push(`// the end`);
-
-    return sb.join('\n');
-  } // main
-
-class RelationEmitter
-{
-  constructor()
-  {
-  }
-
-  initialDeclaration(pred, arity)
-  {
-    if (arity === 0)
-    {
-      return `let ${pred}_member = null`;
-    }
-    return `const ${pred}_members = ${this.emptyDecl_()}`;
-  }
-
-  getDeclaration(pred, arity)
-  {
-    const tn = termNames2(arity);
-    const sb = [];
-    sb.push(`
-function get_${pred}(${tn.join(', ')})
-{
-    `);
-    if (arity === 0)
-    {
-      sb.push(`return ${pred}_member;`);
-    }
-    else
-    {
-
-      sb.push(this.getDecl_(pred, arity))
-
-    }
-    sb.push(`}`);
-    return sb.join('\n');
-  }
-
-  get(pred, fieldValues)
-  {
-    return `get_${pred}(${fieldValues.join(', ')})`;
-  }
-
-  addGetDeclaration(pred, arity)
-  {
-    const tn = termNames2(arity);
-    const sb = [];
-    sb.push(`
-      function add_get_${pred}(${tn.join(', ')})
-      {
-    `);
-
-    if (arity === 0)
-    {
-      sb.push(`
-        if (${pred}_member === null)
-        {
-          ${pred}_member = new ${pred}(${tn.join(', ')});
-          ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
-        }
-        return ${pred}_member;
         `);
-    }
-    else
-    {
-      sb.push(this.addGetDecl_(pred, arity));
-    }
-    sb.push(`}`);
-    return sb.join('\n');
-  }
-
-  addGet(pred, fieldValues)
-  {
-    return `add_get_${pred}(${fieldValues.join(', ')})`;
-  }
-
-
-  removeDeclaration(pred, arity)
-  {
-    const tn = termNames2(arity);
-    const sb = [];
-    sb.push(`
-function remove_${pred}(${tn.join(', ')})
-{
-    `);
-    if (arity === 0)
-    {
-      sb.push(`${pred}_member = null;`);
-    }
-    else
-    {
-      sb.push(this.removeDecl_(pred, arity));
-    }
-    sb.push(logDebug(`\`removed ${pred}(${tn.map(t => `\${${t}}`)}) from members\``));
-    sb.push(`}`);
-    return sb.join('\n');
-  }
-
-  selectDeclaration(pred, arity)
-  {
-    if (arity === 0)
-    {
-      return `
-function select_${pred}()
-{
-    return ${pred}_member === null ? [] : [${pred}_member];
-}
-    `;      
-    }
-    
-    return `
-function select_${pred}()
-{
-  ${this.selectDecl_(pred, arity)}
-}
-    `;
-  }
-}
-
-class SimpleArray extends RelationEmitter
-{
-  constructor()
-  {
-    super();
-  }
-
-  emptyDecl_()
-  {
-    return `[]`;
-  }
-
-  getDecl_(pred, arity)
-  {
-    return `
-      for (let i = 0; i < ${pred}_members.length; i++)
-      {
-        const item = ${pred}_members[i];
-        if (${Arrays.range(arity).map(i => `t${i} === item.t${i}`).join(' && ')})
-        {
-          return item;
-        }
       }
-      return null;
-    `;
-  }
-
-  addGetDecl_(pred, arity)
-  {
-    return `
-      const item = ${this.get(pred, termNames2(arity))};
-      if (item === null)
-      {
-        const newItem = new ${pred}(${termNames2(arity)});
-        ${pred}_members.push(newItem);
-        return newItem
-      }
-      return item;
-    `;
-  }
-
-  removeDecl_(pred, arity)
-  {
-    return `
-      for (let i = 0; i < ${pred}_members.length; i++)
-      {
-        const item = ${pred}_members[i];
-        if (${Arrays.range(arity).map(i => `t${i} === item.t${i}`).join(' && ')})
-        {
-          ${pred}_members.splice(i, 1);
-          return;
-        }
-      }
-  `;
-  }
-
-  selectDecl_(pred, arity)
-  {
-    return `
-      return ${pred}_members;
-    `;
-  }
-}
-
-class NestedMaps extends RelationEmitter
-{
-  constructor()
-  {
-    super();
-  }
-
-  emptyDecl_()
-  {
-    return `new Map()`;
-  }
-
-  getDecl_(pred, arity)
-  {
-    const sb = [];
-    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
-    for (let i = 0; i < arity; i++)
-    {
-      sb.push(`
-      const ${maps[i+1]} = ${maps[i]}.get(t${i});
-      if (${maps[i+1]} === undefined)
-      {
-        return null;
-      }
-      `)
     }
-    sb.push(`return ${maps[arity]};`);
-    return sb.join('\n');
   }
+  // (1) even without initial facts, certain rules must be triggered, e.g. (rule [R] (not [Some-Edb]))
+  // if there is no (remove) delta on Some-Edb, then R will not be added
+  // therefore, strategy: treat all initial (facts+derived) tuples as delta additions and fire
+  // all rules once without specific deltas
+  // Note that the example rule is an edge case: only when the NegAtom does not contain variables,
+  // then you can have the situation that you need to add idb tuples without being triggered by edb additions.
+  // (2) the reason that computeInitialAdd takes the initial facts, is because (only!) when there are no tuples,
+  // computeInitialAdd can also be used when initially adding facts externally (i.e., through computeDelta)
+  // (3) although (1) is an edge case, it may still prove to be more optimal (faster) to have add-only logic
+  sb.push(`
+  ${logDebug('"computing initial idb tuples due to addition of fact edbs"')}; 
+  computeInitialAdd(facts);
+  `)
 
-  addGetDecl_(pred, arity)
+  ////////////////
+
+  sb.push(emitComputeInitialAdd(strata, preds));
+
+  sb.push(emitComputeDelta(strata, preds));
+  sb.push(emitIsGrounded(strata));
+
+  
+  sb.push(emitIterators(preds, edbPreds, rules));
+  sb.push(emitClear(edbPreds));
+
+  ////////////////
+
+  if (FLAG_profile)
   {
-    function emitEntry(i)
-    {
-      if (i === arity)
-      {
-        return `tuple`;
-      }
-      return `new Map([[t${i}, ${emitEntry(i+1)}]])`;
-    }
-
-    const sb = [];
-    const tn = termNames2(arity);
-    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
-    for (let i = 0; i < arity; i++)
-    {
-      sb.push(`
-      const ${maps[i+1]} = ${maps[i]}.get(t${i});
-      if (${maps[i+1]} === undefined)
-      {
-        const tuple = new ${pred}(${tn.join(', ')});
-        ${maps[i]}.set(t${i}, ${emitEntry(i+1)});
-        ${logDebug(`\`addGet added ${pred}(${tn.map(t => `\${${t}}`)}) to members\``)}
-        return tuple;
-      }
-      `)
-    }
-    sb.push(`return ${maps[arity]};`);
-    return sb.join('\n');
+    sb.push(emitProfileResults());
   }
 
-  removeDecl_(pred, arity)
+  if (FLAG_compile_to_ctr)
   {
-    const sb = [];
-    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
-    for (let i = 0; i < arity-1; i++)
-    {
-      sb.push(`
-      const ${maps[i+1]} = ${maps[i]}.get(t${i});
-      `)
-    }
-    sb.push(`
-    ${maps[arity - 1]}.set(t${arity-1}, undefined);`);  
-    return sb.join('\n');
+    sb.push(`return {${publicFunctions.join(', ')}};`);
   }
 
-  selectDecl_(pred, arity)
-  {
+  sb.push(`// the end`);
 
-    function emitLookup(i)
-    {
-      if (i === arity)
-      {
-        return `result.push(${maps[arity]})`;
-      }
-      return `
-        for (const ${maps[i+1]} of ${maps[i]}.values())
-        {
-          if (${maps[i+1]} !== undefined)
-          {
-            ${emitLookup(i+1)}
-          }
-        }
-        `;
-    }
-
-    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
-
-    return `
-    const result = [];
-    ${emitLookup(0)}
-    return result;
-    `;
-  }
-}
-
-const relationEmitter = new SimpleArray();
-const productEmitter = new NestedMaps();
+  return sb.join('\n');
+} // main
 
 function emitTupleObject(pred)
 {
@@ -681,16 +492,16 @@ function emitTupleObject(pred)
 ${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
 ${pred}.prototype.values = function () {return [${termFields}]};
 ${pred}.prototype.get = function () { // also internally used
-  return ${relationEmitter.get(pred, termFields)};
+  return ${getPred(pred, termFields)};
 };
 ${pred}.prototype._remove = function () {
-  remove_${pred}(${termFields.join(', ')});
+  ${removePred(pred, termFields)};
 };
-${relationEmitter.initialDeclaration(pred, arity)}
-${relationEmitter.getDeclaration(`${pred}`, arity)}
-${relationEmitter.addGetDeclaration(`${pred}`, arity)}
-${relationEmitter.removeDeclaration(`${pred}`, arity)}
-${relationEmitter.selectDeclaration(`${pred}`, arity)}
+${initialDeclarationPred(pred, arity)}
+${getDeclarationPred(pred, arity)}
+${addGetDeclarationPred(pred, arity)}
+${removeDeclarationPred(pred, arity)}
+${selectDeclarationPred(pred, arity)}
 
 
 `;
@@ -705,13 +516,11 @@ function NOT_${pred}(${tn.join(', ')})
   this._outproducts = new Set();
 }        
 NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${termFields.join(', ')})};  
-NOT_${pred}.prototype._remove = function () {
-  remove_NOT_${pred}(${termFields.join(', ')});
-};
-${relationEmitter.initialDeclaration(`NOT_${pred}`, arity)}
-${relationEmitter.getDeclaration(`NOT_${pred}`, arity)}
-${relationEmitter.addGetDeclaration(`NOT_${pred}`, arity)}
-${relationEmitter.removeDeclaration(`NOT_${pred}`, arity)}
+NOT_${pred}.prototype._remove = function () { ${removePred(`NOT_${pred}`, termFields)}};
+${initialDeclarationPred(`NOT_${pred}`, arity)}
+${getDeclarationPred(`NOT_${pred}`, arity)}
+${addGetDeclarationPred(`NOT_${pred}`, arity)}
+${removeDeclarationPred(`NOT_${pred}`, arity)}
     `;
   }
 
@@ -736,13 +545,11 @@ ${publicFunction(functor)}(${tn.join(', ')})
 }
 ${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
 ${functor}.prototype.values = function () {return [${termFields}]};
-${functor}.prototype._remove = function () {
-  remove_${functor}(${termFields.join(', ')});
-};
-${relationEmitter.initialDeclaration(`${functor}`, arity)};
-${relationEmitter.getDeclaration(`${functor}`, arity)}
-${relationEmitter.addGetDeclaration(`${functor}`, arity)}
-${relationEmitter.removeDeclaration(`${functor}`, arity)}
+${functor}.prototype._remove = function () { ${removePred(functor, termFields)} };
+${initialDeclarationFunctor(functor, arity)};
+${getDeclarationFunctor(functor, arity)}
+${addGetDeclarationFunctor(functor, arity)}
+${removeDeclarationFunctor(functor, arity)}
 `;
 
   return sb;
@@ -944,8 +751,8 @@ function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
   const conditions = constraints.map(compileConstraintFor(tuple));
 
   const tupleSelection = conditions.length === 0
-    ? `deltaPos === ${i} ? deltaTuples : select_${pred}()`
-    : `(deltaPos === ${i} ? deltaTuples : select_${pred}()).filter(${tuple} => ${conditions.join(' && ')})`;
+    ? `deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}`
+    : `(deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}).filter(${tuple} => ${conditions.join(' && ')})`;
 
   return `
     // atom ${atom}
@@ -966,7 +773,7 @@ function compileCreateFunctor(functor, env, termAids, rcIncs)
   const termExps = functor.terms;
   termAids.push(`
   // functor ${functor}
-  const ${functorName} = ${relationEmitter.addGet(functor.pred, termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)))};
+  const ${functorName} = ${addGetPred(functor.pred, termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)))};
   `);
   return functorName;
 }
@@ -1039,9 +846,9 @@ function compileNegAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 
   return `
   // atom ${atom} (conditions)
-  if (${relationEmitter.get(pred, getValues)} === null)
+  if (${getPred(pred, getValues)} === null)
   {
-    const NOT_${tuple} = ${relationEmitter.addGet(`NOT_${pred}`, getValues)}
+    const NOT_${tuple} = ${addGetPred(`NOT_${pred}`, getValues)}
     ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
   }
   `;
@@ -1134,9 +941,9 @@ class Rule${rule._id}Product
     return "r${rule._id}:" + this.tuples().join('.');
   }
 }
-${productEmitter.initialDeclaration(`Rule${rule._id}Product`, tupleArity)}
-${productEmitter.getDeclaration(`Rule${rule._id}Product`, tupleArity)}
-${productEmitter.addGetDeclaration(`Rule${rule._id}Product`, tupleArity)}
+${initialDeclarationProd(`Rule${rule._id}Product`, tupleArity)}
+${getDeclarationProd(`Rule${rule._id}Product`, tupleArity)}
+${addGetDeclarationProd(`Rule${rule._id}Product`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
@@ -1172,8 +979,8 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     const t2ps = ptuples.map(tuple => `${tuple}._outproductsgb.add(productGB);`);
     return `
       // updates for ${head}
-      const productGB = ${productEmitter.addGet(`Rule${rule._id}ProductGB`, ptuples)};
-      const groupby = ${productEmitter.addGet(`Rule${rule._id}GB`, gb.map(t => compileEnv.get(t.name)))};
+      const productGB = ${addGetProd(`Rule${rule._id}ProductGB`, ptuples)};
+      const groupby = ${addGetProd(`Rule${rule._id}GB`, gb.map(t => compileEnv.get(t.name)))};
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -1235,7 +1042,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     {
       return `
       // atom ${atom} [no conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}))
       {
         ${bindUnboundVars.join('\n        ')}
         ${compileRuleGBFireBody(rule, i+1, compileEnv, ptuples)}
@@ -1246,7 +1053,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     {
       return `
       // atom ${atom} [conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : select_${pred}()))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}))
       {
         if (${conditions.join('&&')})
         {
@@ -1311,9 +1118,9 @@ class Rule${rule._id}GB
     return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"}));
   }
 }
-${productEmitter.initialDeclaration(`Rule${rule._id}GB`,numGbTerms)}
-${productEmitter.getDeclaration(`Rule${rule._id}GB`, numGbTerms)}
-${productEmitter.addGetDeclaration(`Rule${rule._id}GB`, numGbTerms)}
+${initialDeclarationProd(`Rule${rule._id}GB`,numGbTerms)}
+${getDeclarationProd(`Rule${rule._id}GB`, numGbTerms)}
+${addGetDeclarationProd(`Rule${rule._id}GB`, numGbTerms)}
 
 class Rule${rule._id}ProductGB
 {
@@ -1334,9 +1141,9 @@ class Rule${rule._id}ProductGB
     return "r${rule._id}:" + this.tuples().join('.');
   }
 }
-${productEmitter.initialDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-${productEmitter.getDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-${productEmitter.addGetDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${initialDeclarationProd(`Rule${rule._id}ProductGB`, tupleArity)}
+${getDeclarationProd(`Rule${rule._id}ProductGB`, tupleArity)}
+${addGetDeclarationProd(`Rule${rule._id}ProductGB`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
@@ -1359,8 +1166,8 @@ function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
 
 function emitIterators(preds, edbPreds, rules)
 {
-  const tupleYielders = preds.map(pred => `yield* select_${pred}()`);
-  const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}()`);
+  const tupleYielders = preds.map(pred => `yield* ${selectPred(pred)}`);
+  // const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}()`);
   // const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
 
   return `
@@ -1382,13 +1189,12 @@ ${publicFunctionStar('rootTuples')}()   // all EDBs and IDB facts
     }
   }
 }
-
 `;
 }
 
 function emitClear(edbPreds)
 {
-  const clearers = edbPreds.map(edbPred => `removeTuples(select_${edbPred}());`);
+  const clearers = edbPreds.map(edbPred => `removeTuples(${selectPred(edbPred)});`);
 
   return `
 ${publicFunction('clear')}()
@@ -1466,12 +1272,11 @@ function ${name}(${closureCompiledVars.join(', ')})
   }
 }
     `);
-    // TODO lambdaEmitter
-    lambdas.add(relationEmitter.initialDeclaration(name, closureVars.length));
-    lambdas.add(relationEmitter.getDeclaration(name, closureVars.length));   
-    lambdas.add(relationEmitter.addGetDeclaration(name, closureVars.length));   
+    lambdas.add(initialDeclarationLambda(name, closureVars.length));
+    lambdas.add(getDeclarationLambda(name, closureVars.length));   
+    lambdas.add(addGetDeclarationLambda(name, closureVars.length));   
   }
-  return relationEmitter.addGet(name, closureCompiledVars);
+  return addGetPred(name, closureCompiledVars);
 }
 
 function compileApplication(app, env)
@@ -1774,7 +1579,7 @@ ${rule}
       const currentResultTuple = groupby._outtuple;
       ${logDebug('`currentResultTuple ${currentResultTuple}`')}
       const updatedValue = ${updateOperation};
-      const updatedResultTuple = ${relationEmitter.addGet(pred, [...gbNames, `updatedValue`])}  
+      const updatedResultTuple = ${addGetPred(pred, [...gbNames, `updatedValue`])}  
       ${logDebug('`updatedResultTuple ${updatedResultTuple}`')}
       if (groupby._outtuple !== updatedResultTuple)
       {
@@ -1888,7 +1693,7 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   const ${pred}_tuples = [];
   for (const proposed of proposedEdbTuples)
   {
-    const actual = ${relationEmitter.addGet(pred, termProperties)}
+    const actual = ${addGetPred(pred, termProperties)}
     if (actual !== proposed)
     {
       ${pred}_tuples.push(actual);
@@ -1920,10 +1725,10 @@ function compileRuleHead(rule, compileEnv, ptuples)
     ${termAids.join('\n')}
     
     // actual adding
-    const existing_${pred}_tuple = ${relationEmitter.get(pred, termExps)};
+    const existing_${pred}_tuple = ${getPred(pred, termExps)};
     if (existing_${pred}_tuple === null)
     {
-      const new_${pred}_tuple = ${relationEmitter.addGet(pred, termExps)}
+      const new_${pred}_tuple = ${addGetPred(pred, termExps)}
       newTuples.add(new_${pred}_tuple);
       ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
       ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
@@ -1941,12 +1746,12 @@ function compileRuleHead(rule, compileEnv, ptuples)
     ${termAids.join('\n')}
 
     // actual adding
-    const existing_${pred}_tuple = ${relationEmitter.get(pred, termExps)};
+    const existing_${pred}_tuple = ${getPred(pred, termExps)};
     if (existing_${pred}_tuple === null)
     {
-      const new_${pred}_tuple = ${relationEmitter.addGet(pred, termExps)};
+      const new_${pred}_tuple = ${addGetPred(pred, termExps)};
       newTuples.add(new_${pred}_tuple);
-      const product = ${productEmitter.addGet(`Rule${rule._id}Product`, ptuples)};
+      const product = ${addGetProd(`Rule${rule._id}Product`, ptuples)};
       ${t2ps.join('\n        ')}
       product._outtuple = new_${pred}_tuple;
       new_${pred}_tuple._inproducts.add(product);
@@ -1955,7 +1760,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
     }
     else if (${noRecursionConditions.join(' && ')}) // remove direct recursion in product
     {
-      const product = ${productEmitter.addGet(`Rule${rule._id}Product`, ptuples)};
+      const product = ${addGetProd(`Rule${rule._id}Product`, ptuples)};
       ${t2ps.join('\n        ')}
       product._outtuple = existing_${pred}_tuple;
       existing_${pred}_tuple._inproducts.add(product);
@@ -1974,7 +1779,7 @@ function emitRemoveIdbDueToAddition(pred)
   ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
   for (const added_${pred}_tuple of added_${pred}_tuples)
   {
-    const NOT_${pred}_tuple = ${relationEmitter.get(`NOT_${pred}`, fieldAccesses)};
+    const NOT_${pred}_tuple = ${getPred(`NOT_${pred}`, fieldAccesses)};
     if (NOT_${pred}_tuple !== null)
     {
       deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
@@ -2140,7 +1945,7 @@ function emitDeltaRemoveTuple(pred)
   return `
   function deltaRemove_${pred}(${pred}_tuple)
   {
-    remove_${pred}(${tns.map(tn => `${pred}_tuple.${tn}`).join(', ')});
+    ${removePred(pred, tns.map(tn => `${pred}_tuple.${tn}`))};
     removed_${pred}_tuples.push(${pred}_tuple);
     for (const outproduct of ${pred}_tuple._outproducts)
     {
@@ -2180,7 +1985,7 @@ function emitDeltaRemoveNOTTuple(pred)
   return `
   function deltaRemove_NOT_${pred}(NOT_${pred}_tuple)
   {
-    remove_NOT_${pred}(${tns.map(tn => `NOT_${pred}_tuple.${tn}`).join(', ')});
+    ${removePred(`NOT_${pred}`, tns.map(tn => `NOT_${pred}_tuple.${tn}`))};
     // removed_NOT_${pred}_tuples.push(NOT_${pred}_tuple); // TODO is this ever used?
     for (const outproduct of NOT_${pred}_tuple._outproducts)
     {
