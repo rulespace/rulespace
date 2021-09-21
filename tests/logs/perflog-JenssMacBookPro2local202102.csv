@@ -63,3 +63,12 @@ mbp2021local;1619639831363;20210428;2157;;lnrunegaddrem;1;0;0
 mbp2021local;1619639831363;20210428;2157;;lnru100;35;30;25
 mbp2021local;1619639831363;20210428;2157;;lnru500;208;191;207
 mbp2021local;1619639831363;20210428;2157;;lnru1000;2061;1994;2096
+
+Testing at SOFT (therefore different host name)
+*** worryingly, the times increase for 2nd and 3rd tests
+multiple tests confirm the same pattern, so not a fluke
+soft35vub.ac.be;1632153127325;20210920;1752;;lnrunegaddrem;0;0;0
+soft35vub.ac.be;1632153127325;20210920;1752;;lnru100;13;12;14
+soft35vub.ac.be;1632153127325;20210920;1752;;lnru500;76;101;104
+soft35vub.ac.be;1632153127325;20210920;1752;;lnru1000;1783;2564;2415 ***
+

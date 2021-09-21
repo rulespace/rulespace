@@ -336,7 +336,7 @@ export function analyzeProgram(program)
       }
     });
 
-  return { 
+  const self = { 
     program, name2pred,
     preds,
 
@@ -438,6 +438,8 @@ export function analyzeProgram(program)
       return stratum.preds;
     }
   };
+
+  return self;
 }
 
 export function freeVariables(exp)

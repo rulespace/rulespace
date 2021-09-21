@@ -176,7 +176,7 @@ function equalAtoms(actual, expected)
 
 function test(src, expectedTuplesSrc)
 {
-  const ctr = compileToConstructor(src);
+  const ctr = compileToConstructor(src, {assertions:true, info:false});
   const expectedAtoms = compileAtoms(expectedTuplesSrc);
 
   const module = ctr();
@@ -191,28 +191,9 @@ function test(src, expectedTuplesSrc)
   }
 }
 
-
-
-// function test(src, expectedTuplesSrc)
-// {
-//   const ctr = compileToConstructor(src);
-//   const expectedAtoms = compileAtoms(expectedTuplesSrc);
-
-//   const module = ctr();
-//   sanityCheck(module);
-
-//   const expectedTuples = expectedAtoms.map(atom => atomToFreshModuleTuple(module, atom).get());
-//   if (!equalTuples(module.tuples(), expectedTuples))
-//   {
-//     console.error("expected tuples: " + [...expectedTuples].join());
-//     console.error("  module tuples: " + [...module.tuples()].join());
-//     throw new Error("assertion failed");
-//   }
-// }
-
 function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
 {
-  const ctr = compileToConstructor(src);
+  const ctr = compileToConstructor(src, {assertions:true, info:false});
   const edbAtoms = compileAtoms(edbTuplesSrc);
   const expectedIdbAtoms = compileAtoms(expectedIdbTuplesSrc);
   for (const p of permutations(edbAtoms))
@@ -251,50 +232,6 @@ function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
     }
   }
 }
-
-// function testAddWithFacts(src, edbTuplesSrc, expectedFactTuplesSrc, expectedIdbTuplesSrc)
-// {
-//   const ctr = compileToConstructor(src);
-//   const edbAtoms = compileAtoms(edbTuplesSrc);
-//   const expectedIdbAtoms = compileAtoms(expectedIdbTuplesSrc);
-//   const expectedFactAtoms = compileAtoms(expectedFactTuplesSrc);
-//   for (const p of permutations(edbAtoms))
-//   {
-//     const module = ctr();
-//     sanityCheck(module);
-//     const initialTuples = [...module.tuples()]; // only facts + computed idbs  
-
-//     const edbTuples = p.map(atom => atomToFreshModuleTuple(module, atom));
-//     const expectedFactTuples = expectedFactAtoms.map(atom => atomToFreshModuleTuple(module, atom));
-//     const delta = module.addTuples(edbTuples);
-//     sanityCheck(module);
-//     const expectedEdbTuples = edbTuples.concat(expectedFactTuples);
-//     if (!equalTuples(module.edbTuples(), expectedEdbTuples))
-//     {
-//       console.error("expected edb tuples: " + expectedEdbTuples.join());
-//       console.error("  module edb tuples: " + [...module.edbTuples()].join());
-//       throw new Error("assertion failed");
-//     }
-    
-//     const expectedIdbTuples = expectedIdbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
-//     const expectedTuples = expectedEdbTuples.concat(expectedIdbTuples);
-//     if (!equalTuples(module.tuples(), expectedTuples))
-//     {
-//       console.error("expected tuples: " + [...expectedTuples].join());
-//       console.error("  module tuples: " + [...module.tuples()].join());
-//       throw new Error("assertion failed");
-//     }
-    
-//     const expectedDeltaTuples = [...Sets.union(Sets.difference(expectedTuples.map(t => t.get()), initialTuples), edbTuples)];
-//     const actualDeltaTuples = [...delta.added()].flatMap(kv => kv[1]);
-//     if (!equalTuples(actualDeltaTuples, expectedDeltaTuples))
-//     {
-//       console.error("expected delta tuples: " + expectedDeltaTuples.join());
-//       console.error("         delta tuples: " + actualDeltaTuples.join());
-//       throw new Error("assertion failed");
-//     }
-//   }
-// }
 
 function testError(src, edbTuplesSrc, expectedErrorMessageStart)
 {

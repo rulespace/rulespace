@@ -5,14 +5,14 @@ function termNames(arity)
   return Arrays.range(arity).map(i => "t" + i);
 }
 
-class RelationEmitter
+class TupleContainerEmitter
 {
   constructor(logDebug)
   {
     this.logDebug = logDebug;
   }
 
-  initialDeclaration(pred, arity)
+  containerDeclaration(pred, arity)
   {
     if (arity === 0)
     {
@@ -51,8 +51,8 @@ function get_${pred}(${tn.join(', ')})
     const tn = termNames(arity);
     const sb = [];
     sb.push(`
-      function add_get_${pred}(${tn.join(', ')})
-      {
+function add_get_${pred}(${tn.join(', ')})
+{
     `);
 
     if (arity === 0)
@@ -132,7 +132,7 @@ function select_${pred}()
   }
 }
 
-export class SimpleArray extends RelationEmitter
+export class SimpleArray extends TupleContainerEmitter
 {
   constructor(logDebug)
   {
@@ -198,7 +198,7 @@ export class SimpleArray extends RelationEmitter
 
 
 
-export class NestedMaps extends RelationEmitter
+export class NestedMaps extends TupleContainerEmitter
 {
   constructor(logDebug)
   {
@@ -303,3 +303,194 @@ export class NestedMaps extends RelationEmitter
     `;
   }
 }
+
+class TupleEmitter
+{
+  constructor()
+  {
+  }
+
+
+}
+
+export class RelationConstructorEmitter extends TupleEmitter
+{
+  constructor(publicFunction)
+  {
+    super();
+    this.publicFunction = publicFunction;
+  }
+
+  objectDeclaration(pred, arity, tce)
+  {
+    const tn = termNames(arity);
+    const termAssignments = tn.map(t => `this.${t} = ${t};`);
+    const termFields = tn.map(t => `this.${t}`);
+   
+    return `
+${this.publicFunction(pred)}(${termNames(arity).join(', ')})
+{
+  ${termAssignments.join('\n  ')}
+  this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
+  this._outproducts = new Set();
+  this._outproductsgb = new Set();
+  this._refs = []; // TODO: can statically determine which preds will have refs (i.e., allocated as part of tuple) 
+}
+${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
+${pred}.prototype.values = function () {return [${termFields}]};
+${pred}.prototype.get = function () { // also internally used
+  return ${tce.get(pred, termFields)};
+};
+${pred}.prototype._remove = function () {
+  ${tce.remove(pred, termFields)};
+};
+  `;
+  }
+}
+
+export class FunctorConstructorEmitter extends TupleEmitter
+{
+  constructor(publicFunction)
+  {
+    super();
+    this.publicFunction = publicFunction;
+  }
+
+  objectDeclaration(functor, arity, tce)
+  {
+    const tn = termNames(arity);
+    const termAssignments = tn.map(t => `this.${t} = ${t};`);
+    const termFields = tn.map(t => `this.${t}`);
+
+    return `
+    ${publicFunction(functor)}(${tn.join(', ')})
+    {
+      ${termAssignments.join('\n  ')}
+      this._rc = 0;
+      this._outproducts = new Set();
+      this._outproductsgb = new Set();
+      this._refs = [];
+    }
+    ${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
+    ${functor}.prototype.values = function () {return [${termFields}]};
+    ${functor}.prototype._remove = function () { ${tce.remove(functor, termFields)} };    
+    `;
+  }
+}
+
+export class ProductClassEmitter extends TupleEmitter
+{
+  constructor()
+  {
+    super();
+  }
+
+  objectDeclaration(name, arity, recursive) // TODO: remove recursive 
+  {
+    const tupleParams = Arrays.range(arity).map(i => `tuple${i}`);
+    const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
+    const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
+  
+    return `
+class ${name}
+{
+  constructor(${tupleParams.join(', ')})
+  {
+    ${tupleFieldInits.join('\n')}
+    this._outtuple = null; // TODO make this ctr param!
+  }
+
+  // result of a recursive rule?
+  recursive()
+  {
+    return ${recursive};
+  }
+
+  tuples() // or, a field initialized in ctr?
+  {
+    return [${tupleFields.join(', ')}];
+  }
+
+  toString()
+  {
+    return "${name}:" + this.tuples().join('.');
+  }
+}
+  `;    
+  }
+}
+
+export class ProductGBClassEmitter extends TupleEmitter
+{
+  constructor()
+  {
+    super();
+  }
+
+  objectDeclaration(name, arity)
+  {
+    const tupleParams = Arrays.range(arity).map(i => `tuple${i}`);
+    const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
+    const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
+  
+    return `
+class ${name}
+{
+  constructor(${tupleParams.join(', ')})
+  {
+    ${tupleFieldInits.join('\n')}
+    this.value = null; // TODO ctr param? (is func dep on tuples + complicates addGet)
+    this._outgb = null;  // TODO ctr param? (complicates addGet)
+  }
+
+  tuples() // or, a field initialized in ctr?
+  {
+    return [${tupleFields.join(', ')}];
+  }
+
+  toString()
+  {
+    return "${name}:" + this.tuples().join('.');
+  }
+}
+  `;    
+  }
+}
+
+
+export class GBClassEmitter extends TupleEmitter
+{
+  constructor()
+  {
+    super();
+  }
+
+  objectDeclaration(name, arity)
+  {
+    const tn = termNames(arity);
+    const termAssignments = tn.map(t => `this.${t} = ${t}`);
+    const termFields = tn.map(t => `this.${t}`);
+  
+    return `
+class ${name}
+{
+  constructor(${tn.join(', ')})
+  {
+    ${termAssignments.join('; ')};
+    this._outtuple = null;  
+  }
+
+  toString()
+  {
+    return atomString('${name}', ${termFields.join(', ')});
+  }
+}
+      `;    
+  }
+}
+
+
+
+
+
+

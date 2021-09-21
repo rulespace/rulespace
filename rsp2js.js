@@ -1,7 +1,7 @@
 import { Arrays, assertTrue } from 'common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
-import { SimpleArray, NestedMaps } from './rsp2js-emitters.js';
+import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter } from './rsp2js-emitters.js';
 
 class RspJsCompilationError extends Error
 {
@@ -195,10 +195,13 @@ export function rsp2js(rsp, options={})
   const publicFunctionStar = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`};
 
   
-  const FLAG_debug = options.debug === true ? true : false;
-  const logDebug = FLAG_debug ? str => `console.log(${str})` : () => ``;
+  const FLAG_debug = options.debug ?? false;
+  const logDebug = FLAG_debug ? str => `console.debug(${str})` : () => ``;
 
-  const FLAG_profile = options.profile === true ? true : false;
+  const FLAG_info = options.info ?? true;
+  const logInfo = FLAG_info ? str => `console.info(${str})` : () => ``;
+
+  const FLAG_profile = options.profile ?? false;
   const profileVars = new DynamicVars("0");
   // const profile = FLAG_profile ? str => str : () => ``;
   const profileStart = FLAG_profile ? name => `const ${name}Start = performance.now();` : () => ``;
@@ -212,8 +215,10 @@ export function rsp2js(rsp, options={})
         `;
     } : () => ``;
 
-  const FLAG_assertions = options.assertions === true ? true : false;
-  const assert = FLAG_assertions ? (condition, display='"(?)"', explanation='assertion failed') => `if (!(${condition})) {throw new Error(${display} + ': ${explanation}')} ` : () => ``;
+  const FLAG_assertions = options.assertions ?? false;
+  const assert = FLAG_assertions
+    ? (condition, display='"(?)"', explanation='assertion failed') => `if (!(${condition})) {throw new Error(${display} + ': ${explanation}')} ` 
+    : () => ``;
   // end options + emitters
 
   const lambdas = new Lines();
@@ -234,110 +239,50 @@ function fireRuleInto(rule, deltaPos, deltaTuples, into)
 
 ///
 
-const relationEmitter = new SimpleArray(logDebug);
-const productEmitter = new NestedMaps(logDebug);
-
-function initialDeclarationPred(name, arity)
-{
-  return relationEmitter.initialDeclaration(name, arity);
-}
-
-function getDeclarationPred(name, arity)
-{
-  return relationEmitter.getDeclaration(name, arity);
-}
-
-function addGetDeclarationPred(name, arity)
-{
-  return relationEmitter.addGetDeclaration(name, arity);
-}
-
-function selectDeclarationPred(name, arity)
-{
-  return relationEmitter.selectDeclaration(name, arity);
-}
-
-function removeDeclarationPred(name, arity)
-{
-  return relationEmitter.removeDeclaration(name, arity);
-}
+const relationTce = new SimpleArray(logDebug);
+const relationTe = new RelationConstructorEmitter(publicFunction);
 
 function getPred(pred, values)
 {
-  return relationEmitter.get(pred, values);
+  return relationTce.get(pred, values);
 }
 
 function addGetPred(pred, values)
 {
-  return relationEmitter.addGet(pred, values);
+  return relationTce.addGet(pred, values);
 }
 
 function selectPred(pred)
 {
-  return relationEmitter.select(pred);
+  return relationTce.select(pred);
 }
 
 function removePred(pred, values)
 {
-  return relationEmitter.remove(pred, values);
+  return relationTce.remove(pred, values);
 }
 
 
-function initialDeclarationFunctor(name, arity)
-{
-  return relationEmitter.initialDeclaration(name, arity);
-}
+const functorTce = new SimpleArray(logDebug);
+const functorTe = new RelationConstructorEmitter(publicFunction); // TODO export (public) stuff
 
-function getDeclarationFunctor(name, arity)
-{
-  return relationEmitter.getDeclaration(name, arity);
-}
-
-function addGetDeclarationFunctor(name, arity)
-{
-  return relationEmitter.addGetDeclaration(name, arity);
-}
-
-function removeDeclarationFunctor(name, arity)
-{
-  return relationEmitter.removeDeclaration(name, arity);
-}
+const GBTce = new SimpleArray(logDebug);
+const GBTe = new GBClassEmitter();
 
 
-function initialDeclarationLambda(name, arity)
-{
-  return relationEmitter.initialDeclaration(name, arity);
-}
+const closureTce = new SimpleArray(logDebug); // TODO; in principle only NestedMaps-type of container can be used
+// const closureTe = new RelationConstructorEmitter(publicFunction); closures cannot be deconstructed
 
-function getDeclarationLambda(name, arity)
-{
-  return relationEmitter.getDeclaration(name, arity);
-}
+const productTce = new NestedMaps(logDebug);
+const productTe = new ProductClassEmitter();
 
-function addGetDeclarationLambda(name, arity)
-{
-  return relationEmitter.addGetDeclaration(name, arity);
-}
+const productGBTce = new NestedMaps(logDebug);
+const productGBTe = new ProductGBClassEmitter();
 
-
-function initialDeclarationProd(name, arity)
-{
-  return productEmitter.initialDeclaration(name, arity);
-}
-
-function getDeclarationProd(name, arity)
-{
-  return productEmitter.getDeclaration(name, arity);
-}
-
-function addGetDeclarationProd(name, arity)
-{
-  return productEmitter.addGetDeclaration(name, arity);
-}
 
 function addGetProd(name, arity)
 {
-  return productEmitter.addGet(name, arity);
+  return productTce.addGet(name, arity);
 }
 
 ////////////
@@ -349,7 +294,7 @@ function main()
   ${FLAG_compile_to_ctr ? `"use strict"` : ``}
   ${FLAG_compile_to_module && FLAG_profile ? `import { performance } from 'perf_hooks` : ``}
   ${FLAG_profile ? `console.log("profiling on")` : ``}
-  ${FLAG_assertions ? `console.log("assertions on")` : ``}
+  ${FLAG_assertions ? logInfo(`'assertions on'`) : ``}
 
   const MutableArrays =
   {
@@ -502,51 +447,25 @@ function main()
 function emitTupleObject(pred)
 {
   const arity = pred.arity;
-  const tn = termNames2(arity);
-  const termAssignments = tn.map(t => `this.${t} = ${t};`);
-  const termFields = tn.map(t => `this.${t}`);
   
   let sb = `
-
-  ${publicFunction(pred)}(${tn.join(', ')})
-{
-  ${termAssignments.join('\n  ')}
-  this._inproducts = ${pred.edb ? `new Set(); //TODO will/should never be added to` : `new Set();`}
-  this._outproducts = new Set();
-  this._outproductsgb = new Set();
-  this._refs = []; // TODO: can statically determine which preds will have refs (i.e., allocated as part of tuple) 
-}
-${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
-${pred}.prototype.values = function () {return [${termFields}]};
-${pred}.prototype.get = function () { // also internally used
-  return ${getPred(pred, termFields)};
-};
-${pred}.prototype._remove = function () {
-  ${removePred(pred, termFields)};
-};
-${initialDeclarationPred(pred, arity)}
-${getDeclarationPred(pred, arity)}
-${addGetDeclarationPred(pred, arity)}
-${removeDeclarationPred(pred, arity)}
-${selectDeclarationPred(pred, arity)}
-`;
+    ${relationTe.objectDeclaration(pred, arity, relationTce)}
+    ${relationTce.containerDeclaration(pred, arity)}
+    ${relationTce.getDeclaration(pred, arity)}
+    ${relationTce.addGetDeclaration(pred, arity)}
+    ${relationTce.removeDeclaration(pred, arity)}
+    ${relationTce.selectDeclaration(pred, arity)}
+  `;
 
   if (pred.negAppearsIn.size > 0)
   {
     sb += `
-function NOT_${pred}(${tn.join(', ')})
-{
-  ${termAssignments.join('\n  ')}  
-  this._inproducts = new Set(); // TODO: invariant: no inproducts?
-  this._outproducts = new Set();
-}        
-NOT_${pred}.prototype.toString = function () {return atomString("!${pred}", ${termFields.join(', ')})};  
-NOT_${pred}.prototype._remove = function () { ${removePred(`NOT_${pred}`, termFields)}};
-${initialDeclarationPred(`NOT_${pred}`, arity)}
-${getDeclarationPred(`NOT_${pred}`, arity)}
-${addGetDeclarationPred(`NOT_${pred}`, arity)}
-${removeDeclarationPred(`NOT_${pred}`, arity)}
-    `;
+    ${relationTe.objectDeclaration(`NOT_${pred}`, arity, relationTce)}
+    ${relationTce.containerDeclaration(`NOT_${pred}`, arity)}
+    ${relationTce.getDeclaration(`NOT_${pred}`, arity)}
+    ${relationTce.addGetDeclaration(`NOT_${pred}`, arity)}
+    ${relationTce.removeDeclaration(`NOT_${pred}`, arity)}
+    `
   }
 
   return sb;
@@ -555,29 +474,14 @@ ${removeDeclarationPred(`NOT_${pred}`, arity)}
 function emitFunctorObject(functor)
 {
   const arity = functor.arity;
-  const tn = termNames(functor);
-  const termAssignments = tn.map(t => `this.${t} = ${t};`);
-  const termFields = tn.map(t => `this.${t}`);
 
-  let sb = `
-${publicFunction(functor)}(${tn.join(', ')})
-{
-  ${termAssignments.join('\n  ')}
-  this._rc = 0;
-  this._outproducts = new Set();
-  this._outproductsgb = new Set();
-  this._refs = [];
-}
-${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
-${functor}.prototype.values = function () {return [${termFields}]};
-${functor}.prototype._remove = function () { ${removePred(functor, termFields)} };
-${initialDeclarationFunctor(functor, arity)};
-${getDeclarationFunctor(functor, arity)}
-${addGetDeclarationFunctor(functor, arity)}
-${removeDeclarationFunctor(functor, arity)}
-`;
-
-  return sb;
+  return  `
+  ${functorTe.objectDeclaration(functor, arity, functorTce)};
+  ${functorTce.containerDeclaration(functor, arity)}
+  ${functorTce.getDeclaration(functor, arity)}
+  ${functorTce.addGetDeclaration(functor, arity)}
+  ${functorTce.removeDeclaration(functor, arity)}
+  `;
 }
 
 class ConstraintIndex
@@ -929,46 +833,19 @@ function compileLitAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 
 function emitRule(rule)
 {
-  const compileEnv = new Map();
 
-  const tupleArity = rule.tupleArity();
-  const tupleParams = Array.from({length:tupleArity}, (_, i) => `tuple${i}`);
-  const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
-  const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
-  const recursive = analysis.ruleIsRecursive(rule);
-
-  return `
 /* rule (tuple arity ${tupleArity}) (${recursive ? 'recursive' : 'non-recursive'}) (non-aggregating)
 ${rule} 
 */
+const compileEnv = new Map();
+const tupleArity = rule.tupleArity();
+const recursive = analysis.ruleIsRecursive(rule); // TODO this must go at some point!
 
-class Rule${rule._id}Product
-{
-  constructor(${tupleParams.join(', ')})
-  {
-    ${tupleFieldInits.join('\n')}
-    this._outtuple = null; // TODO make this ctr param!
-  }
-
-  // result of a recursive rule?
-  recursive()
-  {
-    return ${recursive};
-  }
-
-  tuples() // or, a field initialized in ctr?
-  {
-    return [${tupleFields.join(', ')}];
-  }
-
-  toString()
-  {
-    return "r${rule._id}:" + this.tuples().join('.');
-  }
-}
-${initialDeclarationProd(`Rule${rule._id}Product`, tupleArity)}
-${getDeclarationProd(`Rule${rule._id}Product`, tupleArity)}
-${addGetDeclarationProd(`Rule${rule._id}Product`, tupleArity)}
+return `
+${productTe.objectDeclaration(`Rule${rule._id}Product`, tupleArity, recursive)}
+${productTce.containerDeclaration(`Rule${rule._id}Product`, tupleArity)}
+${productTce.getDeclaration(`Rule${rule._id}Product`, tupleArity)}
+${productTce.addGetDeclaration(`Rule${rule._id}Product`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
@@ -1129,46 +1006,15 @@ function emitRuleGB(rule)
 /* rule (tuple arity ${tupleArity}) (non-recursive) (aggregating) 
 ${rule} 
 */
+${GBTe.objectDeclaration(`Rule${rule._id}GB`, numGbTerms)}
+${GBTce.containerDeclaration(`Rule${rule._id}GB`,numGbTerms)}
+${GBTce.getDeclaration(`Rule${rule._id}GB`, numGbTerms)}
+${GBTce.addGetDeclaration(`Rule${rule._id}GB`, numGbTerms)}
 
-class Rule${rule._id}GB
-{
-  constructor(${tn.join(', ')})
-  {
-    ${termAssignments.join('; ')};
-    this._outtuple = null;  
-  }
-
-  toString()
-  {
-    return atomString('${rule.head.pred}', ${termToStrings.join(', ')}, ({toString: () => "${aggTerm}"}));
-  }
-}
-${initialDeclarationProd(`Rule${rule._id}GB`,numGbTerms)}
-${getDeclarationProd(`Rule${rule._id}GB`, numGbTerms)}
-${addGetDeclarationProd(`Rule${rule._id}GB`, numGbTerms)}
-
-class Rule${rule._id}ProductGB
-{
-  constructor(${tupleParams.join(', ')})
-  {
-    ${tupleFieldInits.join('\n    ')}
-    this.value = null; // TODO ctr param? (is func dep on tuples + complicates addGet)
-    this._outgb = null;  // TODO ctr param? (complicates addGet)
-  }
-
-  tuples() // or, a field initialized in ctr?
-  {
-    return [${tupleFields.join(', ')}];
-  }
-
-  toString()
-  {
-    return "r${rule._id}:" + this.tuples().join('.');
-  }
-}
-${initialDeclarationProd(`Rule${rule._id}ProductGB`, tupleArity)}
-${getDeclarationProd(`Rule${rule._id}ProductGB`, tupleArity)}
-${addGetDeclarationProd(`Rule${rule._id}ProductGB`, tupleArity)}
+${productGBTe.objectDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${productGBTce.containerDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${productGBTce.getDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${productGBTce.addGetDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
@@ -1297,9 +1143,9 @@ function ${name}(${closureCompiledVars.join(', ')})
   }
 }
     `);
-    lambdas.add(initialDeclarationLambda(name, closureVars.length));
-    lambdas.add(getDeclarationLambda(name, closureVars.length));   
-    lambdas.add(addGetDeclarationLambda(name, closureVars.length));   
+    lambdas.add(closureTce.containerDeclaration(name, closureVars.length));
+    lambdas.add(closureTce.getDeclaration(name, closureVars.length));   
+    lambdas.add(closureTce.addGetDeclaration(name, closureVars.length));   
   }
   return addGetPred(name, closureCompiledVars);
 }
@@ -1461,16 +1307,9 @@ function stratumInitialAddLogic(stratum)
     for (const pred of stratum.preds)
     {
       assertTrue(pred.edb);
-      // sb.push(emitDeltaRemoveTuple(pred));
-      // if (pred.negAppearsIn.size > 0)
-      // {
-      //   sb.push(emitDeltaRemoveNOTTuple(pred));
-      // }
-
       sb.push(`
-
       // adding initial ${pred} tuples
-      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) || []);
+      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) ?? []);
       `);  
     }      
   }
@@ -1479,14 +1318,7 @@ function stratumInitialAddLogic(stratum)
     if (analysis.stratumHasRecursiveRule(stratum)) // TODO: this conditional only checks assumptions, keep?
     {
       sb.push(`// stratum has recursive rules`);
-      if (!stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)))
-      {
-        stratum.preds.forEach(pred =>
-        {
-          console.log(`${pred} has recursive rule: ${analysis.predHasRecursiveRule(pred)}`);
-        })
-      }
-      assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));
+      assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));      
     }
     else // single-pred non-recursive stratum
     {
@@ -1496,11 +1328,11 @@ function stratumInitialAddLogic(stratum)
      
     for (const pred of stratum.preds)
     {
-      // sb.push(`const added_${pred}_tuples = [];`);// not sufficient when you have facts for recursive idb preds
       sb.push(`const added_${pred}_tuples = addedTuplesMap.get(${pred})?.slice(0) ?? [];`); // `slice` for copying (need to keep original facts) TODO optimize by emitting only `[]` when no fact rules exist
 
-      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all non-recursive rules"')); 
-      for (const rule of pred.rules) // TODO: check this: also fires rec rules (once)
+      // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
+      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all rules once"')); 
+      for (const rule of pred.rules)
       {
         if (rule.aggregates())
         {
@@ -1523,6 +1355,7 @@ function stratumInitialAddLogic(stratum)
       }
     }
   
+    // now, we still must fixpoint the recursive rules
     if (stratum.recursiveRules.size > 0)
     {
       sb.push(logDebug('"adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
@@ -1809,7 +1642,7 @@ function emitRemoveIdbDueToAddition(pred)
     {
       deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
     }
-  }
+  }  
   `);
   return sb.join('\n');
 }
@@ -1858,8 +1691,8 @@ function stratumDeltaLogic(stratum)
 
     if (analysis.stratumHasRecursiveRule(stratum))
     {
-      assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));
       sb.push(`// stratum has recursive rules`);
+      assertTrue(stratum.preds.every(pred => analysis.predHasRecursiveRule(pred)));
 
       if (stratum.preds.length > 1)
       {
@@ -1898,6 +1731,7 @@ function stratumDeltaLogic(stratum)
     {
       sb.push(`// single-pred non-recursive stratum`);
       assertTrue(stratum.preds.length === 1);
+
       const pred = stratum.preds[0];
       sb.push(`
       ${logDebug(`"removing damaged ${pred} tuples due to removal of stratum-edb tuples"`)}
@@ -1913,11 +1747,12 @@ function stratumDeltaLogic(stratum)
      
     for (const pred of stratum.preds)
     {
-      // sb.push(`const added_${pred}_tuples = [];`);// not sufficient when you have facts for recursive idb preds
-      sb.push(`const added_${pred}_tuples = addedTuplesMap.get(${pred})?.slice(0) ?? [];`); // `slice` for copying (need to keep original facts) TODO optimize by emitting only `[]` when no fact rules exist
+      sb.push(`const added_${pred}_tuples = [];`);
+      //sb.push(`const added_${pred}_tuples = addedTuplesMap.get(${pred})?.slice(0) ?? [];`); // during delta you cannot have idbs due to facts
 
-      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all non-recursive rules"')); // TODO could maybe fire *all* rules (rec + non-rec) already once?
-      for (const rule of pred.rules) // TODO: check this: also fires rec rules (once)
+      // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
+      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all rules once"'));
+      for (const rule of pred.rules)
       {
         if (rule.aggregates())
         {
@@ -1930,6 +1765,7 @@ function stratumDeltaLogic(stratum)
       }
     }
   
+    // now, we still must fixpoint the recursive rules
     if (stratum.recursiveRules.size > 0)
     {
       sb.push(logDebug('"adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
