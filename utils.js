@@ -33,7 +33,6 @@ export function instance2dot(instance)
 }
 
 
-
 //////
 
 
@@ -132,6 +131,130 @@ function toDot(tuples_)
   sb += "}";
   return sb;
 }
+
+
+
+
+////////////
+
+
+export function deltaSource(instance)
+{
+  const deltaObservers = [];
+  function notify(delta)
+  {
+    deltaObservers.forEach(observer => observer.observe(delta));
+    return delta;
+  }
+  return {
+    addTupleMap(addTuples)
+    { 
+      return notify(instance.addTupleMap(addTuples));
+    },
+    addTuples(addTuples)
+    { 
+      return notify(instance.addTuples(addTuples));
+    },
+    removeTupleMap(removeTuples)
+    { 
+      return notify(instance.removeTupleMap(removeTuples));
+    },
+    removeTuples(removeTuples)
+    { 
+      return notify(instance.removeTuples(removeTuples));
+    },
+
+    ////
+
+    addDeltaObserver(observer)
+    {
+      if (!deltaObservers.includes(observer))
+      {
+        deltaObservers.push(observer);
+      }
+    }
+
+  }
+}
+
+export function linear(instances)
+{
+  if (instances.length === 1)
+  {
+    return instances[0];
+  }
+  const rest = linear.call(null, instances.slice(1));
+  const ds = deltaSource(instances[0]);
+  ds.addDeltaObserver(rest.computeDelta);
+  return rest;
+}
+
+
+// meta bridge
+// for now this is a clunky way of doing meta stuff
+// TODO: merge this into rulespace itself ("(re)actively" coupled)
+export function metaInstance(instance, tuples = instance.rootTuples())
+{
+  const metaInstance = new meta();
+  const seen = new Set();
+  const wl = [...tuples];
+  const metaTuples = [];
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    if (seen.has(tuple))
+    {
+      continue;
+    }
+    const relationName = tuple.constructor.name;
+    const values = tuple.values();
+    metaTuples.push(new metaInstance.relation(relationName, values.length)); // TODO: for every `tuple` a `relation` is pushed, which is semantically ok but a bit wasteful
+    metaTuples.push(new metaInstance.tuple(tuple, relationName));
+    values.forEach((value, i) => metaTuples.push(new metaInstance.tuple_value(value, tuple, i)));
+    for (const product of instance.outProducts(tuple))
+    {
+      productTuples.forEach((productTuple, i) => metaTuples.push(new metaInstance.product_tuple(productTuple, product, i)));
+      if (seen.has(product))
+      {
+        continue;     
+      }
+      seen.add(product);
+      const productTuples = product.tuples();
+      const rule = product.constructor.name; // placeholder
+      const tuple_out = instance.outTuple(product);
+      metaTuples.push(new metaInstance.rule(rule, productTuples.length)); 
+      metaTuples.push(new metaInstance.product(product, rule, tuple_out));
+      if (tuple_out !== null)
+      {
+        wl.push(tuple_out);
+      }  
+    }
+    // for (const productGB of instance.outProductsGroupBy(tuple))
+    // {
+    //   MutableMaps.putPushArray(pgraph, tuple, productGB);
+    //   if (seen.has(productGB))
+    //   {
+    //     continue;     
+    //   }
+    //   seen.add(productGB);  
+    //   const groupby = instance.outGroupBy(productGB);
+    //   MutableMaps.putPushArray(pgraph, productGB, groupby);
+    //   if (!seen.has(groupby))
+    //   {
+    //     seen.add(groupby);
+    //     const outTuple = instance.outTuple(groupby);
+    //     if (outTuple !== null)
+    //     {
+    //       MutableMaps.putPushArray(pgraph, groupby, outTuple);
+    //       wl.push(outTuple);
+    //     }
+    //   }
+    // }
+  }
+  metaInstance.addTuples(metaTuples);
+  return metaInstance;
+}
+
 
 
 

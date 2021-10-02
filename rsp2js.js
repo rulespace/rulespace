@@ -262,8 +262,18 @@ function removePred(pred, values)
   return relationTce.remove(pred, values);
 }
 
+function outProductsPred(tupleExp) // returns Set
+{
+  return relationTe.outProducts(tupleExp);
+}
 
-const functorTce = new SimpleArray(logDebug);
+function addOutProductPred(tupleExp, productExp)
+{
+  return relationTe.addOutProduct(tupleExp, productExp);
+}
+
+
+const functorTce = relationTce;
 const functorTe = new RelationConstructorEmitter(publicFunction); // TODO export (public) stuff
 
 const GBTce = new SimpleArray(logDebug);
@@ -276,7 +286,7 @@ const closureTce = new SimpleArray(logDebug); // TODO; in principle only NestedM
 const productTce = new NestedMaps(logDebug);
 const productTe = new ProductClassEmitter();
 
-const productGBTce = new NestedMaps(logDebug);
+const productGBTce = productTce;
 const productGBTe = new ProductGBClassEmitter();
 
 
@@ -435,6 +445,52 @@ function main()
   ${publicFunction('removeTuples')}(edbTuples)
   {
     return removeTupleMap(toTupleMap(edbTuples));
+  }
+
+  // "slow" functions, only for external usage
+  ${publicFunction('outProducts')}(x)
+  {
+    if (x._outproductsgb)
+    {
+      return [...x._outproductsgb];
+    }
+    return [];
+  }
+
+  ${publicFunction('OutProductsGroupBy')}(x)
+  {
+    if (x._outproductsgb)
+    {
+      return [...x._outproductsgb];
+    }
+    return [];
+  }
+
+  ${publicFunction('inProducts')}(x)
+  {
+    if (x._inproducts)
+    {
+      return [...x._outproducts];
+    }
+    return [];
+  }
+
+  ${publicFunction('outTuple')}(x)
+  {
+    if (x._outtuple)
+    {
+      return x._outtuple;
+    }
+    return null;
+  }
+
+  ${publicFunction('outGroupBy')}(x)
+  {
+    if (x._outgb)
+    {
+      return x._outgb;
+    }
+    return null;
   }
 
   ${FLAG_profile ? emitProfileResults() : ``}
@@ -1595,7 +1651,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
   }
   else // derived tuple: construct product, deal with provenance
   {
-    const t2ps = ptuples.map(tuple => `${tuple}._outproducts.add(product);`);
+    const t2ps = ptuples.map(tuple => addOutProductPred(tuple, `product`));
     const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
 
     return `
@@ -1808,7 +1864,7 @@ function emitDeltaRemoveTuple(pred)
   {
     ${removePred(pred, tns.map(tn => `${pred}_tuple.${tn}`))};
     removed_${pred}_tuples.push(${pred}_tuple);
-    for (const outproduct of ${pred}_tuple._outproducts)
+    for (const outproduct of ${outProductsPred(`${pred}_tuple`)})
     {
       ${productRemoval.join('  else')}
     }
@@ -1848,7 +1904,7 @@ function emitDeltaRemoveNOTTuple(pred)
   {
     ${removePred(`NOT_${pred}`, tns.map(tn => `NOT_${pred}_tuple.${tn}`))};
     // removed_NOT_${pred}_tuples.push(NOT_${pred}_tuple); // TODO is this ever used?
-    for (const outproduct of NOT_${pred}_tuple._outproducts)
+    for (const outproduct of ${outProductsPred(`NOT_${pred}_tuple`)})
     {
       ${productRemoval.join('  else')}
     }
@@ -1862,7 +1918,7 @@ function emitComputeDelta(strata, preds)
   const deltaRemovedTuplesEntries = preds.map(pred => `[${pred}, removed_${pred}_tuples]`);
 
   return `
-function computeDelta(addTuples, remTuples)
+${publicFunction('computeDelta')}(addTuples, remTuples)
 {
   const addedTuplesMap = new Map(addTuples);
   const removedTuplesMap = new Map(remTuples);

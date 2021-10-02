@@ -346,6 +346,16 @@ ${pred}.prototype._remove = function () {
 };
   `;
   }
+
+  outProducts(tupleExp)
+  {
+    return `${tupleExp}._outproducts`;
+  }
+
+  addOutProduct(tupleExp, productExp)
+  {
+    return `${tupleExp}._outproducts.add(${productExp})`
+  }
 }
 
 export class FunctorConstructorEmitter extends TupleEmitter
@@ -385,7 +395,7 @@ export class ProductClassEmitter extends TupleEmitter
     super();
   }
 
-  objectDeclaration(name, arity, recursive) // TODO: remove recursive 
+  objectDeclaration(name, arity, recursive) // TODO: remove recursive at some point
   {
     const tupleParams = Arrays.range(arity).map(i => `tuple${i}`);
     const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
