@@ -39,6 +39,28 @@ export function instance2dot(instance)
 function toDot(tuples_)
 {
 
+  function valueLabel(value)
+  {
+    if (value instanceof Function)
+    {
+      return '<function>';
+    }
+    if (value._outproducts)
+    {
+      return tupleLabel(value);
+    }
+    if (typeof value === 'string')
+    {
+      return `\\"${value}\\"`
+    }
+    return value;
+  }
+
+  function tupleLabel(tuple)
+  {
+    return `[${tuple.constructor.name} ${tuple.values().map(valueLabel).join(' ')}]`;
+  }
+
   function gbLabel(gb)
   {
     return gb;
@@ -46,13 +68,13 @@ function toDot(tuples_)
 
   function productLabel(product)
   {
-    return product;
+    return product.constructor.name;
     // return product;
   }
 
   function productGBLabel(product)
   {
-    return product;
+    return product.constructor.name;
   }
 
   let sb = "digraph G {\nnode [style=filled,fontname=\"Roboto Condensed\"];\n";
@@ -81,7 +103,7 @@ function toDot(tuples_)
     }
     seen.add(tuple);
     const t = getTag(tuple);
-    sb += `${t} [shape=box label="${tuple}"];\n`;
+    sb += `${t} [shape=box label="${tupleLabel(tuple)}"];\n`;
     for (const product of tuple._outproducts)
     {
       sb += `${t} -> ${getTag(product)};\n`;    
