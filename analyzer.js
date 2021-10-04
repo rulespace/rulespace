@@ -1,5 +1,5 @@
 import { assertTrue, MutableSets, MutableMaps } from 'common';
-import { Atom, Neg, App, Assign, Lit, Var, Lam } from './rsp.js';
+import { Atom, Neg, App, Assign, Lit, Var, Lam, Agg } from './rsp.js';
 
 // TODO: flag assignment to already bound identifier:  [X x] [Y y] [:= x y]
 
@@ -109,6 +109,20 @@ function collect(program)
   const name2pred = new Map();
   const name2functor = new Map();
 
+  function handleLambda(lam)
+  {
+    handleExp(lam.body);
+  }
+
+  function handleApp(app)
+  {
+    handleExp(app.operator);
+    for (const rand of app.operands)
+    {
+      handleExp(rand);
+    }
+  }
+
   function handleFunctor(functor)
   {
     const name = functor.pred;
@@ -139,6 +153,31 @@ function collect(program)
     }
   }
 
+  function handleExp(exp)
+  {
+    if (exp instanceof Atom)
+    {
+      // atom exp = functor
+      handleFunctor(exp);
+    }
+    else if (exp instanceof Lit || exp instanceof Var || exp instanceof Agg)
+    {
+      // do nothing
+    }
+    else if (exp instanceof Lam)
+    {
+      handleLambda(exp);
+    }
+    else if (exp instanceof App)
+    {
+      handleApp(exp);
+    }
+    else
+    {
+      throw new Error(`cannot handle expression ${exp} of type ${exp?.constructor?.name}`);
+    }
+  }
+
   function handleAtom(atom, rule)
   {
     const name = atom.pred;
@@ -161,11 +200,7 @@ function collect(program)
     // scan exps
     for (const exp of atom.terms)
     {
-      if (exp instanceof Atom)
-      {
-        // atom exp in atom = functor
-        handleFunctor(exp);
-      }
+      handleExp(exp);
     }
     return pred;
   }
@@ -470,9 +505,16 @@ export function freeVariables(exp)
       const body = exp.body;
       fv(body, env2);
     }
+    else if (exp instanceof Atom)
+    {
+      for (const term of exp.terms)
+      {
+        fv(term, env);
+      }
+    }
     else
     {
-      throw new Error(`cannot handle expression ${exp}`); 
+      throw new Error(`cannot handle expression ${exp} of type ${exp?.constructor?.name}`); 
     }
     // app
     // var exps = exp;

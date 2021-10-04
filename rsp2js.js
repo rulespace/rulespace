@@ -1133,7 +1133,6 @@ ${publicFunction('clear')}()
 
 function compileExpression(exp, env, termAids, rcIncs)
 {
-  assertTrue(env instanceof Map);
   if (exp instanceof Var)
   {
     if (isNativeFunName(exp.name))
@@ -1156,7 +1155,7 @@ function compileExpression(exp, env, termAids, rcIncs)
   }
   if (exp instanceof App)
   {
-    return compileApplication(exp, env);
+    return compileApplication(exp, env, termAids, rcIncs);
   }
   if (exp instanceof Atom) // Functor
   {
@@ -1164,7 +1163,7 @@ function compileExpression(exp, env, termAids, rcIncs)
   }
   if (exp instanceof Lam)
   {
-    return compileLambda(exp, env);
+   return compileLambda(exp, env, termAids, rcIncs);
   }
   throw new Error(`cannot handle expression ${exp} of type ${exp.constructor.name}`);
 }
@@ -1172,7 +1171,7 @@ function compileExpression(exp, env, termAids, rcIncs)
 const syntacticLambdas = new Map();
 const emitLambdas = [];
 
-function compileLambda(lam, env) // TODO rcIncs and termAids: closure = allocated object
+function compileLambda(lam, env, termAids, rcIncs) // TODO update rcIncs and termAids: closure = allocated object
 {
   assertTrue(env instanceof Map)
   let name = syntacticLambdas.get(lam);
@@ -1188,15 +1187,23 @@ function compileLambda(lam, env) // TODO rcIncs and termAids: closure = allocate
     {
       extendedEnv.set(param.name, freshVariable(param.name));
     }
+    const rcIncs2 = [];
+    const termAids2 = [];
+    const compiledBody = compileExpression(lam.body, extendedEnv, termAids2, rcIncs2);
 
     lambdas.add(`
 // ${lam}    
 function ${name}(${closureCompiledVars.join(', ')})
 {
-  return function(${lam.params.map(param => extendedEnv.get(param.name)).join(', ')})
+  const closure = function(${lam.params.map(param => extendedEnv.get(param.name)).join(', ')})
   {
-    return ${compileExpression(lam.body, extendedEnv)};
-  }
+      ${termAids2.join('\n        ')}
+      ${rcIncs2.map(x => `closure._refs.push(${x})`).join('\n        ')}
+      ${rcIncs2.map(x => `${x}._rc++;`).join('\n        ')}
+      return ${compiledBody};
+  };
+  closure._refs = [];
+  return closure;
 }
     `);
     lambdas.add(closureTce.containerDeclaration(name, closureVars.length));
@@ -1206,7 +1213,7 @@ function ${name}(${closureCompiledVars.join(', ')})
   return addGetPred(name, closureCompiledVars);
 }
 
-function compileApplication(app, env)
+function compileApplication(app, env, termAids, rcIncs)
 {
   assertTrue(env instanceof Map)
 
@@ -1214,68 +1221,53 @@ function compileApplication(app, env)
   {
     if (i === rands.length - 2)
     {
-      return `${compileExpression(rands[i], env)} ${rator.name} ${compileExpression(rands[i+1], env)}`;
+      return `${compileExpression(rands[i], env)} ${rator.name} ${compileExpression(rands[i+1], env, termAids, rcIncs)}`;
     }
-    return `${compileExpression(rands[0], env)} ${rator.name} ${compileRatorRands(i+1, env)}`;
+    return `${compileExpression(rands[0], env)} ${rator.name} ${compileRatorRands(i+1, env, termAids, rcIncs)}`;
   }
-
-
 
   const rator = app.operator;
   const rands = app.operands;
   if (rator instanceof Var)
   {
-    if (rator.name === "=") 
+    switch (rator.name)
     {
-      return `${compileExpression(rands[0], env)} === ${compileExpression(rands[1], env)}`;
-    }
-    
-    if (rator.name === "!=") 
-    {
-      return `${compileExpression(rands[0], env)} !== ${compileExpression(rands[1], env)}`;
-    }
-    
-    if (rator.name === ">" || rator.name === ">=" || rator.name === "<" || rator.name === "<=")
-    {
-      return `${compileExpression(rands[0], env)} ${rator.name} ${compileExpression(rands[1], env)}`;
-    }
-
-    if (rator.name === "+" || rator.name === "-") 
+      case "=":
+        return `${compileExpression(rands[0], env)} === ${compileExpression(rands[1], env, termAids, rcIncs)}`;
+      case "!=":
+        return `${compileExpression(rands[0], env)} !== ${compileExpression(rands[1], env, termAids, rcIncs)}`;
+      case ">":
+      case ">=":
+      case "<":
+      case "<=":
+        return `${compileExpression(rands[0], env, termAids, rcIncs)} ${rator.name} ${compileExpression(rands[1], env, termAids, rcIncs)}`;
+      case "+":
+      case "-":
     {
       if (rands.length === 1)
       {
-        return `${compileExpression(app.operands[0], env)}`; // ignore + (?)
+          return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`; // ignore + (?)
       }
       if (rands.length > 1)
       {
-        return rands.map(exp => compileExpression(exp, env)).map(e => `(${e})`).join(rator.name);
+          return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join(rator.name);
       }
     }
-
-    if (rator.name === "*" || rator.name === "/") 
-    {
+      case "*":
+      case "/":
       if (rands.length > 1)
       {
-        return rands.map(exp => compileExpression(exp, env)).map(e => `(${e})`).join(rator.name);
+        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join(rator.name);
       }
-    }
-    
-    if (rator.name === "not")
-    {
-      return `!${compileExpression(rands[0], env)}`;
-    }
-
-    if (rator.name === "even?")
-    {
-      return `(${compileExpression(rands[0], env)}) % 2 === 0`;
-    }
-
-    if (rator.name === "odd?")
-    {
-      return `(${compileExpression(rands[0], env)}) % 2 === 1`;
+      case "not":
+        return `!${compileExpression(rands[0], env, termAids, rcIncs)}`;
+      case "even?":
+        return `(${compileExpression(rands[0], env, termAids, rcIncs)}) % 2 === 0`;
+      case "odd?":
+        return `(${compileExpression(rands[0], env, termAids, rcIncs)}) % 2 === 1`;
     }
   }
-  return `(${compileExpression(rator, env)})(${rands.map(exp => compileExpression(exp, env)).join(', ')})`;
+  return `(${compileExpression(rator, env, termAids, rcIncs)})(${rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')})`;
 }
 
 function emitEdbAtom(atom, i, rule, producesPred, stratum)

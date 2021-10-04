@@ -102,6 +102,11 @@ export function compileExp(exp)
     return new Var(exp.name);
   }
 
+  if (exp instanceof Tuple)
+  {
+    return compileAtom(exp);
+  }
+
   if (exp instanceof Pair)
   {
     const rator = exp.car;
