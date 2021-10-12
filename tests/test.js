@@ -392,6 +392,8 @@ test(`(rule [R x] (:= x (< 3 4 5)))`, `[R #t]`);
 test(`(rule [R x] (:= x (< 3 2 5)))`, `[R #f]`);
 test(`(rule [R x] (:= x (= 3 3 3)))`, `[R #t]`);
 test(`(rule [R x] (:= x (= 3 2 3)))`, `[R #f]`);
+test(`(rule [R x] (:= x (not #t)))`, `[R #f]`);
+test(`(rule [R x] (:= x (not #f)))`, `[R #t]`);
 
 // first-class funs (retest because of different path for first-order ('direct') and h-o apps)
 test(`(rule [R x] (:= proc +) (:= x (proc 1 2 3)))`, `[R 6]`);
@@ -399,6 +401,7 @@ test(`(rule [R x] (:= proc -) (:= x (proc 1 2 3)))`, `[R -4]`);
 test(`(rule [R x] (:= proc <) (:= x (proc 3 4)))`, `[R #t]`);
 test(`(rule [R x] (:= proc even?) (:= x (proc 5)))`, `[R #f]`);
 test(`(rule [R x] (:= proc even?) (:= x (proc 6)))`, `[R #t]`);
+test(`(rule [R x] (:= proc not) (:= x (proc #t)))`, `[R #f]`);
 //testAdd(`(rule [J [prim +]] [I]) (rule [R x] [J [prim proc]] (:= x (proc 1 2 3)))`, `[I]`, `[R 6]`); toString() of proc gives trouble (how to test/stabilize this?)
 
 // assign
@@ -416,6 +419,8 @@ test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2
 // lambdas
 test(`(rule [F (lambda () 123)]) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
 test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
+test(`(rule [F (lambda (x) [Functor x])]) (rule [R (f 123)] [F f])`, `[F _] [R [Functor 123]]`);
+
 
 // funny chars
 testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);

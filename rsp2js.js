@@ -107,6 +107,7 @@ const nativeFuns = new Map([
   ['<=', (...args) => args.slice(1).every(x => args[0] <= x)],
   ['>=', (...args) => args.slice(1).every(x => args[0] >= x)],
   ['=', (...args) => args.slice(1).every(x => args[0] === x)],
+  ['not', arg => !arg],
   ['even?', arg => arg % 2 === 0],
   ['odd?', arg => arg % 2 === 1]
 ]);
