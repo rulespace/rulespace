@@ -12,8 +12,8 @@ Installation (developer)
 ------------------------
 
 ```
-git clone https://gitlab.soft.vub.ac.be/rulespace/common.git
-git clone https://gitlab.soft.vub.ac.be/rulespace/rulespace.git
+git clone https://github.com/rulespace/common.git
+git clone https://github.com/rulespace/rulespace.git
 cd common
 npm link
 cd ..
