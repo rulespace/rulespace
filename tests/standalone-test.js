@@ -1,4 +1,8 @@
+import { sexp2rsp } from '../sexp2rsp.js';
+import { str2sexp } from '../str2sexp.js';
 import { compileModuleTuples, compileToModule, sanityCheck } from './test-common.js';
+
+console.log(sexp2rsp(str2sexp("[Link 'a 'b]")));
 
 const src = `
 

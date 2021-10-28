@@ -1,4 +1,4 @@
-import { Arrays, assertTrue } from 'common';
+import { Arrays, assertTrue } from '@rulespace/common';
 
 function termNames(arity)
 {

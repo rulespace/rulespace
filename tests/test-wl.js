@@ -1,5 +1,5 @@
+import { assertTrue, Sets } from '@rulespace/common';
 import { performance } from 'perf_hooks';
-import { assertTrue, Sets } from 'common';
 import { compileToConstructor } from './test-common.js';
 
 /**

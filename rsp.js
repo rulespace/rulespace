@@ -1,7 +1,5 @@
 // see js-frontend/js2rsp for abstract syntax
 
-import { assertTrue } from 'common';
-
 //export { Sym } from './sexp-reader.js';
 
 export class Program

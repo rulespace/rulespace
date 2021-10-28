@@ -1,4 +1,3 @@
-import { assertTrue } from 'common';
 import { Null, Pair, Sym, Keyword, Tuple } from './str2sexp.js';
 import { Program, Rule, Neg, Agg, Atom, Lit, Var, App, Assign, Lam } from './rsp.js';
 

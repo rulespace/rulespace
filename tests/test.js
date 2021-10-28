@@ -1,5 +1,5 @@
 import { performance } from 'perf_hooks';
-import { assertTrue, Sets } from 'common';
+import { assertTrue, Sets } from '@rulespace/common';
 import { tupleEquals, compileAtoms, atomToFreshModuleTuple, compileToConstructor, sanityCheck } from './test-common.js';
 import { Atom, Lit, Var } from '../rsp.js';
 

@@ -1,4 +1,4 @@
-import { Arrays, assertTrue } from 'common';
+import { Arrays, assertTrue } from '@rulespace/common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
 import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter } from './rsp2js-emitters.js';
@@ -346,27 +346,6 @@ function main()
   }
   
   
-  function toTupleMap(tuples)
-  {
-    const map = new Map();
-  
-    function add(tuple)
-    {
-      const key = tuple.constructor;
-      const currentValue = map.get(key);
-      if (currentValue === undefined)
-      {
-        map.set(key, [tuple]);
-      }
-      else
-      {
-        currentValue.push(tuple);
-      }
-    }
-    [...tuples].forEach(add);
-    return map;
-  }
-
   ${analysis.functors().map(emitFunctorObject).join('\n')}
   ${emitLambdas.join('\n')}
 
@@ -416,13 +395,34 @@ function main()
   // computeInitialAdd can also be used when initially adding facts externally (i.e., through computeDelta)
   // (3) although (1) is an edge case, it may still prove to be more optimal (faster) to have add-only logic
   ${logDebug('"computing initial idb tuples due to addition of fact edbs"')}; 
-  computeInitialAdd(facts);
+  computeInitialAdd(facts); // TODO return delta is not used!
   ${emitComputeInitialAdd(strata, preds)}
   ${emitComputeDelta(strata, preds)}
   ${emitIsGrounded(strata)}
   ${emitIterators(preds, edbPreds, rules)}
   ${emitClear(edbPreds)}
+
+  ${publicFunction('toTupleMap')}(tuples)
+  {
+    const map = new Map();
   
+    function add(tuple)
+    {
+      const key = tuple.constructor;
+      const currentValue = map.get(key);
+      if (currentValue === undefined)
+      {
+        map.set(key, [tuple]);
+      }
+      else
+      {
+        currentValue.push(tuple);
+      }
+    }
+    [...tuples].forEach(add);
+    return map;
+  }
+
   ${publicFunction('addTupleMap')}(addTuples)
   {
     return computeDelta(addTuples, []);
@@ -451,9 +451,9 @@ function main()
   // "slow" functions, only for external usage
   ${publicFunction('outProducts')}(x)
   {
-    if (x._outproductsgb)
+    if (x._outproducts)
     {
-      return [...x._outproductsgb];
+      return [...x._outproducts];
     }
     return [];
   }
@@ -471,7 +471,7 @@ function main()
   {
     if (x._inproducts)
     {
-      return [...x._outproducts];
+      return [...x._inproducts];
     }
     return [];
   }

@@ -1,4 +1,4 @@
-import {Characters, assertFalse} from 'common';
+import {Characters, assertFalse} from '@rulespace/common';
 
 let __nodeCounter__ = 0;
 

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { Sets, assertTrue } from 'common';
+import { Sets, assertTrue } from '@rulespace/common';
 import { str2sexp, Pair, Null } from '../str2sexp.js';
 import { sexp2rsp  } from '../sexp2rsp.js';
 import { rsp2js } from '../rsp2js.js';

@@ -154,51 +154,10 @@ function toDot(tuples_)
   return sb;
 }
 
-
-
-
 ////////////
 
 
-export function deltaSource(instance)
-{
-  const deltaObservers = [];
-  function notify(delta)
-  {
-    deltaObservers.forEach(observer => observer.observe(delta));
-    return delta;
-  }
-  return {
-    addTupleMap(addTuples)
-    { 
-      return notify(instance.addTupleMap(addTuples));
-    },
-    addTuples(addTuples)
-    { 
-      return notify(instance.addTuples(addTuples));
-    },
-    removeTupleMap(removeTuples)
-    { 
-      return notify(instance.removeTupleMap(removeTuples));
-    },
-    removeTuples(removeTuples)
-    { 
-      return notify(instance.removeTuples(removeTuples));
-    },
-
-    ////
-
-    addDeltaObserver(observer)
-    {
-      if (!deltaObservers.includes(observer))
-      {
-        deltaObservers.push(observer);
-      }
-    }
-
-  }
-}
-
+// linear composition of instances
 export function linear(instances)
 {
   if (instances.length === 1)
@@ -275,6 +234,140 @@ export function metaInstance(instance, tuples = instance.rootTuples())
   }
   metaInstance.addTuples(metaTuples);
   return metaInstance;
+}
+
+
+export function reactive(instanceCtr, deltaObservers)
+{
+  return function ()
+  {
+    function notify(delta)
+    {
+      deltaObservers.forEach(observer => observer.observe(instance, delta));
+      return delta;
+    }
+
+    const instance = instanceCtr();
+    notify({
+      added() {return instance.toTupleMap(instance.tuples())},
+      removed() {return new Map()}
+    });
+
+    function wrap(method)
+    {
+      return function (...args)
+      {
+        const delta = method.apply(instance, args);
+        notify(delta);
+      }
+    }
+
+    const intercept = ['addTupleMap', 'addTuples', 'removeTupleMap', 'removeTuples'];
+    const wrappedMethods = new Map(intercept.map(name => 
+      [name, wrap(instance[name])]
+    ));
+
+    return new Proxy(instance, {
+      get: function (target, prop)
+      {
+        return wrappedMethods.get(prop) ?? Reflect.get(target, prop);
+      }
+    }) 
+  }
+}
+
+
+export function visit(tuples_, visitTuple, visitProduct, visitProductGb, visitGroupBy)
+{
+  const wl = [...tuples_];
+  const seen = new Set();
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    if (seen.has(tuple))
+    {
+      continue;
+    }
+    seen.add(tuple);
+    if (!visitTuple(tuple))
+    {
+      continue;
+    }
+    // const t = getTag(tuple);
+    for (const product of tuple._outproducts)
+    {
+      // sb += `${t} -> ${getTag(product)};\n`;    
+      if (seen.has(product))
+      {
+        continue;     
+      }
+      seen.add(product);
+      if (!visitProduct(product))
+      {
+        continue;
+      }
+      // const p = getTag(product);
+      const outTuple = product._outtuple;
+      if (outTuple !== null)
+      {
+        // sb += `${p} -> ${getTag(outTuple)};\n`;
+        wl.push(outTuple);
+      }  
+    }
+    for (const productGB of tuple._outproductsgb)
+    {
+      //sb += `${t} -> ${getTag(productGB)};\n`;
+      if (seen.has(productGB))
+      {
+        continue;     
+      }
+      seen.add(productGB);  
+      if (!visitProductGb(productGB))
+      {
+        continue;
+      }
+      // const p = getTag(productGB);
+      const groupby = productGB._outgb;
+      // const gb = getTag(groupby);
+      // sb += `${p} -> ${gb};\n`;      
+      if (!seen.has(groupby))
+      {
+        seen.add(groupby);
+        if (!visitGroupBy(groupby))
+        {
+          continue;
+        }
+        const outTuple = groupby._outtuple;
+        if (outTuple !== null)
+        {
+          // sb += `${gb} -> ${getTag(outTuple)};\n`;
+          wl.push(outTuple);
+        }
+      }
+    }
+  }
+}
+
+export function computeMeta(tuples)
+{
+  const src = `
+
+  (rule [TupleLink t1 t2] [Tuple2Product t1 p] [Product2Tuple p t2])
+  (rule [Tuple t1] [TupleLink t1 _])
+  (rule [Tuple t2] [TupleLink _ t2])
+
+  `;
+
+  const ctr = compileToConstructor(src);
+  const meta = ctr();
+  // console.log(Object.keys(meta));
+
+  visit(tuples, 
+    tuple => meta.addTuples(instance.outProducts(tuple).map(p => new meta.Tuple2Product(tuple, p))),
+    product => meta.addTuples([instance.outTuple(product)].map(t => new meta.Product2Tuple(product, t)))
+    );
+
+  return meta;
 }
 
 
