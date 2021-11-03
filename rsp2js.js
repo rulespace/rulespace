@@ -193,7 +193,7 @@ export function rsp2js(rsp, options={})
   const FLAG_compile_to_ctr = !OPT_module;
   const publicFunctions = [];
   const publicFunction = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function ${name}`};
-  const publicFunctionStar = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`};
+  // const publicFunctionStar = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`};
 
   
   const FLAG_debug = options.debug ?? false;
@@ -1107,28 +1107,31 @@ function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
 
 function emitIterators(preds, edbPreds, rules)
 {
-  const tupleYielders = preds.map(pred => `yield* ${selectPred(pred)}`);
   // const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}()`);
   // const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
 
   return `
 // from membership
-${publicFunctionStar('tuples')}() 
+${publicFunction('tuples')}() 
 {
-  ${tupleYielders.join('\n  ')}
+  const result = [];
+  ${preds.map(pred => `${selectPred(pred)}.forEach(tuple => result.push(tuple))`).join('\n  ')}
+  return result;
 }
 
-${publicFunctionStar('rootTuples')}()   // all EDBs and IDB facts
+${publicFunction('rootTuples')}()   // all EDBs and IDB facts
 {
   // expensive impl: alternative would be to keep set of externally added EDBs and all IDB facts
   // but, this is cheap as long as reachability stuff (tracing) is not required
+  const result = [];
   for (const tuple of tuples())
   {
     if (tuple._inproducts.size === 0)
     {
-      yield tuple;
+      result.push(tuple);
     }
   }
+  return result;
 }
 `;
 }
