@@ -1,6 +1,7 @@
 import { str2sexp } from "./str2sexp.js";
 import { sexp2rsp } from "./sexp2rsp.js";
 import { rsp2js } from "./rsp2js.js";
+import { MutableMaps } from "../common/common.js";
 
 export { rsp2latex } from "./rsp2latex.js";
 
@@ -29,14 +30,148 @@ export function compileToModuleSrc(src, options)
 export function instance2dot(instance)
 {
   const tuples = [...instance.rootTuples()];
-  return toDot(tuples);
+  return toDot(instance, tuples);
 }
+
+export function visitNodes(instance, tuples_, visitTuple, visitProduct, visitProductGb, visitGroupBy)
+{
+  const wl = [...tuples_];
+  const seen = new Set();
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    if (seen.has(tuple))
+    {
+      continue;
+    }
+    seen.add(tuple);
+    if (!visitTuple(tuple))
+    {
+      continue;
+    }
+    for (const product of instance.outProducts(tuple))
+    {
+      if (seen.has(product))
+      {
+        continue;     
+      }
+      seen.add(product);
+      if (!visitProduct(product))
+      {
+        continue;
+      }
+      const outTuple = instance.outTuple(product);
+      if (outTuple !== null)
+      {
+        wl.push(outTuple);
+      }  
+    }
+    for (const productGB of instance.outProductsGroupBy(tuple))
+    {
+      if (seen.has(productGB))
+      {
+        continue;     
+      }
+      seen.add(productGB);  
+      if (!visitProductGb(productGB))
+      {
+        continue;
+      }
+      const groupby = instance.outGroupBy(outgb);
+      if (!seen.has(groupby))
+      {
+        seen.add(groupby);
+        if (!visitGroupBy(groupby))
+        {
+          continue;
+        }
+        const outTuple = instance.outTuple(groupby);
+        if (outTuple !== null)
+        {
+          wl.push(outTuple);
+        }
+      }
+    }
+  }
+}
+
+export function visitLinks(instance, tuples_, visitTuple2Product, visitProduct2Tuple)
+{
+  const wl = [...tuples_];
+  const seen = new Set();
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    if (seen.has(tuple))
+    {
+      continue;
+    }
+    seen.add(tuple);
+    // const t = getTag(tuple);
+    for (const product of instance.outProducts(tuple))
+    {
+      // sb += `${t} -> ${getTag(product)};\n`;    
+      if (seen.has(product))
+      {
+        continue;     
+      }
+      if (!visitTuple2Product(tuple, product))
+      {
+        continue;
+      }
+      seen.add(product);
+      // const p = getTag(product);
+      const outTuple = instance.outProduct(product);
+      if (outTuple !== null)
+      {
+        // sb += `${p} -> ${getTag(outTuple)};\n`;
+        if (!visitProduct2Tuple(product, outTuple))
+        {
+          continue;
+        }
+        wl.push(outTuple);
+      }  
+    }
+    // for (const productGB of instance.outProductsGroupBy(tuple))
+    // {
+    //   //sb += `${t} -> ${getTag(productGB)};\n`;
+    //   if (seen.has(productGB))
+    //   {
+    //     continue;     
+    //   }
+    //   seen.add(productGB);  
+    //   if (!visitProductGb(productGB))
+    //   {
+    //     continue;
+    //   }
+    //   // const p = getTag(productGB);
+    //   const groupby = instance.outGroupBy(outgb);
+    //   // const gb = getTag(groupby);
+    //   // sb += `${p} -> ${gb};\n`;      
+    //   if (!seen.has(groupby))
+    //   {
+    //     seen.add(groupby);
+    //     if (!visitGroupBy(groupby))
+    //     {
+    //       continue;
+    //     }
+    //     const outTuple = instance.outTuple(groupby);
+    //     if (outTuple !== null)
+    //     {
+    //       // sb += `${gb} -> ${getTag(outTuple)};\n`;
+    //       wl.push(outTuple);
+    //     }
+    //   }
+    // }
+  }
+}
+
 
 
 //////
 
 
-function toDot(tuples_)
+function toDot(instance, tuples = instance.tuples())
 {
 
   function valueLabel(value)
@@ -69,18 +204,13 @@ function toDot(tuples_)
   function productLabel(product)
   {
     return product.constructor.name;
-    // return product;
   }
 
   function productGBLabel(product)
   {
     return product.constructor.name;
   }
-
-  let sb = "digraph G {\nnode [style=filled,fontname=\"Roboto Condensed\"];\n";
-
-  const wl = [...tuples_];
-  const seen = new Set();
+  
   const tagMap = new Map();
   function getTag(obj)
   {
@@ -93,148 +223,40 @@ function toDot(tuples_)
     tagMap.set(obj, tag);
     return tag;
   }
-
-  while (wl.length > 0)
-  {
-    const tuple = wl.pop();
-    if (seen.has(tuple))
-    {
-      continue;
-    }
-    seen.add(tuple);
-    const t = getTag(tuple);
-    sb += `${t} [shape=box label="${tupleLabel(tuple)}"];\n`;
-    for (const product of tuple._outproducts)
-    {
-      sb += `${t} -> ${getTag(product)};\n`;    
-      if (seen.has(product))
+  
+  let sb = "digraph G {\nnode [style=filled,fontname=\"Roboto Condensed\"];\n";
+  visitNodes(instance, tuples,
+    tuple => { 
+      sb += `${getTag(tuple)} [shape=box label="${tupleLabel(tuple)}"];\n`;
+      instance.outProducts(tuple).forEach(product => sb += `${getTag(tuple)} -> ${getTag(product)};\n`);
+      instance.outProductsGroupBy(tuple).forEach(productGb => sb += `${getTag(tuple)} -> ${getTag(productGb)};\n`);
+      return true;
+    },
+    product => {
+      sb += `${getTag(product)} [label="${productLabel(product)}" color="0.650 0.200 1.000"];\n`;
+      sb += `${getTag(product)} -> ${getTag(instance.outTuple(product))};\n`;
+      return true;
+    },
+    productGb => {
+      sb += `${getTag(productGb)} [label="${productGBLabel(productGb)}"];\n`;
+      sb += `${getTag(productGb)} -> ${getTag(instance.outGroupBy(productGb))};\n`;      
+      return true;
+    },
+    groupBy => {
+      sb += `${getTag(groupBy)} [shape=diamond label="${gbLabel(groupBy)}"];\n`;
+      const outTuple = instance.outTuple(groupBy);
+      if (outTuple !== null)
       {
-        continue;     
+        sb += `${getTag(groupBy)} -> ${getTag(outTuple)};\n`;
       }
-      seen.add(product);
-      const p = getTag(product);
-      sb += `${p} [label="${productLabel(product)}" color="0.650 0.200 1.000"];\n`;
-      const tuple = product._outtuple;
-      if (tuple !== null)
-      {
-        sb += `${p} -> ${getTag(tuple)};\n`;
-        wl.push(tuple);
-      }  
-    }
-    for (const productGB of tuple._outproductsgb)
-    {
-      sb += `${t} -> ${getTag(productGB)};\n`;
-      if (seen.has(productGB))
-      {
-        continue;     
-      }
-      seen.add(productGB);  
-      const p = getTag(productGB);
-      sb += `${p} [label="${productGBLabel(productGB)}"];\n`;
-
-      const groupby = productGB._outgb;
-      const gb = getTag(groupby);
-      sb += `${p} -> ${gb};\n`;      
-
-      if (!seen.has(groupby))
-      {
-        seen.add(groupby);
-        sb += `${gb} [shape=diamond label="${gbLabel(groupby)}"];\n`;
-        const tuple = groupby._outtuple;
-        if (tuple !== null)
-        {
-          sb += `${gb} -> ${getTag(tuple)};\n`;
-          wl.push(tuple);
-        }
-      }
-    }
-  }
-
+      return true;
+    });
   sb += "}";
+
   return sb;
 }
 
 ////////////
-
-
-// linear composition of instances
-export function linear(instances)
-{
-  if (instances.length === 1)
-  {
-    return instances[0];
-  }
-  const rest = linear.call(null, instances.slice(1));
-  const ds = deltaSource(instances[0]);
-  ds.addDeltaObserver(rest.computeDelta);
-  return rest;
-}
-
-
-// meta bridge
-// for now this is a clunky way of doing meta stuff
-// TODO: merge this into rulespace itself ("(re)actively" coupled)
-export function metaInstance(instance, tuples = instance.rootTuples())
-{
-  const metaInstance = new meta();
-  const seen = new Set();
-  const wl = [...tuples];
-  const metaTuples = [];
-  while (wl.length > 0)
-  {
-    const tuple = wl.pop();
-    if (seen.has(tuple))
-    {
-      continue;
-    }
-    const relationName = tuple.constructor.name;
-    const values = tuple.values();
-    metaTuples.push(new metaInstance.relation(relationName, values.length)); // TODO: for every `tuple` a `relation` is pushed, which is semantically ok but a bit wasteful
-    metaTuples.push(new metaInstance.tuple(tuple, relationName));
-    values.forEach((value, i) => metaTuples.push(new metaInstance.tuple_value(value, tuple, i)));
-    for (const product of instance.outProducts(tuple))
-    {
-      productTuples.forEach((productTuple, i) => metaTuples.push(new metaInstance.product_tuple(productTuple, product, i)));
-      if (seen.has(product))
-      {
-        continue;     
-      }
-      seen.add(product);
-      const productTuples = product.tuples();
-      const rule = product.constructor.name; // placeholder
-      const tuple_out = instance.outTuple(product);
-      metaTuples.push(new metaInstance.rule(rule, productTuples.length)); 
-      metaTuples.push(new metaInstance.product(product, rule, tuple_out));
-      if (tuple_out !== null)
-      {
-        wl.push(tuple_out);
-      }  
-    }
-    // for (const productGB of instance.outProductsGroupBy(tuple))
-    // {
-    //   MutableMaps.putPushArray(pgraph, tuple, productGB);
-    //   if (seen.has(productGB))
-    //   {
-    //     continue;     
-    //   }
-    //   seen.add(productGB);  
-    //   const groupby = instance.outGroupBy(productGB);
-    //   MutableMaps.putPushArray(pgraph, productGB, groupby);
-    //   if (!seen.has(groupby))
-    //   {
-    //     seen.add(groupby);
-    //     const outTuple = instance.outTuple(groupby);
-    //     if (outTuple !== null)
-    //     {
-    //       MutableMaps.putPushArray(pgraph, groupby, outTuple);
-    //       wl.push(outTuple);
-    //     }
-    //   }
-    // }
-  }
-  metaInstance.addTuples(metaTuples);
-  return metaInstance;
-}
 
 
 export function reactive(instanceCtr, deltaObservers)
@@ -277,78 +299,22 @@ export function reactive(instanceCtr, deltaObservers)
 }
 
 
-export function visit(tuples_, visitTuple, visitProduct, visitProductGb, visitGroupBy)
-{
-  const wl = [...tuples_];
-  const seen = new Set();
-  while (wl.length > 0)
-  {
-    const tuple = wl.pop();
-    if (seen.has(tuple))
-    {
-      continue;
-    }
-    seen.add(tuple);
-    if (!visitTuple(tuple))
-    {
-      continue;
-    }
-    // const t = getTag(tuple);
-    for (const product of tuple._outproducts)
-    {
-      // sb += `${t} -> ${getTag(product)};\n`;    
-      if (seen.has(product))
-      {
-        continue;     
-      }
-      seen.add(product);
-      if (!visitProduct(product))
-      {
-        continue;
-      }
-      // const p = getTag(product);
-      const outTuple = product._outtuple;
-      if (outTuple !== null)
-      {
-        // sb += `${p} -> ${getTag(outTuple)};\n`;
-        wl.push(outTuple);
-      }  
-    }
-    for (const productGB of tuple._outproductsgb)
-    {
-      //sb += `${t} -> ${getTag(productGB)};\n`;
-      if (seen.has(productGB))
-      {
-        continue;     
-      }
-      seen.add(productGB);  
-      if (!visitProductGb(productGB))
-      {
-        continue;
-      }
-      // const p = getTag(productGB);
-      const groupby = productGB._outgb;
-      // const gb = getTag(groupby);
-      // sb += `${p} -> ${gb};\n`;      
-      if (!seen.has(groupby))
-      {
-        seen.add(groupby);
-        if (!visitGroupBy(groupby))
-        {
-          continue;
-        }
-        const outTuple = groupby._outtuple;
-        if (outTuple !== null)
-        {
-          // sb += `${gb} -> ${getTag(outTuple)};\n`;
-          wl.push(outTuple);
-        }
-      }
-    }
-  }
-}
 
-export function computeMeta(tuples)
+// // linear composition of instances
+// export function linear(instances)
+// {
+//   if (instances.length === 1)
+//   {
+//     return instances[0];
+//   }
+//   const rest = linear.call(null, instances.slice(1));
+//   const ds = deltaSource(instances[0]);
+//   ds.addDeltaObserver(rest.computeDelta);
+//   return rest;
+// }
+
+
+export function computeMeta(tuples) // single-shot
 {
   const src = `
 
@@ -360,7 +326,6 @@ export function computeMeta(tuples)
 
   const ctr = compileToConstructor(src);
   const meta = ctr();
-  // console.log(Object.keys(meta));
 
   visit(tuples, 
     tuple => meta.addTuples(instance.outProducts(tuple).map(p => new meta.Tuple2Product(tuple, p))),
@@ -369,6 +334,39 @@ export function computeMeta(tuples)
 
   return meta;
 }
+
+//// constructor composition
+
+
+//// instance composition 
+
+// export function metaSpace(instance)
+// {
+
+//   const src = `
+
+//   (rule [TupleLink t1 t2] [Tuple2Product t1 p] [Product2Tuple p t2])
+//   (rule [Tuple t1] [TupleLink t1 _])
+//   (rule [Tuple t2] [TupleLink _ t2])
+
+//   `;
+
+//   const ctr = compileToConstructor(src);
+//   const meta = ctr();
+
+//   const initialMetaMap = new Map();
+
+//   visitLinks(meta, meta.tuples(), 
+//     (tuple, product) => MutableMaps.putPushArray(initialMetaMap, meta.Tuple2Product, new meta.Tuple2Product(tuple, product)),
+//     (product, tuple) => MutableMaps.putPushArray(initialMetaMap, meta.Product2Tuple, new meta.Product2Tuple(product, tuple)))
+
+//   const initialDelta = 
+
+//   const compoundInstance = {
+//   }
+
+//   return { initialDelta, compoundInstance }
+// }
 
 
 

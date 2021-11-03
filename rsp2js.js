@@ -238,6 +238,11 @@ function fireRuleInto(rule, deltaPos, deltaTuples, into)
   return `const ${into} = fireRule${rule._id}(${deltaPos}, ${deltaTuples})`
 }
 
+function checkRuleProductsEmpty(rule)
+{
+  return `is_empty_Rule${rule._id}()`;
+}
+
 ///
 
 const relationTce = new SimpleArray(logDebug);
@@ -261,6 +266,11 @@ function selectPred(pred)
 function removePred(pred, values)
 {
   return relationTce.remove(pred, values);
+}
+
+function isEmptyPred(pred)
+{
+  return relationTce.isEmpty(pred);
 }
 
 function outProductsPred(tupleExp) // returns Set
@@ -401,6 +411,7 @@ function main()
   ${emitIsGrounded(strata)}
   ${emitIterators(preds, edbPreds, rules)}
   ${emitClear(edbPreds)}
+  ${emitCount(preds, analysis.functors())}
 
   ${publicFunction('toTupleMap')}(tuples)
   {
@@ -458,7 +469,7 @@ function main()
     return [];
   }
 
-  ${publicFunction('OutProductsGroupBy')}(x)
+  ${publicFunction('outProductsGroupBy')}(x)
   {
     if (x._outproductsgb)
     {
@@ -512,16 +523,19 @@ function emitTupleObject(pred)
     ${relationTce.addGetDeclaration(pred, arity)}
     ${relationTce.removeDeclaration(pred, arity)}
     ${relationTce.selectDeclaration(pred, arity)}
+
+    ${relationTce.countDeclaration(pred, arity)}
   `;
 
   if (pred.negAppearsIn.size > 0)
   {
+    const negPredName = `NOT_${pred}`;
     sb += `
-    ${relationTe.objectDeclaration(`NOT_${pred}`, arity, relationTce)}
-    ${relationTce.containerDeclaration(`NOT_${pred}`, arity)}
-    ${relationTce.getDeclaration(`NOT_${pred}`, arity)}
-    ${relationTce.addGetDeclaration(`NOT_${pred}`, arity)}
-    ${relationTce.removeDeclaration(`NOT_${pred}`, arity)}
+    ${relationTe.objectDeclaration(negPredName, arity, relationTce)}
+    ${relationTce.containerDeclaration(negPredName, arity)}
+    ${relationTce.getDeclaration(negPredName, arity)}
+    ${relationTce.addGetDeclaration(negPredName, arity)}
+    ${relationTce.removeDeclaration(negPredName, arity)}
     `
   }
 
@@ -683,12 +697,10 @@ function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
       {
         if (compileEnv.has(term.name))
         {
-          //conditions.push(`${target}.t${i} === ${compileEnv.get(term.name)}`);
           constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintVar(compileEnv.get(term.name))));
         }
         else if (bindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
         {
-          // conditions.push(`${target}.t${i} === ${bindings.get(term.name)}`);
           constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), bindings.get(term.name)));
         }
         else
@@ -701,12 +713,10 @@ function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
     else if (term instanceof Lit)
     {
       constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintConstant(term.value)));
-      //conditions.push(`${target}.t${i} === ${termToString(term.value)}`);
     }
     else if (term instanceof Atom) // functor
     {
       constraints.push(new PredElementConstraint(new ConstraintIndex([...target, i]), new ConstraintPred(term.pred)));
-      //conditions.push(`${target}.t${i} instanceof ${term.pred}`);
       compilePositiveAtom(term, [...target, i], compileEnv, bindings, constraints);
     }
     else
@@ -897,13 +907,15 @@ ${rule}
 const compileEnv = new Map();
 const tupleArity = rule.tupleArity();
 const recursive = analysis.ruleIsRecursive(rule); // TODO this must go at some point!
+const productName = `Rule${rule._id}Product`;
 
 return `
-${productTe.objectDeclaration(`Rule${rule._id}Product`, tupleArity, recursive)}
-${productTce.containerDeclaration(`Rule${rule._id}Product`, tupleArity)}
-${productTce.getDeclaration(`Rule${rule._id}Product`, tupleArity)}
-${productTce.addGetDeclaration(`Rule${rule._id}Product`, tupleArity)}
-// TODO: Product removal!
+${productTe.objectDeclaration(productName, tupleArity, recursive, productTce)}
+${productTce.containerDeclaration(productName, tupleArity)}
+${productTce.getDeclaration(productName, tupleArity)}
+${productTce.addGetDeclaration(productName, tupleArity)}
+${productTce.removeDeclaration(productName, tupleArity)}
+${productTce.countDeclaration(productName, tupleArity)}
 
 function fireRule${rule._id}(deltaPos, deltaTuples)
 {
@@ -1128,6 +1140,18 @@ function emitClear(edbPreds)
 ${publicFunction('clear')}()
 {
   ${clearers.join('\n')}
+}  
+  `;
+}
+
+function emitCount(preds, functors)
+{
+  return `
+${publicFunction('count')}()
+{
+  const c1 = ${preds.flatMap(pred => [relationTce.count(pred), ...pred.rules.map(rule => productTce.count(`Rule${rule._id}Product`))]).join('\n      +')}
+  const c2 = ${[0, ...functors.map(functor => functorTce.count(functor))].join('\n      +')}
+  return c1 + c2;
 }  
   `;
 }
@@ -1859,6 +1883,7 @@ function emitDeltaRemoveTuple(pred)
     removed_${pred}_tuples.push(${pred}_tuple);
     for (const outproduct of ${outProductsPred(`${pred}_tuple`)})
     {
+      outproduct._remove();
       ${productRemoval.join('  else')}
     }
     const refs = ${pred}_tuple._refs; // TODO check this statically (compile away when possible)

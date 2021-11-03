@@ -21,6 +21,23 @@ class TupleContainerEmitter
     return `const ${pred}_members = ${this.emptyDecl_()}`;
   }
 
+  countDeclaration(pred, arity)
+  {
+    return `
+  function count_${pred}()
+  {
+    ${arity === 0
+        ? `return ${pred}_member === null ? 0 : 1`
+        : this.countDecl_(pred, arity)}
+  }
+    `;
+  }
+
+  count(pred)
+  {
+    return `count_${pred}()`;
+  }
+
   getDeclaration(pred, arity)
   {
     const tn = termNames(arity);
@@ -194,6 +211,12 @@ export class SimpleArray extends TupleContainerEmitter
       return ${pred}_members;
     `;
   }
+
+  countDecl_(pred)
+  {
+    return `return ${pred}_members.length`;
+  }
+
 }
 
 
@@ -270,7 +293,7 @@ export class NestedMaps extends TupleContainerEmitter
       `)
     }
     sb.push(`
-    ${maps[arity - 1]}.set(t${arity-1}, undefined);`);  
+    ${maps[arity - 1]}.delete(t${arity-1});`);  
     return sb.join('\n');
   }
 
@@ -300,6 +323,24 @@ export class NestedMaps extends TupleContainerEmitter
     const result = [];
     ${emitLookup(0)}
     return result;
+    `;
+  }
+
+  countDecl_(pred, arity)
+  {
+
+    function emitCount(i)
+    {
+      if (i === arity)
+      {
+        return `1`;
+      }
+      return `[...${maps[i]}.values()].reduce((acc, ${maps[i+1]}) => acc += ${emitCount(i+1)}, 0)`;
+    }
+
+    const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
+
+    return `return ${emitCount(0)};
     `;
   }
 }
@@ -395,7 +436,7 @@ export class ProductClassEmitter extends TupleEmitter
     super();
   }
 
-  objectDeclaration(name, arity, recursive) // TODO: remove recursive at some point
+  objectDeclaration(name, arity, recursive, tce) // TODO: remove recursive at some point
   {
     const tupleParams = Arrays.range(arity).map(i => `tuple${i}`);
     const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp};`);
@@ -419,6 +460,11 @@ class ${name}
   tuples() // or, a field initialized in ctr?
   {
     return [${tupleFields.join(', ')}];
+  }
+
+  _remove()
+  {
+    ${tce.remove(name, tupleFields)};
   }
 
   toString()
