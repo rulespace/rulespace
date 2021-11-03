@@ -1,7 +1,7 @@
 import { Arrays, assertTrue } from '@rulespace/common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
-import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter } from './rsp2js-emitters.js';
+import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter, FunctorConstructorEmitter } from './rsp2js-emitters.js';
 
 class RspJsCompilationError extends Error
 {
@@ -285,7 +285,7 @@ function addOutProductPred(tupleExp, productExp)
 
 
 const functorTce = relationTce;
-const functorTe = new RelationConstructorEmitter(publicFunction); // TODO export (public) stuff
+const functorTe = new FunctorConstructorEmitter(publicFunction); // TODO export (public) stuff
 
 const GBTce = new SimpleArray(logDebug);
 const GBTe = new GBClassEmitter();
@@ -552,6 +552,7 @@ function emitFunctorObject(functor)
   ${functorTce.getDeclaration(functor, arity)}
   ${functorTce.addGetDeclaration(functor, arity)}
   ${functorTce.removeDeclaration(functor, arity)}
+  ${functorTce.countDeclaration(functor, arity)}
   `;
 }
 

@@ -399,12 +399,11 @@ ${pred}.prototype._remove = function () {
   }
 }
 
-export class FunctorConstructorEmitter extends TupleEmitter
+export class FunctorConstructorEmitter extends RelationConstructorEmitter
 {
   constructor(publicFunction)
   {
-    super();
-    this.publicFunction = publicFunction;
+    super(publicFunction);
   }
 
   objectDeclaration(functor, arity, tce)
@@ -414,7 +413,7 @@ export class FunctorConstructorEmitter extends TupleEmitter
     const termFields = tn.map(t => `this.${t}`);
 
     return `
-    ${publicFunction(functor)}(${tn.join(', ')})
+    ${this.publicFunction(functor)}(${tn.join(', ')})
     {
       ${termAssignments.join('\n  ')}
       this._rc = 0;
