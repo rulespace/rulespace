@@ -313,7 +313,7 @@ function main()
   const sb = [profileVars, requiredBuiltInFunDefs, lambdas, `
   
   ${FLAG_compile_to_ctr ? `"use strict"` : ``}
-  ${FLAG_compile_to_module && FLAG_profile ? `import { performance } from 'perf_hooks` : ``}
+  ${FLAG_compile_to_module && FLAG_profile ? `import { performance } from 'perf_hooks'` : ``}
   ${FLAG_profile ? `console.log("profiling on")` : ``}
   ${FLAG_assertions ? logInfo(`'assertions on'`) : ``}
 
