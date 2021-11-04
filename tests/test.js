@@ -418,7 +418,7 @@ test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2
 
 // lambdas
 test(`(rule [F (lambda () 123)]) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
-test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
+// alloc not allowed in that position: test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
 test(`(rule [F (lambda (x) [Functor x])]) (rule [R (f 123)] [F f])`, `[F _] [R [Functor 123]]`);
 
 

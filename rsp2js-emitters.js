@@ -113,7 +113,27 @@ function remove_${pred}(${tn.join(', ')})
     {
       sb.push(this.removeDecl_(pred, arity));
     }
-    sb.push(this.logDebug(`\`removed ${pred}(${tn.map(t => `\${${t}}`)}) from members\``));
+    sb.push(`}`);
+    return sb.join('\n');
+  }
+
+  removeDirectDeclaration(pred, arity)
+  {
+    const sb = [];
+    sb.push(`
+function removeDirect_${pred}(item)
+{
+    `);
+    if (arity === 0)
+    {
+      // in principle, at this point (reached 'internally') you cannot remove item that was not first selected
+      // TODO: add assert that ${pred}_member === item
+      sb.push(`${pred}_member = null;`);
+    }
+    else
+    {
+      sb.push(this.removeDirectDecl_(pred));
+    }
     sb.push(`}`);
     return sb.join('\n');
   }
@@ -121,6 +141,11 @@ function remove_${pred}(${tn.join(', ')})
   remove(pred, fieldValues)
   {
     return `remove_${pred}(${fieldValues.join(', ')})`;
+  }
+
+  removeDirect(pred, itemExp)
+  {
+    return `removeDirect_${pred}(${itemExp})`;
   }
 
   selectDeclaration(pred, arity)
@@ -199,10 +224,19 @@ export class SimpleArray extends TupleContainerEmitter
         if (${Arrays.range(arity).map(i => `t${i} === item.t${i}`).join(' && ')})
         {
           ${pred}_members.splice(i, 1);
+          ${this.logDebug(`\`removed \${item} from members\``)}
           return;
         }
       }
   `;
+  }
+
+  removeDirectDecl_(pred)
+  {
+    return `
+      const index = ${pred}_members.indexOf(item);
+      ${pred}_members.splice(index, 1);
+    `;
   }
 
   selectDecl_(pred, arity)

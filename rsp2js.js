@@ -357,7 +357,7 @@ function main()
   
   
   ${analysis.functors().map(emitFunctorObject).join('\n')}
-  ${emitLambdas.join('\n')}
+  
 
   ${preds.map(pred => `
     //////////////////////////////////////////////////
@@ -411,7 +411,7 @@ function main()
   ${emitIsGrounded(strata)}
   ${emitIterators(preds, edbPreds, rules)}
   ${emitClear(edbPreds)}
-  ${emitCount(preds, analysis.functors())}
+  ${emitCount(preds, analysis.functors(), [...syntacticLambdas.values()])}
 
   ${publicFunction('toTupleMap')}(tuples)
   {
@@ -1148,14 +1148,15 @@ ${publicFunction('clear')}()
   `;
 }
 
-function emitCount(preds, functors)
+function emitCount(preds, functors, closures)
 {
   return `
 ${publicFunction('count')}()
 {
   const c1 = ${preds.flatMap(pred => [relationTce.count(pred), ...pred.rules.map(rule => productTce.count(`Rule${rule._id}Product`))]).join('\n      +')}
   const c2 = ${[0, ...functors.map(functor => functorTce.count(functor))].join('\n      +')}
-  return c1 + c2;
+  const c3 = ${[0, ...closures.map(closure => closureTce.count(closure))].join('\n      +')}
+  return c1 + c2 + c3;
 }  
   `;
 }
@@ -1198,8 +1199,6 @@ function compileExpression(exp, env, termAids, rcIncs)
 }
 
 const syntacticLambdas = new Map();
-const emitLambdas = [];
-
 function compileLambda(lam, env, termAids, rcIncs) // TODO update rcIncs and termAids: closure = allocated object
 {
   assertTrue(env instanceof Map)
@@ -1210,7 +1209,7 @@ function compileLambda(lam, env, termAids, rcIncs) // TODO update rcIncs and ter
   if (name === undefined) // TODO: all lambdas are encountered only once?
   {
     name = freshVariable("lambda");
-    syntacticLambdas.set(lam, name); 
+    syntacticLambdas.set(lam, name);
     const extendedEnv = new Map(env);
     for (const param of lam.params)
     {
@@ -1220,6 +1219,7 @@ function compileLambda(lam, env, termAids, rcIncs) // TODO update rcIncs and ter
     const termAids2 = [];
     const compiledBody = compileExpression(lam.body, extendedEnv, termAids2, rcIncs2);
 
+    // TODO: should become part of rsp2js-emitters
     lambdas.add(`
 // ${lam}    
 function ${name}(${closureCompiledVars.join(', ')})
@@ -1231,15 +1231,25 @@ function ${name}(${closureCompiledVars.join(', ')})
       ${rcIncs2.map(x => `${x}._rc++;`).join('\n        ')}
       return ${compiledBody};
   };
+  closure._rc = 0;
   closure._refs = [];
+  closure._remove = function () {${closureTce.removeDirect(name, `closure`)}};
   return closure;
 }
     `);
     lambdas.add(closureTce.containerDeclaration(name, closureVars.length));
     lambdas.add(closureTce.getDeclaration(name, closureVars.length));   
-    lambdas.add(closureTce.addGetDeclaration(name, closureVars.length));   
+    lambdas.add(closureTce.addGetDeclaration(name, closureVars.length)); 
+    lambdas.add(closureTce.removeDirectDeclaration(name, closureVars.length));     
+    lambdas.add(closureTce.countDeclaration(name, closureVars.length));     
   }
-  return addGetPred(name, closureCompiledVars);
+  const closureName = freshVariable("closure");
+  rcIncs.push(closureName);
+  termAids.push(`
+  // closure ${name}
+  const ${closureName} = ${addGetPred(name, closureCompiledVars)}
+  `);
+  return closureName;
 }
 
 function compileApplication(app, env, termAids, rcIncs)

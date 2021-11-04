@@ -7,7 +7,7 @@ console.log(sexp2rsp(str2sexp("[Link 'a 'b]")));
 
 const src = `
 
-(rule [O [F x]] [I x])
+(rule [O (lambda () x)] [I x])
 
   `;
 
