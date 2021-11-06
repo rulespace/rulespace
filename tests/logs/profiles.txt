@@ -1,0 +1,125 @@
+standalone
+profile:  {
+  fireRule2Duration: 0.12623882293701172,
+  fireRule2Calls: 2,
+  fireRule3Duration: 0.018416881561279297,
+  fireRule3Calls: 2,
+  fireRule0Duration: 0.12350654602050781,
+  fireRule0Calls: 2,
+  fireRule1Duration: 0.26364946365356445,
+  fireRule1Calls: 4,
+  fireRule4Duration: 0.3688173294067383,
+  fireRule4Calls: 5
+}
+
+lnru1000
+wl duration: 10514 ms
+{
+  fireRule2Duration: 4.567437648773193,
+  fireRule2Calls: 1000,
+  fireRule3Duration: 2.824713706970215,
+  fireRule3Calls: 1000,
+  fireRule0Duration: 8.457551002502441,
+  fireRule0Calls: 1000,
+  fireRule1Duration: 709.764328956604,
+  fireRule1Calls: 1762,
+  fireRule4Duration: 6314.5909876823425,
+  fireRule4Calls: 3278
+}
+
+
+computeDelta + check for delta tuples before firing
+lnru1000
+wl duration: 609 ms
+{
+  fireRule2Duration: 2.645462989807129,
+  fireRule2Calls: 1000,
+  fireRule3Duration: 1.7243618965148926,
+  fireRule3Calls: 1000,
+  fireRule0Duration: 2.0855250358581543,
+  fireRule0Calls: 1000,
+  fireRule1Duration: 512.8982100486755,
+  fireRule1Calls: 1762,
+  fireRule4Duration: 30.228883743286133,
+  fireRule4Calls: 158
+}
+
+======
+
+generic tuples in/out, more arrays internally
+lnru1000
+wl duration: 14382 ms
+{
+  fireRule2Duration: 6.072880744934082,
+  fireRule2Calls: 1000,
+  fireRule3Duration: 2.4732766151428223,
+  fireRule3Calls: 1000,
+  fireRule0Duration: 3.3297576904296875,
+  fireRule0Calls: 1000,
+  fireRule1Duration: 1303.908616065979,
+  fireRule1Calls: 4400,
+  fireRule4Duration: 7149.448279380798,
+  fireRule4Calls: 1256
+}
+
+separate prods per (non-GB) rule + mapped lookup of prods
+lnru1000
+wl duration: 4546 ms
+{
+  fireRule2Duration: 5.4731855392456055,
+  fireRule2Calls: 1000,
+  fireRule3Duration: 3.004851818084717,
+  fireRule3Calls: 1000,
+  fireRule0Duration: 3.958606243133545,
+  fireRule0Calls: 1000,
+  fireRule1Duration: 1040.0162949562073,
+  fireRule1Calls: 4400,
+  fireRule4Duration: 2837.1590161323547,
+  fireRule4Calls: 1256,
+}
+
+pre-multiple outtuples per prod
+lnru1000
+wl duration: 4829 ms
+{
+  fireRule2Duration: 5.65516471862793,
+  fireRule2Calls: 1000,
+  fireRule3Duration: 2.931121349334717,
+  fireRule3Calls: 1000,
+  fireRule0Duration: 3.522221088409424,
+  fireRule0Calls: 1000,
+  fireRule1Duration: 1028.1383337974548,
+  fireRule1Calls: 4400,
+  fireRule4Duration: 3088.828456401825,
+  fireRule4Calls: 1256,
+
+NEW MACHINE + direct mtuples (no generic tuples)
+lnru1000
+wl duration: 2182 ms
+{
+  fireRule2Duration: 2.974965512752533,
+  fireRule2Calls: 1000,
+  fireRule3Duration: 1.9840753674507141,
+  fireRule3Calls: 1000,
+  fireRule0Duration: 2.4265171885490417,
+  fireRule0Calls: 1000,
+  fireRule1Duration: 540.3428359627724,
+  fireRule1Calls: 2926,
+  fireRule4Duration: 987.1739198565483,
+  fireRule4Calls: 889,
+
+various fixes ([] rep for containers, ...)
+lnru1000
+profiling on
+wl duration: 1891 ms
+{
+  fireRule2Duration: 2.716653823852539,
+  fireRule2Calls: 1001,
+  fireRule3Duration: 1.5465750694274902,
+  fireRule3Calls: 1001,
+  fireRule0Duration: 12.143568992614746,
+  fireRule0Calls: 1001,
+  fireRule1Duration: 1227.2672271728516,
+  fireRule1Calls: 1763,
+  fireRule4Duration: 325.68816900253296,
+  fireRule4Calls: 159,
