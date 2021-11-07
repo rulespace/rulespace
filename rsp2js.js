@@ -1,4 +1,4 @@
-import { Arrays, assertTrue } from '@rulespace/common';
+import { Arrays, assertTrue, Sets } from '@rulespace/common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
 import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter, FunctorConstructorEmitter } from './rsp2js-emitters.js';
@@ -356,12 +356,22 @@ function main()
     return String(termValue);
   }
 
+  // we first emit rules because part of the analysis happens here (needed
+  // for emitting selectors); TODO: factor this out! 
+  ${preds.map(pred => `
+  //////////////////////////////////////////////////
+  // rules for ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
 
-  
+  ${pred.rules.map(rule => `
+    /* ${rule} */
+    ${rule.aggregates() ? emitRuleGB(rule) : emitRule(rule)}
+        `).join('\n')}
+      `).join('\n')}    
+
+  // now emitting the objects:
   
   ${analysis.functors().map(emitFunctorObject).join('\n')}
   
-
   ${preds.map(pred => `
     //////////////////////////////////////////////////
     // ${pred.edb ? 'ebd' : 'idb'} pred ${pred.name}(${pred.arity})
@@ -372,13 +382,9 @@ function main()
     // negAppearsIn: ${[...pred.negAppearsIn].join(',')}
 
     ${emitTupleObject(pred)}
-    ${pred.edb ? emitDeltaAddTuple(pred) : ''}
+    ${pred.edb ? emitDeltaAddEdbTuple(pred) : ''}
+  `).join('\n')}
 
-    ${pred.rules.map(rule => `
-      /* ${rule} */
-      ${rule.aggregates() ? emitRuleGB(rule) : emitRule(rule)}
-      `).join('\n')}
-    `).join('\n')}
 
   const facts = new Map();
   ${logDebug('"adding edb tuples due to fact addition by firing fact rule"')}
@@ -649,6 +655,23 @@ function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
   })
 }
 
+// let indices = [[]];
+// function addIndex(indices, index)
+// {
+//   const i = indices.findIndex(x => Tuples.equals(x, index));
+//   if (i === -1)
+//   {
+//     const indices2 = indices.slice(0);
+//     indices2.push(index);
+//     return indices2;
+//   }
+//   return indices;
+// }
+// function addIndices(indices, addIndices) // this does an addIndices.length-split of the possible set of indexes
+// {
+//   return indices.flatMap(is => addIndices.map(ind => addIndex(is, ind)));
+// }
+
 function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 {
   const tuple = "tuple" + i;
@@ -658,6 +681,25 @@ function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
   const bindings = new Map();
 
   compilePositiveAtom(atom, [], compileEnv, bindings, constraints);
+
+  // for (const c of constraints)
+  // {
+  //   if (c instanceof Constraints.EqConstraint)
+  //   {
+  //     const indices2 = [];
+  //     if (c.x instanceof Constraints.Index)
+  //     {
+  //       indices2.push([pred, 'EqIndex', c.x]);
+  //     }
+  //     if (c.y instanceof Constraints.Index)
+  //     {
+  //       indices2.push([pred, 'EqIndex', c.y]);
+  //     }
+  //     indices = addIndices(indices, indices2);
+  //   }
+  // }
+
+  // console.log(`indices`, indices);
 
   const postFilterBindings = [];
   for (const [name, constraintValue] of bindings)
@@ -1549,7 +1591,7 @@ function termToString(x)
 }
 
 
-function emitDeltaAddTuple(pred)
+function emitDeltaAddEdbTuple(pred)
 {
   const tn = termNames(pred);
   const termProperties = Array.from(Arrays.range(pred.arity)).map(i => `proposed.t${i}`);
@@ -1569,6 +1611,16 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   return ${pred}_tuples;
 }
   `
+}
+
+function emitDeltaAddIdbTuple(pred, pTupleArity)
+{
+  return `
+  function delta_add_${pred}_tuple(${termNames2(pred.arity).join(', ')}, newTuples, ${Arrays.range(pTupleArity).map(i => `tuple${i}`)})
+  {
+
+  }
+  `;
 }
 
 function compileRuleHead(rule, compileEnv, ptuples)

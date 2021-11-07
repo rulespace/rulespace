@@ -7,7 +7,8 @@ console.log(sexp2rsp(str2sexp("[Link 'a 'b]")));
 
 const src = `
 
-(rule [O (lambda () x)] [I x])
+(rule [R x y] [L x y])
+(rule [R x y] [R x z] [L z y])
 
   `;
 
@@ -17,7 +18,7 @@ compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module =>
 
 console.log(`count: ${module.count()}`);
 
-module.addTuples(compileModuleTuples(module, `[I 1]`));
+module.addTuples(compileModuleTuples(module, `[L 1 2] [L 2 3]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 console.log("roots: " + [...module.rootTuples()].join('\n'));
 console.log(`count: ${module.count()}`);
@@ -25,7 +26,7 @@ console.log(`count: ${module.count()}`);
 // sanityCheck(module); // reachableTuples is not always equal to members
 
 console.log("\n\n\n");
-module.removeTuples(compileModuleTuples(module, `[I 1]`).map(t => t.get())); 
+module.removeTuples(compileModuleTuples(module, `[L 1 2] [L 2 3]`).map(t => t.get())); 
 console.log("tuples: " + [...module.tuples()].join('\n'));
 console.log(`count: ${module.count()}`);
 
