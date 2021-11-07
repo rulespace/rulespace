@@ -1,5 +1,6 @@
 import { assertTrue, MutableSets, MutableMaps } from '@rulespace/common';
 import { Atom, Neg, App, Assign, Lit, Var, Lam, Agg } from './rsp.js';
+import * as C from './constraints.js';
 
 // TODO: flag assignment to already bound identifier:  [X x] [Y y] [:= x y]
 
@@ -344,6 +345,7 @@ function makeStratum(name2pred)
     return stratum;
   }
 }
+
 
 export function analyzeProgram(program)
 {

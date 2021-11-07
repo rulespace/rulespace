@@ -2,6 +2,7 @@ import { Arrays, assertTrue } from '@rulespace/common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
 import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter, FunctorConstructorEmitter } from './rsp2js-emitters.js';
+import * as Constraints from './constraints.js';
 
 class RspJsCompilationError extends Error
 {
@@ -354,6 +355,8 @@ function main()
   
     return String(termValue);
   }
+
+
   
   
   ${analysis.functors().map(emitFunctorObject).join('\n')}
@@ -556,102 +559,21 @@ function emitFunctorObject(functor)
   `;
 }
 
-class ConstraintIndex
-{
-  constructor(indices)
-  {
-    this.indices = [...indices];
-  }
-
-  toString()
-  {
-    return `[${this.indices.join()}]`;
-  }
-}
-
-class ConstraintVar
-{
-  constructor(name)
-  {
-    this.name = name;
-  }
-
-  toString()
-  {
-    return this.name;
-  }
-}
-
-class ConstraintConstant
-{
-  constructor(value)
-  {
-    this.value = value;
-  }
-
-  toString()
-  {
-    return String(this.value);
-  }
-}
-
-class ConstraintPred
-{
-  constructor(pred)
-  {
-    this.pred = pred;
-  }
-
-  toString()
-  {
-    return `[${this.pred}]`;
-  }
-}
-
-class EqConstraint
-{
-  constructor(x, y)
-  {
-    this.x = x;
-    this.y = y;
-  }
-
-  toString()
-  {
-    return `${this.x} === ${this.y}`
-  }
-}
-
-class PredElementConstraint
-{
-  constructor(x, pred)
-  {
-    this.x = x;
-    this.pred = pred;
-  }
-
-  toString()
-  {
-    return `${this.x} ∈ ${this.pred}`
-  }
-
-}
-
 function compileConstraintElement(el, tuple)
 {
-  if (el instanceof ConstraintIndex)
+  if (el instanceof Constraints.Index)
   {
     return `${tuple}.${el.indices.map(i => `t${i}`).join('.')}`;
   }
-  else if (el instanceof ConstraintVar)
+  else if (el instanceof Constraints.Var)
   {
     return el.name;
   }
-  else if (el instanceof ConstraintConstant)
+  else if (el instanceof Constraints.Constant)
   {
     return termToString(el.value);
   }
-  else if (el instanceof ConstraintPred)
+  else if (el instanceof Constraints.Pred)
   {
     return el.pred;
   }
@@ -665,16 +587,16 @@ function compileConstraintFor(tuple)
 {
   return function (constraint)
   {
-    if (constraint instanceof EqConstraint)
+    if (constraint instanceof Constraints.EqConstraint)
     {
       const left = compileConstraintElement(constraint.x, tuple);
       const right = compileConstraintElement(constraint.y, tuple);
       return `${left} === ${right}`;
     }
-    else if (constraint instanceof PredElementConstraint)
+    else if (constraint instanceof Constraints.PredElementConstraint)
     {
       const left = compileConstraintElement(constraint.x, tuple);
-      assertTrue(constraint.pred instanceof ConstraintPred);
+      assertTrue(constraint.pred instanceof Constraints.Pred);
       const right = compileConstraintElement(constraint.pred, tuple);
       return `${left} instanceof ${right}`;
     }
@@ -698,26 +620,26 @@ function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
       {
         if (compileEnv.has(term.name))
         {
-          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintVar(compileEnv.get(term.name))));
+          constraints.push(new Constraints.EqConstraint(new Constraints.Index([...target, i]), new Constraints.Var(compileEnv.get(term.name))));
         }
         else if (bindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
         {
-          constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), bindings.get(term.name)));
+          constraints.push(new Constraints.EqConstraint(new Constraints.Index([...target, i]), bindings.get(term.name)));
         }
         else
         {
           // not encountered before (locally, externally): bind
-          bindings.set(term.name, new ConstraintIndex([...target, i]));
+          bindings.set(term.name, new Constraints.Index([...target, i]));
         }
       }
     }
     else if (term instanceof Lit)
     {
-      constraints.push(new EqConstraint(new ConstraintIndex([...target, i]), new ConstraintConstant(term.value)));
+      constraints.push(new Constraints.EqConstraint(new Constraints.Index([...target, i]), new Constraints.Constant(term.value)));
     }
     else if (term instanceof Atom) // functor
     {
-      constraints.push(new PredElementConstraint(new ConstraintIndex([...target, i]), new ConstraintPred(term.pred)));
+      constraints.push(new Constraints.PredElementConstraint(new Constraints.Index([...target, i]), new Constraints.Pred(term.pred)));
       compilePositiveAtom(term, [...target, i], compileEnv, bindings, constraints);
     }
     else
