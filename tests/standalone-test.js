@@ -3,12 +3,13 @@ import { str2sexp } from '../str2sexp.js';
 import { compileToModule, compileModuleTuples } from './test-common.js';
 import { instance2dot } from '../utils.js'
 
-console.log(sexp2rsp(str2sexp("[Link 'a 'b]")));
-
 const src = `
 
-(rule [R x y] [L x y])
-(rule [R x y] [R x z] [L z y])
+(rule [R x #:count m] [A x m])
+(rule [A 1 12])
+(rule [A 1 13])
+(rule [A 1 133])
+(rule [A 1 134])
 
   `;
 
@@ -18,17 +19,17 @@ compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module =>
 
 console.log(`count: ${module.count()}`);
 
-module.addTuples(compileModuleTuples(module, `[L 1 2] [L 2 3]`));
+// module.addTuples(compileModuleTuples(module, `[I 'a 10] [I 'a 20] [I 'b 33]`));
 console.log("tuples: " + [...module.tuples()].join('\n'));
 console.log("roots: " + [...module.rootTuples()].join('\n'));
 console.log(`count: ${module.count()}`);
 
 // sanityCheck(module); // reachableTuples is not always equal to members
 
-console.log("\n\n\n");
-module.removeTuples(compileModuleTuples(module, `[L 1 2] [L 2 3]`).map(t => t.get())); 
-console.log("tuples: " + [...module.tuples()].join('\n'));
-console.log(`count: ${module.count()}`);
+// console.log("\n\n\n");
+// module.removeTuples(compileModuleTuples(module, `[I "def"]`).map(t => t.get())); 
+// console.log("tuples: " + [...module.tuples()].join('\n'));
+// console.log(`count: ${module.count()}`);
 
 // sanityCheck(module);
 

@@ -1,7 +1,7 @@
 import { Arrays, assertTrue, Sets } from '@rulespace/common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
-import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter, FunctorConstructorEmitter } from './rsp2js-emitters.js';
+import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter, FunctorConstructorEmitter, RelationEmitter, RelationEmitter0, FunctorEmitter0, FunctorEmitter, ClosureEmitter0, ClosureEmitter } from './rsp2js-emitters.js';
 import * as Constraints from './constraints.js';
 
 class RspJsCompilationError extends Error
@@ -246,33 +246,62 @@ function checkRuleProductsEmpty(rule)
 
 ///
 
+function createRelationEmitter(name, arity)
+{
+  if (arity === 0)
+  {
+    return new RelationEmitter0(name, logDebug);
+  }
+  return new RelationEmitter(name, arity, logDebug);
+}
+
+function createFunctorEmitter(name, arity)
+{
+  if (arity === 0)
+  {
+    return new FunctorEmitter0(name, logDebug);
+  }
+  return new FunctorEmitter(name, arity, logDebug);
+}
+
+function createClosureEmitter(name, arity)
+{
+  if (arity === 0)
+  {
+    return new ClosureEmitter0(name, logDebug);
+  }
+  return new ClosureEmitter(name, arity, logDebug);
+}
+
+const relationEmitters = new Map(analysis.preds.map(pred => [pred, createRelationEmitter(pred.name, pred.arity)]));
+
 const relationTce = new SimpleArray(logDebug);
 const relationTe = new RelationConstructorEmitter(publicFunction);
 
-function getPred(pred, values)
-{
-  return relationTce.get(pred, values);
-}
+// function getPred(pred, values)
+// {
+//   return relationTce.get(pred, values);
+// }
 
-function addGetPred(pred, values)
-{
-  return relationTce.addGet(pred, values);
-}
+// function addGetPred(pred, values)
+// {
+//   return relationTce.addGet(pred, values);
+// }
 
-function selectPred(pred)
-{
-  return relationTce.select(pred);
-}
+// function selectPred(pred)
+// {
+//   return relationTce.select(pred);
+// }
 
-function removePred(pred, values)
-{
-  return relationTce.remove(pred, values);
-}
+// function removePred(pred, values)
+// {
+//   return relationTce.remove(pred, values);
+// }
 
-function isEmptyPred(pred)
-{
-  return relationTce.isEmpty(pred);
-}
+// function isEmptyPred(pred)
+// {
+//   return relationTce.isEmpty(pred);
+// }
 
 function outProductsPred(tupleExp) // returns Set
 {
@@ -384,7 +413,6 @@ function main()
     ${emitTupleObject(pred)}
     ${pred.edb ? emitDeltaAddEdbTuple(pred) : ''}
   `).join('\n')}
-
 
   const facts = new Map();
   ${logDebug('"adding edb tuples due to fact addition by firing fact rule"')}
@@ -526,25 +554,19 @@ function emitTupleObject(pred)
   const arity = pred.arity;
   
   let sb = `
-    ${relationTe.objectDeclaration(pred, arity, relationTce)}
-    ${relationTce.containerDeclaration(pred, arity)}
-    ${relationTce.getDeclaration(pred, arity)}
-    ${relationTce.addGetDeclaration(pred, arity)}
-    ${relationTce.removeDeclaration(pred, arity)}
-    ${relationTce.selectDeclaration(pred, arity)}
-
-    ${relationTce.countDeclaration(pred, arity)}
+    ${relationTe.objectDeclaration(pred, arity)}
+    ${relationEmitters.get(pred).declaration()}
+    const relation_${pred} = ${relationEmitters.get(pred).instantiate()}
   `;
 
   if (pred.negAppearsIn.size > 0)
   {
     const negPredName = `NOT_${pred}`;
+    const relationEmitter = createRelationEmitter(negPredName, arity);
     sb += `
-    ${relationTe.objectDeclaration(negPredName, arity, relationTce)}
-    ${relationTce.containerDeclaration(negPredName, arity)}
-    ${relationTce.getDeclaration(negPredName, arity)}
-    ${relationTce.addGetDeclaration(negPredName, arity)}
-    ${relationTce.removeDeclaration(negPredName, arity)}
+    ${relationTe.objectDeclaration(negPredName, arity)}
+    ${relationEmitter.declaration()}
+    const relation_${negPredName} = ${relationEmitter.instantiate()}
     `
   }
 
@@ -554,14 +576,12 @@ function emitTupleObject(pred)
 function emitFunctorObject(functor)
 {
   const arity = functor.arity;
+  const functorEmitter = createFunctorEmitter(functor, arity);
 
   return  `
-  ${functorTe.objectDeclaration(functor, arity, functorTce)};
-  ${functorTce.containerDeclaration(functor, arity)}
-  ${functorTce.getDeclaration(functor, arity)}
-  ${functorTce.addGetDeclaration(functor, arity)}
-  ${functorTce.removeDeclaration(functor, arity)}
-  ${functorTce.countDeclaration(functor, arity)}
+  ${functorTe.objectDeclaration(functor, arity)};
+  ${functorEmitter.declaration()}
+  const functor_${functor} = ${functorEmitter.instantiate()}
   `;
 }
 
@@ -712,8 +732,8 @@ function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
   const conditions = constraints.map(compileConstraintFor(tuple));
 
   const tupleSelection = conditions.length === 0
-    ? `deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}`
-    : `(deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}).filter(${tuple} => ${conditions.join(' && ')})`;
+    ? `deltaPos === ${i} ? deltaTuples : relation_${pred}.select()`
+    : `(deltaPos === ${i} ? deltaTuples : relation_${pred}.select()).filter(${tuple} => ${conditions.join(' && ')})`;
 
   return `
     // atom ${atom}
@@ -734,7 +754,7 @@ function compileCreateFunctor(functor, env, termAids, rcIncs)
   const termExps = functor.terms;
   termAids.push(`
   // functor ${functor}
-  const ${functorName} = ${addGetPred(functor.pred, termExps.map(exp => compileExpression(exp, env, termAids, rcIncs)))};
+  const ${functorName} = functor_${functor.pred}.addGet(${termExps.map(exp => compileExpression(exp, env, termAids, rcIncs))})
   `);
   return functorName;
 }
@@ -807,9 +827,9 @@ function compileNegAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 
   return `
   // atom ${atom} (conditions)
-  if (${getPred(pred, getValues)} === null)
+  if (relation_${pred}.get(${getValues}) === null)
   {
-    const NOT_${tuple} = ${addGetPred(`NOT_${pred}`, getValues)}
+    const NOT_${tuple} = relation_NOT_${pred}.addGet(${getValues})
     ${cont(rule, i + 1, compileEnv, ptuples, rcIncs)}
   }
   `;
@@ -978,7 +998,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     {
       return `
       // atom ${atom} [no conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : relation_${pred}.select()))
       {
         ${bindUnboundVars.join('\n        ')}
         ${compileRuleGBFireBody(rule, i+1, compileEnv, ptuples)}
@@ -989,7 +1009,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     {
       return `
       // atom ${atom} [conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : relation_${pred}.select()))
       {
         if (${conditions.join('&&')})
         {
@@ -1016,21 +1036,21 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
 
 function emitRuleGB(rule)
 {
-  const tupleArity = rule.tupleArity();
-  const tupleParams = Array.from({length:tupleArity}, (_, i) => `t${i}`);
-  const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp}; // tuple`);
-  const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
-
   const compileEnv = new Map();
+  const tupleArity = rule.tupleArity();
+  const recursive = analysis.ruleIsRecursive(rule);
+  // const tupleParams = Array.from({length:tupleArity}, (_, i) => `t${i}`);
+  // const tupleFieldInits = Array.from(tupleParams, tp => `this.${tp} = ${tp}; // tuple`);
+  // const tupleFields = Array.from(tupleParams, tp => `this.${tp}`);
+
 
   const numGbTerms = rule.head.terms.length - 1;
-  const tn = Array.from(Array(numGbTerms), (_, i) => "t" + i);
-  const termAssignments = tn.map(t => `this.${t} = ${t}`);
-  const termToStrings = tn.map(t => `this.${t}`);
-  const aggTerm = rule.head.terms[rule.head.terms.length - 1];
+  // const tn = Array.from(Array(numGbTerms), (_, i) => "t" + i);
+  // const termAssignments = tn.map(t => `this.${t} = ${t}`);
+  // const termToStrings = tn.map(t => `this.${t}`);
+  // const aggTerm = rule.head.terms[rule.head.terms.length - 1];
 
 
-  const recursive = analysis.ruleIsRecursive(rule);
   if (recursive)
   {
     throw new Error(`${rule}: aggregating rules must not be recursive`);
@@ -1049,6 +1069,8 @@ ${productGBTe.objectDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
 ${productGBTce.containerDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
 ${productGBTce.getDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
 ${productGBTce.addGetDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${productGBTce.removeDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
+${productGBTce.countDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
 // TODO: Product removal!
 
 function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
@@ -1079,7 +1101,7 @@ function emitIterators(preds, edbPreds, rules)
 ${publicFunction('tuples')}() 
 {
   const result = [];
-  ${preds.map(pred => `${selectPred(pred)}.forEach(tuple => result.push(tuple))`).join('\n  ')}
+  ${preds.map(pred => `relation_${pred}.select().forEach(tuple => result.push(tuple))`).join('\n  ')}
   return result;
 }
 
@@ -1102,7 +1124,7 @@ ${publicFunction('rootTuples')}()   // all EDBs and IDB facts
 
 function emitClear(edbPreds)
 {
-  const clearers = edbPreds.map(edbPred => `removeTuples(${selectPred(edbPred)});`);
+  const clearers = edbPreds.map(edbPred => `removeTuples(relation_${edbPred}.select());`);
 
   return `
 ${publicFunction('clear')}()
@@ -1117,7 +1139,7 @@ function emitCount(preds, functors, closures)
   return `
 ${publicFunction('count')}()
 {
-  const c1 = ${preds.flatMap(pred => [relationTce.count(pred), ...pred.rules.map(rule => productTce.count(`Rule${rule._id}Product`))]).join('\n      +')}
+  const c1 = ${preds.flatMap(pred => [`relation_${pred}.count()`, ...pred.rules.map(rule => productTce.count(`Rule${rule._id}Product` + (rule.aggregates() ? 'GB' : '')))]).join('\n      +')}
   const c2 = ${[0, ...functors.map(functor => functorTce.count(functor))].join('\n      +')}
   const c3 = ${[0, ...closures.map(closure => closureTce.count(closure))].join('\n      +')}
   return c1 + c2 + c3;
@@ -1183,6 +1205,7 @@ function compileLambda(lam, env, termAids, rcIncs) // TODO update rcIncs and ter
     const termAids2 = [];
     const compiledBody = compileExpression(lam.body, extendedEnv, termAids2, rcIncs2);
 
+    const closureEmitter = createClosureEmitter(name, closureVars.length);
     // TODO: should become part of rsp2js-emitters
     lambdas.add(`
 // ${lam}    
@@ -1197,21 +1220,18 @@ function ${name}(${closureCompiledVars.join(', ')})
   };
   closure._rc = 0;
   closure._refs = [];
-  closure._remove = function () {${closureTce.removeDirect(name, `closure`)}};
+  closure._remove = function () { closure_${name}.removeDirect(closure) };
   return closure;
 }
     `);
-    lambdas.add(closureTce.containerDeclaration(name, closureVars.length));
-    lambdas.add(closureTce.getDeclaration(name, closureVars.length));   
-    lambdas.add(closureTce.addGetDeclaration(name, closureVars.length)); 
-    lambdas.add(closureTce.removeDirectDeclaration(name, closureVars.length));     
-    lambdas.add(closureTce.countDeclaration(name, closureVars.length));     
+    lambdas.add(closureEmitter.declaration());
+    lambdas.add(`const closure_${name} = ${closureEmitter.instantiate()}`);
   }
   const closureName = freshVariable("closure");
   rcIncs.push(closureName);
   termAids.push(`
   // closure ${name}
-  const ${closureName} = ${addGetPred(name, closureCompiledVars)}
+  const ${closureName} = closure_${name}.addGet(${closureCompiledVars})
   `);
   return closureName;
 }
@@ -1488,7 +1508,7 @@ ${rule}
       const currentResultTuple = groupby._outtuple;
       ${logDebug('`currentResultTuple ${currentResultTuple}`')}
       const updatedValue = ${updateOperation};
-      const updatedResultTuple = ${addGetPred(pred, [...gbNames, `updatedValue`])}  
+      const updatedResultTuple = relation_${pred}.addGet(${[...gbNames, `updatedValue`]})  
       ${logDebug('`updatedResultTuple ${updatedResultTuple}`')}
       if (groupby._outtuple !== updatedResultTuple)
       {
@@ -1602,7 +1622,7 @@ function delta_add_${pred}_tuples(proposedEdbTuples)
   const ${pred}_tuples = [];
   for (const proposed of proposedEdbTuples)
   {
-    const actual = ${addGetPred(pred, termProperties)}
+    const actual = relation_${pred}.addGet(${termProperties})
     if (actual !== proposed)
     {
       ${pred}_tuples.push(actual);
@@ -1644,10 +1664,10 @@ function compileRuleHead(rule, compileEnv, ptuples)
     ${termAids.join('\n')}
     
     // actual adding
-    const existing_${pred}_tuple = ${getPred(pred, termExps)};
+    const existing_${pred}_tuple = relation_${pred}.get(${termExps})
     if (existing_${pred}_tuple === null)
     {
-      const new_${pred}_tuple = ${addGetPred(pred, termExps)}
+      const new_${pred}_tuple = relation_${pred}.addGet(${termExps})
       newTuples.add(new_${pred}_tuple);
       ${rcIncs.map(x => `new_${pred}_tuple._refs.push(${x})`).join('\n        ')}
       ${rcIncs.map(x => `${x}._rc++;`).join('\n        ')}
@@ -1665,10 +1685,10 @@ function compileRuleHead(rule, compileEnv, ptuples)
     ${termAids.join('\n')}
 
     // actual adding
-    const existing_${pred}_tuple = ${getPred(pred, termExps)};
+    const existing_${pred}_tuple = relation_${pred}.get(${termExps});
     if (existing_${pred}_tuple === null)
     {
-      const new_${pred}_tuple = ${addGetPred(pred, termExps)};
+      const new_${pred}_tuple = relation_${pred}.addGet(${termExps});
       newTuples.add(new_${pred}_tuple);
       const product = ${addGetProd(`Rule${rule._id}Product`, ptuples)};
       ${t2ps.join('\n        ')}
@@ -1698,7 +1718,7 @@ function emitRemoveIdbDueToAddition(pred)
   ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
   for (const added_${pred}_tuple of added_${pred}_tuples)
   {
-    const NOT_${pred}_tuple = ${getPred(`NOT_${pred}`, fieldAccesses)};
+    const NOT_${pred}_tuple = relation_NOT_${pred}.get(${fieldAccesses});
     if (NOT_${pred}_tuple !== null)
     {
       deltaRemove_NOT_${pred}(NOT_${pred}_tuple);
@@ -1867,7 +1887,7 @@ function emitDeltaRemoveTuple(pred)
   return `
   function deltaRemove_${pred}(${pred}_tuple)
   {
-    ${removePred(pred, tns.map(tn => `${pred}_tuple.${tn}`))};
+    relation_${pred}.remove(${tns.map(tn => `${pred}_tuple.${tn}`)});
     removed_${pred}_tuples.push(${pred}_tuple);
     for (const outproduct of ${outProductsPred(`${pred}_tuple`)})
     {
@@ -1908,7 +1928,7 @@ function emitDeltaRemoveNOTTuple(pred)
   return `
   function deltaRemove_NOT_${pred}(NOT_${pred}_tuple)
   {
-    ${removePred(`NOT_${pred}`, tns.map(tn => `NOT_${pred}_tuple.${tn}`))};
+    relation_NOT_${pred}.remove(${tns.map(tn => `NOT_${pred}_tuple.${tn}`)});
     // removed_NOT_${pred}_tuples.push(NOT_${pred}_tuple); // TODO is this ever used?
     for (const outproduct of ${outProductsPred(`NOT_${pred}_tuple`)})
     {

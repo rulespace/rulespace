@@ -77,7 +77,7 @@ export function visitNodes(instance, tuples_, visitTuple, visitProduct, visitPro
       {
         continue;
       }
-      const groupby = instance.outGroupBy(outgb);
+      const groupby = instance.outGroupBy(productGB);
       if (!seen.has(groupby))
       {
         seen.add(groupby);

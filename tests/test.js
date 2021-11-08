@@ -441,6 +441,14 @@ test(`(rule [G "+" +]) (rule [G "-" -]) (rule [R x] [G _ proc] (:= x (proc 3 4 5
 // bug: negation of 0-arity predicate caused wrong member emit (NOT_pred not following pred)
 test(`(rule [No] (not [A]))`, `[No]`);
 
+// bug
+test(`
+(rule [R x #:count m] [A x m])
+(rule [A 1 12])
+(rule [A 1 13])
+(rule [A 1 133])
+(rule [A 1 134])`, `[A 1 12] [A 1 13] [A 1 133] [A 1 134] [R 1 4]`);
+
 // === AnalysisErrors
 
 // AnalysisError: predicate Root is already declared as function symbol

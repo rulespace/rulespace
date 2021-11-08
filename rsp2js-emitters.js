@@ -396,7 +396,7 @@ export class RelationConstructorEmitter extends TupleEmitter
     this.publicFunction = publicFunction;
   }
 
-  objectDeclaration(pred, arity, tce)
+  objectDeclaration(pred, arity)
   {
     const tn = termNames(arity);
     const termAssignments = tn.map(t => `this.${t} = ${t};`);
@@ -414,10 +414,10 @@ ${this.publicFunction(pred)}(${termNames(arity).join(', ')})
 ${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
 ${pred}.prototype.values = function () {return [${termFields}]};
 ${pred}.prototype.get = function () { // also internally used
-  return ${tce.get(pred, termFields)};
+  return relation_${pred}.get(${termFields})
 };
 ${pred}.prototype._remove = function () {
-  ${tce.remove(pred, termFields)};
+  relation_${pred}.removeDirect(this)
 };
   `;
   }
@@ -440,7 +440,7 @@ export class FunctorConstructorEmitter extends RelationConstructorEmitter
     super(publicFunction);
   }
 
-  objectDeclaration(functor, arity, tce)
+  objectDeclaration(functor, arity)
   {
     const tn = termNames(arity);
     const termAssignments = tn.map(t => `this.${t} = ${t};`);
@@ -457,7 +457,7 @@ export class FunctorConstructorEmitter extends RelationConstructorEmitter
     }
     ${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
     ${functor}.prototype.values = function () {return [${termFields}]};
-    ${functor}.prototype._remove = function () { ${tce.remove(functor, termFields)} };    
+    ${functor}.prototype._remove = function () { functor_${functor}.removeDirect(this) };    
     `;
   }
 }
@@ -581,5 +581,487 @@ class ${name}
 
 
 
+
+
+
+
+
+function valueNames(arity)
+{
+  return Arrays.range(arity).map(i => `v${i}`);
+}
+
+
+
+
+
+export class RelationEmitter
+{
+  constructor(name, arity, logDebug)
+  {
+    this.name = name;
+    this.arity = arity;
+
+    this.logDebug = logDebug;
+  }
+
+  declaration()
+  {
+    return `
+      
+class Relation_${this.name}
+{
+  constructor()
+  {
+    this.members = [];
+  }
+
+  get(${valueNames(this.arity)})
+  {
+    for (let i = 0; i < this.members.length; i++)
+    {
+      const item = this.members[i];
+      if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
+      {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  addGet(${valueNames(this.arity)})
+  {
+    const item = this.get(${valueNames(this.arity)});
+    if (item === null)
+    {
+      const newItem = new ${this.name}(${valueNames(this.arity)});
+      this.members.push(newItem);
+      return newItem;
+    }
+    return item;
+  }
+
+  remove(${valueNames(this.arity)})
+  {
+    for (let i = 0; i < this.members.length; i++)
+    {
+      const item = this.members[i];
+      if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
+      {
+        this.members.splice(i, 1);
+        ${this.logDebug('`removed ${item} from members`')}
+        return;
+      }
+    }    
+  }
+
+  removeDirect(item)
+  {
+    // can only 'directly' remove items that still exist!
+    const index = this.members.indexOf(item);
+    this.members.splice(index, 1);
+  }
+
+  select()
+  {
+    return this.members;
+  }
+
+  count()
+  {
+    return this.members.length;
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Relation_${this.name}()`;
+  }
+}
+
+export class RelationEmitter0 // arity 0
+{
+  constructor(name, logDebug)
+  {
+    this.name = name;
+    this.logDebug = logDebug;
+  }
+
+  declaration()
+  {
+    return `
+      
+class Relation_${this.name}
+{
+  constructor()
+  {
+    this.member = null;
+  }
+
+  get()
+  {
+    return this.member;
+  }
+
+  addGet()
+  {
+    const item = this.get();
+    if (item === null)
+    {
+      const newItem = new ${this.name}();
+      this.member = newItem;
+      return newItem;
+    }
+    return item;
+  }
+
+  remove()
+  {
+    const item = this.get();
+    if (item === null)
+    {
+      return;
+    }
+    this.member = null;
+    ${this.logDebug('`removed ${item} from members`')}
+  }    
+
+  removeDirect(item)
+  {
+    // in principle, this is only reached 'internally', so you cannot remove item that was not first selected
+    // so: assert that this.member === item
+    this.member = null;
+  }
+
+  select()
+  {
+    return this.member === null ? [] : [this.member];
+  }
+
+  count()
+  {
+    return this.member === null ? 0 : 1;
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Relation_${this.name}()`;
+  }
+}
+
+
+
+export class FunctorEmitter
+{
+  constructor(name, arity, logDebug)
+  {
+    this.name = name;
+    this.arity = arity;
+
+    this.logDebug = logDebug;
+  }
+
+  declaration()
+  {
+    return `
+      
+class Functor_${this.name}
+{
+  constructor()
+  {
+    this.members = [];
+  }
+
+  get(${valueNames(this.arity)})
+  {
+    for (let i = 0; i < this.members.length; i++)
+    {
+      const item = this.members[i];
+      if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
+      {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  addGet(${valueNames(this.arity)})
+  {
+    const item = this.get(${valueNames(this.arity)});
+    if (item === null)
+    {
+      const newItem = new ${this.name}(${valueNames(this.arity)});
+      this.members.push(newItem);
+      return newItem;
+    }
+    return item;
+  }
+
+  remove(${valueNames(this.arity)})
+  {
+    for (let i = 0; i < this.members.length; i++)
+    {
+      const item = this.members[i];
+      if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
+      {
+        this.members.splice(i, 1);
+        ${this.logDebug('`removed ${item} from members`')}
+        return;
+      }
+    }    
+  }
+
+  removeDirect(item)
+  {
+    // can only 'directly' remove items that still exist!
+    const index = this.members.indexOf(item);
+    this.members.splice(index, 1);
+  }
+
+  count()
+  {
+    return this.members.length;
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Functor_${this.name}()`;
+  }
+}
+
+export class FunctorEmitter0 // arity 0
+{
+  constructor(name, logDebug)
+  {
+    this.name = name;
+    this.logDebug = logDebug;
+  }
+
+  declaration()
+  {
+    return `
+      
+class Functor_${this.name}
+{
+  constructor()
+  {
+    this.member = null;
+  }
+
+  get()
+  {
+    return this.member;
+  }
+
+  addGet()
+  {
+    const item = this.get();
+    if (item === null)
+    {
+      const newItem = new ${this.name}();
+      this.member = newItem;
+      return newItem;
+    }
+    return item;
+  }
+
+  remove()
+  {
+    const item = this.get();
+    if (item === null)
+    {
+      return;
+    }
+    this.member = null;
+    ${this.logDebug('`removed ${item} from members`')}
+  }    
+
+  removeDirect(item)
+  {
+    // in principle, this is only reached 'internally', so you cannot remove item that was not first selected
+    // so: assert that this.member === item
+    this.member = null;
+  }
+
+  count()
+  {
+    return this.member === null ? 0 : 1;
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Functor_${this.name}()`;
+  }
+}
+
+
+
+
+
+export class ClosureEmitter
+{
+  constructor(name, arity, logDebug)
+  {
+    this.name = name;
+    this.arity = arity;
+
+    this.logDebug = logDebug;
+  }
+
+  declaration()
+  {
+    return `
+      
+class Closure_${this.name}
+{
+  constructor()
+  {
+    this.members = [];
+  }
+
+  get(${valueNames(this.arity)})
+  {
+    for (let i = 0; i < this.members.length; i++)
+    {
+      const item = this.members[i];
+      if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
+      {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  addGet(${valueNames(this.arity)})
+  {
+    const item = this.get(${valueNames(this.arity)});
+    if (item === null)
+    {
+      const newItem = new ${this.name}(${valueNames(this.arity)});
+      this.members.push(newItem);
+      return newItem;
+    }
+    return item;
+  }
+
+  remove(${valueNames(this.arity)})
+  {
+    for (let i = 0; i < this.members.length; i++)
+    {
+      const item = this.members[i];
+      if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
+      {
+        this.members.splice(i, 1);
+        ${this.logDebug('`removed ${item} from members`')}
+        return;
+      }
+    }    
+  }
+
+  removeDirect(item)
+  {
+    // can only 'directly' remove items that still exist!
+    const index = this.members.indexOf(item);
+    this.members.splice(index, 1);
+  }
+
+  count()
+  {
+    return this.members.length;
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Closure_${this.name}()`;
+  }
+}
+
+export class ClosureEmitter0 // arity 0
+{
+  constructor(name, logDebug)
+  {
+    this.name = name;
+    this.logDebug = logDebug;
+  }
+
+  declaration()
+  {
+    return `
+      
+class Closure_${this.name}
+{
+  constructor()
+  {
+    this.member = null;
+  }
+
+  get()
+  {
+    return this.member;
+  }
+
+  addGet()
+  {
+    const item = this.get();
+    if (item === null)
+    {
+      const newItem = new ${this.name}();
+      this.member = newItem;
+      return newItem;
+    }
+    return item;
+  }
+
+  remove()
+  {
+    const item = this.get();
+    if (item === null)
+    {
+      return;
+    }
+    this.member = null;
+    ${this.logDebug('`removed ${item} from members`')}
+  }    
+
+  removeDirect(item)
+  {
+    // in principle, this is only reached 'internally', so you cannot remove item that was not first selected
+    // so: assert that this.member === item
+    this.member = null;
+  }
+
+  count()
+  {
+    return this.member === null ? 0 : 1;
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Closure_${this.name}()`;
+  }
+}
 
 
