@@ -414,24 +414,6 @@ function main()
     ${pred.edb ? emitDeltaAddEdbTuple(pred) : ''}
   `).join('\n')}
 
-  const facts = new Map();
-  ${logDebug('"adding edb tuples due to fact addition by firing fact rule"')}
-  ${preds.map(pred => `
-    ${pred.rules.filter(rule => rule.tupleArity() === 0).map(rule => `
-      /* fact: ${rule} */
-      ${fireRuleInto(rule, -1, `[]`, `new_Rule${rule._id}_tuples`)} // TODO delta pos and tuple not required for fact rules
-      const existing_Rule${rule._id}_tuples = facts.get(${pred});
-      if (existing_Rule${rule._id}_tuples === undefined)
-      {
-        facts.set(${pred}, [...new_Rule${rule._id}_tuples]);
-      }
-      else
-      {
-        ${addAllTuples(`existing_Rule${rule._id}_tuples`, `new_Rule${rule._id}_tuples`)};  
-      }
-      `).join('\n')}
-    `).join('\n')}
-
   // (1) even without initial facts, certain rules must be triggered, e.g. (rule [R] (not [Some-Edb]))
   // if there is no (remove) delta on Some-Edb, then R will not be added
   // therefore, strategy: treat all initial (facts+derived) tuples as delta additions and fire
@@ -442,7 +424,7 @@ function main()
   // computeInitialAdd can also be used when initially adding facts externally (i.e., through computeDelta)
   // (3) although (1) is an edge case, it may still prove to be more optimal (faster) to have add-only logic
   ${logDebug('"computing initial idb tuples due to addition of fact edbs"')}; 
-  computeInitialAdd(facts); // TODO return delta is not used!
+  computeInitialAdd() // TODO return delta is not used!
   ${emitComputeInitialAdd(strata, preds)}
   ${emitComputeDelta(strata, preds)}
   ${emitIsGrounded(strata)}
@@ -1155,7 +1137,8 @@ function compileExpression(exp, env, termAids, rcIncs)
     {
       return requiredBuiltInFunDefs.add(exp.name);
     }
-    return env.get(exp.name);
+    const nameExp = env.get(exp.name);
+    return nameExp ?? exp.name; // unresolved names are kept as is
   }
   if (exp instanceof Lit)
   {
@@ -1343,9 +1326,9 @@ function emitComputeInitialAdd(strata, preds)
   const deltaAddedTuplesEntries = preds.map(pred => `[${pred}, added_${pred}_tuples]`);
 
   return `
-function computeInitialAdd(addTuples)
+function computeInitialAdd()
 {
-  const addedTuplesMap = new Map(addTuples);
+  const addedTuplesMap = new Map();
   ${logDebug('"=== computeInitialAdd"')}
   ${logDebug('"addedTupleMap " + [...addedTuplesMap.values()]')}
 
@@ -1372,6 +1355,8 @@ function stratumInitialAddLogic(stratum)
     // recursive rules: ${[...stratum.recursiveRules].map(rule => "Rule" + rule._id)}  
     `];
 
+    // ${logDebug('"adding edb tuples due to fact addition by firing fact rule"')}
+
 
   if (globalEdbStratum)
   {
@@ -1380,7 +1365,13 @@ function stratumInitialAddLogic(stratum)
       assertTrue(pred.edb);
       sb.push(`
       // adding initial ${pred} tuples
-      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) ?? []);
+      const added_${pred}_tuples = [];
+
+      ${pred.rules.filter(rule => rule.tupleArity() === 0).map(rule => `
+        /* fact: ${rule} */
+        ${fireRuleInto(rule, -1, `[]`, `added_${pred}_tuples_${rule._id}`)} // TODO delta pos and tuple not required for fact rules
+        ${addAllTuples(`added_${pred}_tuples`, `added_${pred}_tuples_${rule._id}`)}
+        `).join('\n')}
       `);  
     }      
   }

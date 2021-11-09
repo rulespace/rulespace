@@ -314,20 +314,21 @@ export function reactive(instanceCtr, deltaObservers)
 // }
 
 
-export function computeMeta(tuples) // single-shot
+export function computeMeta(instance) // single-shot
 {
+
   const src = `
 
   (rule [TupleLink t1 t2] [Tuple2Product t1 p] [Product2Tuple p t2])
-  (rule [Tuple t1] [TupleLink t1 _])
-  (rule [Tuple t2] [TupleLink _ t2])
+  (rule [Tuple t1 pred] [TupleLink t1 _] (:= pred (Reflect.get (Reflect.get t1 "constructor") "name")))
+  (rule [Tuple t2 pred] [TupleLink _ t2] (:= pred (Reflect.get (Reflect.get t2 "constructor") "name")))
 
   `;
 
   const ctr = compileToConstructor(src);
   const meta = ctr();
 
-  visit(tuples, 
+  visitNodes(instance, instance.tuples(), 
     tuple => meta.addTuples(instance.outProducts(tuple).map(p => new meta.Tuple2Product(tuple, p))),
     product => meta.addTuples([instance.outTuple(product)].map(t => new meta.Product2Tuple(product, t)))
     );

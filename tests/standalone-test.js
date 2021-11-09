@@ -6,11 +6,11 @@ import { instance2dot } from '../utils.js'
 const src = `
 
 (rule [R x #:count m] [A x m])
-(rule [A 1 12])
-(rule [A 1 13])
-(rule [A 1 133])
-(rule [A 1 134])
-
+(rule [A 1 1])
+(rule [A 1 2])
+(rule [A 1 3])
+(rule [A 2 2])
+(rule [A 2 3])
   `;
 
 
