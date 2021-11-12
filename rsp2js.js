@@ -2,7 +2,7 @@ import { Arrays, assertTrue, Sets } from '@rulespace/common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
 import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter, FunctorConstructorEmitter, RelationEmitter, RelationEmitter0, FunctorEmitter0, FunctorEmitter, ClosureEmitter0, ClosureEmitter } from './rsp2js-emitters.js';
-import * as Constraints from './constraints.js';
+import * as Constraints from './constrainer.js';
 
 class RspJsCompilationError extends Error
 {
@@ -187,6 +187,9 @@ export function rsp2js(rsp, options={})
 
   const edbPreds = preds.filter(pred => pred.edb);
   const rules = analysis.program.rules;
+
+
+  const constraints = Constraints.computeConstraints(rsp);
 
   // options + emitters
   const OPT_module = options.module === true ? true : false;
@@ -567,17 +570,17 @@ function emitFunctorObject(functor)
   `;
 }
 
-function compileConstraintElement(el, tuple)
+function compileConstraintElement(el, tuple, compileEnv)
 {
   if (el instanceof Constraints.Index)
   {
     return `${tuple}.${el.indices.map(i => `t${i}`).join('.')}`;
   }
-  else if (el instanceof Constraints.Var)
+  else if (el instanceof Var)
   {
-    return el.name;
+    return compileEnv.get(el.name);
   }
-  else if (el instanceof Constraints.Constant)
+  else if (el instanceof Lit)
   {
     return termToString(el.value);
   }
@@ -591,21 +594,21 @@ function compileConstraintElement(el, tuple)
   }
 }
 
-function compileConstraintFor(tuple)
+function compileConstraintFor(tuple, compileEnv)
 {
   return function (constraint)
   {
     if (constraint instanceof Constraints.EqConstraint)
     {
-      const left = compileConstraintElement(constraint.x, tuple);
-      const right = compileConstraintElement(constraint.y, tuple);
+      const left = compileConstraintElement(constraint.x, tuple, compileEnv);
+      const right = compileConstraintElement(constraint.y, tuple, compileEnv);
       return `${left} === ${right}`;
     }
     else if (constraint instanceof Constraints.PredElementConstraint)
     {
-      const left = compileConstraintElement(constraint.x, tuple);
+      const left = compileConstraintElement(constraint.x, tuple, compileEnv);
       assertTrue(constraint.pred instanceof Constraints.Pred);
-      const right = compileConstraintElement(constraint.pred, tuple);
+      const right = compileConstraintElement(constraint.pred, tuple, compileEnv);
       return `${left} instanceof ${right}`;
     }
     else
@@ -615,103 +618,23 @@ function compileConstraintFor(tuple)
   };
 }
 
-function compilePositiveAtom(atom, target, compileEnv, bindings, constraints)
-{
-  // bindings: name -> index
-  // bindings are things that are not yet named (in conditions)
-  // compileEnv is read-only
-  atom.terms.forEach((term, i) =>
-  {
-    if (term instanceof Var)
-    {
-      if (term.name !== '_')
-      {
-        if (compileEnv.has(term.name))
-        {
-          constraints.push(new Constraints.EqConstraint(new Constraints.Index([...target, i]), new Constraints.Var(compileEnv.get(term.name))));
-        }
-        else if (bindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
-        {
-          constraints.push(new Constraints.EqConstraint(new Constraints.Index([...target, i]), bindings.get(term.name)));
-        }
-        else
-        {
-          // not encountered before (locally, externally): bind
-          bindings.set(term.name, new Constraints.Index([...target, i]));
-        }
-      }
-    }
-    else if (term instanceof Lit)
-    {
-      constraints.push(new Constraints.EqConstraint(new Constraints.Index([...target, i]), new Constraints.Constant(term.value)));
-    }
-    else if (term instanceof Atom) // functor
-    {
-      constraints.push(new Constraints.PredElementConstraint(new Constraints.Index([...target, i]), new Constraints.Pred(term.pred)));
-      compilePositiveAtom(term, [...target, i], compileEnv, bindings, constraints);
-    }
-    else
-    {
-      throw new Error(`cannot handle ${term} of type ${term.constructor.name} in ${atom}`);
-    }
-  })
-}
-
-// let indices = [[]];
-// function addIndex(indices, index)
-// {
-//   const i = indices.findIndex(x => Tuples.equals(x, index));
-//   if (i === -1)
-//   {
-//     const indices2 = indices.slice(0);
-//     indices2.push(index);
-//     return indices2;
-//   }
-//   return indices;
-// }
-// function addIndices(indices, addIndices) // this does an addIndices.length-split of the possible set of indexes
-// {
-//   return indices.flatMap(is => addIndices.map(ind => addIndex(is, ind)));
-// }
 
 function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 {
   const tuple = "tuple" + i;
   ptuples.push(tuple);
   const pred = atom.pred;
-  const constraints = [];
-  const bindings = new Map();
-
-  compilePositiveAtom(atom, [], compileEnv, bindings, constraints);
-
-  // for (const c of constraints)
-  // {
-  //   if (c instanceof Constraints.EqConstraint)
-  //   {
-  //     const indices2 = [];
-  //     if (c.x instanceof Constraints.Index)
-  //     {
-  //       indices2.push([pred, 'EqIndex', c.x]);
-  //     }
-  //     if (c.y instanceof Constraints.Index)
-  //     {
-  //       indices2.push([pred, 'EqIndex', c.y]);
-  //     }
-  //     indices = addIndices(indices, indices2);
-  //   }
-  // }
-
-  // console.log(`indices`, indices);
-
+  const atomBindings = constraints.atom2bindings(atom);
+  const atomConstraints = constraints.atom2constraints(atom);
   const postFilterBindings = [];
-  for (const [name, constraintValue] of bindings)
+  for (const [name, constraintValue] of atomBindings)
   {
     const varName = freshVariable(name);
     compileEnv.set(name, varName);
-    postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple)};`);
+    postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple, compileEnv)};`);
   }
 
-  const conditions = constraints.map(compileConstraintFor(tuple));
+  const conditions = atomConstraints.map(compileConstraintFor(tuple, compileEnv));
 
   const tupleSelection = conditions.length === 0
     ? `deltaPos === ${i} ? deltaTuples : relation_${pred}.select()`
@@ -719,7 +642,7 @@ function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 
   return `
     // atom ${atom}
-    ${constraints.map(c => `/// ${c}`).join('\n    ')}
+    ${atomConstraints.map(c => `/// ${c}`).join('\n    ')}
     const tuples${i} = ${tupleSelection};
     for (const ${tuple} of tuples${i})
     {
@@ -1122,7 +1045,7 @@ function emitCount(preds, functors, closures)
 ${publicFunction('count')}()
 {
   const c1 = ${preds.flatMap(pred => [`relation_${pred}.count()`, ...pred.rules.map(rule => productTce.count(`Rule${rule._id}Product` + (rule.aggregates() ? 'GB' : '')))]).join('\n      +')}
-  const c2 = ${[0, ...functors.map(functor => functorTce.count(functor))].join('\n      +')}
+  const c2 = ${[0, ...functors.map(functor => `functor_${functor}.count()`)].join('\n      +')}
   const c3 = ${[0, ...closures.map(closure => closureTce.count(closure))].join('\n      +')}
   return c1 + c2 + c3;
 }  
