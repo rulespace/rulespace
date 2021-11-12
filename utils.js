@@ -193,7 +193,7 @@ function toDot(instance, tuples = instance.tuples())
 
   function tupleLabel(tuple)
   {
-    return `[${tuple.constructor.name} ${tuple.values().map(valueLabel).join(' ')}]`;
+    return `[${tuple.name()} ${tuple.values().map(valueLabel).join(' ')}]`;
   }
 
   function gbLabel(gb)

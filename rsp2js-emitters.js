@@ -412,6 +412,7 @@ ${this.publicFunction(pred)}(${termNames(arity).join(', ')})
   this._refs = []; // TODO: can statically determine which preds will have refs (i.e., allocated as part of tuple) 
 }
 ${pred}.prototype.toString = function () {return \`[${pred} ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`};
+${pred}.prototype.name = function () {return '${pred}'};
 ${pred}.prototype.values = function () {return [${termFields}]};
 ${pred}.prototype.get = function () { // also internally used
   return relation_${pred}.get(${termFields})
@@ -456,6 +457,7 @@ export class FunctorConstructorEmitter extends RelationConstructorEmitter
       this._refs = [];
     }
     ${functor}.prototype.toString = function () {return atomString("${functor}", ${termFields.join(', ')})};
+    ${functor}.prototype.name = function () {return '${functor}'};
     ${functor}.prototype.values = function () {return [${termFields}]};
     ${functor}.prototype._remove = function () { functor_${functor}.removeDirect(this) };    
     `;
