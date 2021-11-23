@@ -190,6 +190,8 @@ export function rsp2js(rsp, options={})
 
 
   const constraints = Constraints.computeConstraints(rsp);
+  // const indexes = Constraints.computeIndexes(constraints);
+  const indexes = null;
 
   // options + emitters
   const OPT_module = options.module === true ? true : false;
@@ -350,6 +352,12 @@ function main()
   ${FLAG_profile ? `console.log("profiling on")` : ``}
   ${FLAG_assertions ? logInfo(`'assertions on'`) : ``}
 
+  /*
+  ${constraints}
+
+  ${indexes}
+  */
+
   const MutableArrays =
   {
     addAll(x, y)
@@ -358,17 +366,6 @@ function main()
       for (const elem of y)
       {
         x.push(elem);
-      }
-    }
-  }
-  
-  const MutableSets =
-  {
-    addAll(x, y)
-    {
-      for (const elem of y)
-      {
-        x.add(elem);
       }
     }
   }
@@ -540,7 +537,7 @@ function emitTupleObject(pred)
   
   let sb = `
     ${relationTe.objectDeclaration(pred, arity)}
-    ${relationEmitters.get(pred).declaration()}
+    ${relationEmitters.get(pred).declaration(indexes ? (indexes.p2i.get(pred.name) ?? []) : [])}
     const relation_${pred} = ${relationEmitters.get(pred).instantiate()}
   `;
 
@@ -550,7 +547,7 @@ function emitTupleObject(pred)
     const relationEmitter = createRelationEmitter(negPredName, arity);
     sb += `
     ${relationTe.objectDeclaration(negPredName, arity)}
-    ${relationEmitter.declaration()}
+    ${relationEmitter.declaration([])} // TODO indexes for neg preds?
     const relation_${negPredName} = ${relationEmitter.instantiate()}
     `
   }
@@ -572,60 +569,63 @@ function emitFunctorObject(functor)
 
 function compileConstraintElement(el, tuple, compileEnv)
 {
-  if (el instanceof Constraints.Index)
+  if (el instanceof Constraints.CPos)
   {
     return `${tuple}.${el.indices.map(i => `t${i}`).join('.')}`;
   }
-  else if (el instanceof Var)
+  else if (el instanceof Constraints.CVar)
   {
     return compileEnv.get(el.name);
   }
-  else if (el instanceof Lit)
+  else if (el instanceof Constraints.CLit)
   {
     return termToString(el.value);
   }
-  else if (el instanceof Constraints.Pred)
+  else if (el instanceof Constraints.CPred)
   {
     return el.pred;
   }
   else
   {
-    throw new Error(`cannot handle constraint element ${el}`);
+    throw new Error(`cannot handle constraint element ${el} of type ${el?.constructor?.name}`);
   }
 }
 
-function compileConstraintFor(tuple, compileEnv)
+function compilePrimitiveSearchFor(tuple, compileEnv)
 {
   return function (constraint)
   {
     if (constraint instanceof Constraints.EqConstraint)
     {
-      const left = compileConstraintElement(constraint.x, tuple, compileEnv);
-      const right = compileConstraintElement(constraint.y, tuple, compileEnv);
+      const left = compileConstraintElement(constraint.left, tuple, compileEnv);
+      const right = compileConstraintElement(constraint.right, tuple, compileEnv);
       return `${left} === ${right}`;
     }
-    else if (constraint instanceof Constraints.PredElementConstraint)
+    else if (constraint instanceof Constraints.ElementOfConstraint)
     {
-      const left = compileConstraintElement(constraint.x, tuple, compileEnv);
-      assertTrue(constraint.pred instanceof Constraints.Pred);
-      const right = compileConstraintElement(constraint.pred, tuple, compileEnv);
+      const left = compileConstraintElement(constraint.left, tuple, compileEnv);
+      if (!(constraint.right instanceof Constraints.CPred))
+      {
+        throw new Error(`assertion failed: ${constraint.right} instanceof ${constraint?.right?.constructor?.name} and not Pred`);
+      }
+      const right = compileConstraintElement(constraint.right, tuple, compileEnv);
       return `${left} instanceof ${right}`;
     }
     else
     {
-      throw new Error(`cannot handle constraint ${constraint}`);
+      throw new Error(`cannot handle constraint ${constraint} of type ${constraint?.constructor?.name}`);
     }
   };
 }
-
 
 function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 {
   const tuple = "tuple" + i;
   ptuples.push(tuple);
   const pred = atom.pred;
-  const atomBindings = constraints.atom2bindings(atom);
-  const atomConstraints = constraints.atom2constraints(atom);
+  const atomBindings = constraints.atomBindings(atom);
+  const atomConstraints = constraints.atomConstraints(atom);
+  const atomResidualConstraints = indexes ? indexes.a2rc.get(atom) : atomConstraints;
   const postFilterBindings = [];
   for (const [name, constraintValue] of atomBindings)
   {
@@ -634,12 +634,51 @@ function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
     postFilterBindings.push(`const ${varName} = ${compileConstraintElement(constraintValue, tuple, compileEnv)};`);
   }
 
-  const conditions = atomConstraints.map(compileConstraintFor(tuple, compileEnv));
+  const allConditions = atomConstraints.map(compilePrimitiveSearchFor(tuple, compileEnv));
+  const residualConditions = atomResidualConstraints.map(compilePrimitiveSearchFor(tuple, compileEnv));
 
-  const tupleSelection = conditions.length === 0
-    ? `deltaPos === ${i} ? deltaTuples : relation_${pred}.select()`
-    : `(deltaPos === ${i} ? deltaTuples : relation_${pred}.select()).filter(${tuple} => ${conditions.join(' && ')})`;
 
+  let tupleSelection;
+
+  if (allConditions.length === 0)
+  {
+    tupleSelection = `deltaPos === ${i} ? deltaTuples : relation_${pred}.select()`;
+  }
+  else
+  {
+    let selection;
+    const atomIndexedConstraints = indexes ? indexes.a2ic.get(atom) : [];
+    if (atomIndexedConstraints.length === 0)
+    {
+      selection = `relation_${pred}.select()`;
+    }
+    else
+    {
+      const index = indexes.a2i.get(atom);
+      const indexIndex = indexes.p2i.get(atom.pred).findIndex(x => index.equals(x));
+      assertTrue(indexIndex !== -1)
+      const indexArgs = [];
+      atomIndexedConstraints.forEach(c => {
+        if (c instanceof Constraints.EqConstraint)
+        {
+          if (c.right instanceof Constraints.CVar)
+          {
+            indexArgs.push(compileEnv.get(c.right.name));
+          }
+        }
+      });
+      selection = `relation_${pred}.selectIndex${indexIndex}(${indexArgs.join()})`;
+    }
+    if (residualConditions.length > 0)
+    {
+      selection += `.filter(${tuple} => ${residualConditions.join(' && ')})`;
+    }
+    tupleSelection = `deltaPos === ${i} 
+                        ? deltaTuples.filter(${tuple} => ${allConditions.join(' && ')}) 
+                        : ${selection}`;
+  }
+
+  
   return `
     // atom ${atom}
     ${atomConstraints.map(c => `/// ${c}`).join('\n    ')}

@@ -5,20 +5,36 @@ import { instance2dot } from '../utils.js'
 
 const src = `
 
-(rule [R a b c d e f g] [I a b c e [S a c d f] a b d g])
+(rule [Reachable x y]
+  [Link x y])
+  
+(rule [Reachable x y]
+  [Reachable x z] [Link z y])
 
   `;
 
 
-compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
-//import('./compiled/standalone.mjs').then(module => {
+//compileToModule(src, 'standalone', {debug:false, assertions:false}).then(module => {
+import('./compiled/standalone.mjs').then(module => {
 
 console.log(`count: ${module.count()}`);
 
-module.addTuples(compileModuleTuples(module, `[I 1 2 3 5 [S 1 3 4 6] 1 2 4 7]`));
-console.log("tuples: " + [...module.tuples()].join('\n'));
-console.log("roots: " + [...module.rootTuples()].join('\n'));
+const start = Date.now();
+for (let i = 0; i < 100; i++)
+{
+  for (let j = 0; j < 100; j++)
+  {
+    module.addTuples([new module.Link(i, j)]);
+  }
+}
+const end = Date.now();
+
+
+// console.log("tuples: " + [...module.tuples()].join('\n'));
+// console.log("roots: " + [...module.rootTuples()].join('\n'));
 console.log(`count: ${module.count()}`);
+
+console.log(`duration ${end-start} ms`);
 
 // sanityCheck(module); // reachableTuples is not always equal to members
 

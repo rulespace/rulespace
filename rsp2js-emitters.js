@@ -1,4 +1,5 @@
 import { Arrays, assertTrue } from '@rulespace/common';
+import { CLit, CVar, CPos, CPred, EqIndexConstraint, ElementOfIndexConstraint } from './constrainer.js';
 
 function termNames(arity)
 {
@@ -596,6 +597,141 @@ function valueNames(arity)
 
 
 
+//////////
+
+// cloned from rsp2js
+function termToString(x)
+{
+  if (typeof x === 'string')
+  {
+    return `'${x}'`;
+  }
+  return String(x); // ???
+}
+
+function compileConstraintElementIndex(el, compilePosition)
+{
+  if (el instanceof CPos)
+  {
+    return compilePosition(el.indices); // `tuple.${el.indices.map(i => `t${i}`).join('.')}`;
+  }
+  else if (el instanceof CVar)
+  {
+    return String(el); // relying on 'v' naming
+  }
+  else if (el instanceof CLit)
+  {
+    return termToString(el.value);
+  }
+  else if (el instanceof CPred)
+  {
+    return el.pred;
+  }
+  else
+  {
+    throw new Error(`cannot handle constraint element ${el} of type ${el?.constructor?.name}`);
+  }
+}
+
+function compileIndexConstraints(indexConstraints, compilePosition)
+{
+
+  function compileConstraint(constraint)
+  {
+    if (constraint instanceof EqIndexConstraint)
+    {
+      const left = compileConstraintElementIndex(constraint.left, compilePosition);
+      const right = compileConstraintElementIndex(constraint.right, compilePosition);
+      return `${left} === ${right}`;
+    }
+    else if (constraint instanceof ElementOfIndexConstraint)
+    {
+      const left = compileConstraintElementIndex(constraint.left, compilePosition);
+      assertTrue(constraint[2] instanceof CPred);
+      const right = compileConstraintElementIndex(constraint.right, compilePosition);
+      return `${left} instanceof ${right}`;
+    }
+    else
+    {
+      throw new Error(`cannot handle constraint ${constraint} of type ${constraint?.constructor?.name}`);
+    }
+  }
+
+  return indexConstraints.map(compileConstraint).join(' && ');
+}
+
+function compileIndexConstraintAssignments(indexConstraints, compilePosition)
+{
+
+  function compileConstraint(constraint)
+  {
+    if (constraint instanceof EqIndexConstraint
+          && constraint.left instanceof CPos
+          && constraint.right instanceof CVar)
+    {
+      const left = compileConstraintElementIndex(constraint.left, compilePosition);
+      const right = compileConstraintElementIndex(constraint.right, compilePosition);
+      return [`const ${right} = ${left}`];
+    }
+    else 
+    {
+      return [];
+    }
+  }
+
+  return indexConstraints.flatMap(compileConstraint).join('\n');
+}
+
+function isStaticIndexConstraint(constraint)
+{
+    if (constraint instanceof EqIndexConstraint && constraint.right instanceof CLit)
+    {
+      return true;
+    }
+    if (constraint instanceof ElementOfIndexConstraint)
+    {
+      assertTrue(constraint[2] instanceof CPred);
+      return true;
+    }
+    return false;
+}
+
+function isDynamicIndexConstraint(constraint)
+{
+  return !isStaticIndexConstraint(constraint);
+}
+
+
+// function compileIndexConstantPredicate(index, compilePosition)
+// {
+
+//   function compileConstraint(constraint)
+//   {
+//     if (constraint instanceof EqIndexConstraint && constraint.right instanceof CLit)
+//     {
+//       const left = compileConstraintElementIndex(constraint.left, compilePosition);
+//       const right = compileConstraintElementIndex(constraint.right, compilePosition);
+//       return [`${left} === ${right}`];
+//     }
+//     else if (constraint instanceof ElementOfIndexConstraint)
+//     {
+//       const left = compileConstraintElementIndex(constraint.left, compilePosition);
+//       assertTrue(constraint[2] instanceof Pred);
+//       const right = compileConstraintElementIndex(constraint.right, null);
+//       return [`${left} instanceof ${right}`];
+//     }
+//     else
+//     {
+//       return [];
+//       // throw new Error(`cannot handle constraint ${constraint} of type ${constraint?.constructor?.name}`);
+//     }
+//   }
+
+//   // TODO should become filter that then moves to regular compile?
+//   return index.constraints.flatMap(compileConstraint).join(' && ');
+// }
+
+
 
 export class RelationEmitter
 {
@@ -607,10 +743,16 @@ export class RelationEmitter
     this.logDebug = logDebug;
   }
 
-  declaration()
+  declaration(indexes)
   {
     return `
-      
+    
+${indexes.map((idx, i) => `
+/* index ${i}: ${idx} */
+${new IndexEmitter(idx, `${i}_${this.name}`, this.logDebug).declaration()}
+const index${i}_${this.name} = new Index${i}_${this.name}();
+`).join('\n')}
+
 class Relation_${this.name}
 {
   constructor()
@@ -638,6 +780,19 @@ class Relation_${this.name}
     {
       const newItem = new ${this.name}(${valueNames(this.arity)});
       this.members.push(newItem);
+      ${indexes.map((idx, i) =>
+          (constantPred => constantPred === ''
+                            ? `
+                            ${this.logDebug(`\`adding \${newItem} to index${i}\``)}
+                            index${i}_${this.name}.add(newItem)
+                              `
+                            : `
+                            if (${constantPred})
+                            {
+                              ${this.logDebug(`\`adding \${newItem} to index${i}\``)}
+                              index${i}_${this.name}.add(newItem)
+                            }
+                           `)(compileIndexConstraints(idx.constraints.filter(isStaticIndexConstraint), indices => [`v${indices[0]}`, ...indices.slice(1).map(i => `t${i}`)].join('.')))).join('\n')}
       return newItem;
     }
     return item;
@@ -652,6 +807,21 @@ class Relation_${this.name}
       {
         this.members.splice(i, 1);
         ${this.logDebug('`removed ${item} from members`')}
+
+        ${indexes.map((idx, i) =>
+          (constantPred => constantPred === ''
+                            ? `
+                            ${this.logDebug(`\`removing \${item} from index${i}\``)}
+                            index${i}_${this.name}.remove(item)
+                              `
+                            : `
+                            if (${constantPred})
+                            {
+                              ${this.logDebug(`\`removing \${item} from index${i}\``)}
+                              index${i}_${this.name}.remove(item)
+                            }
+                           `)(compileIndexConstraints(idx.constraints.filter(isStaticIndexConstraint), indices => [`v${indices[0]}`, ...indices.slice(1).map(i => `t${i}`)].join('.')))).join('\n')}
+
         return;
       }
     }    
@@ -667,6 +837,16 @@ class Relation_${this.name}
   select()
   {
     return this.members;
+  }
+
+  ${
+    indexes.map((index, i) => `
+      /* ${index} */
+      selectIndex${i}(${Arrays.range(index.arity()).map(i => `v${i}`)})
+      {
+        return index${i}_${this.name}.get(${Arrays.range(index.arity()).map(i => `v${i}`)})
+      }
+    `).join('\n')
   }
 
   count()
@@ -915,6 +1095,10 @@ class Functor_${this.name}
 
 
 
+
+
+
+
 export class ClosureEmitter
 {
   constructor(name, arity, logDebug)
@@ -1063,6 +1247,137 @@ class Closure_${this.name}
   instantiate()
   {
     return `new Closure_${this.name}()`;
+  }
+}
+
+
+export class IndexEmitter
+{
+  constructor(index, name, logDebug)
+  {
+    this.index = index;
+    this.name = name;
+
+    this.logDebug = logDebug;
+  }
+
+  declaration()
+  {
+    const maps = [`this.members`].concat(Arrays.range(this.index.arity()).map(i => "l" + i));
+    const vn = valueNames(this.index.arity()); // arity also determined by constraints
+
+    const getBody = [];
+    for (let i = 0; i < this.index.arity(); i++)
+    {
+      getBody.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(${vn[i]});
+      if (${maps[i+1]} === undefined)
+      {
+        return [];
+      }
+      `)
+    }
+    getBody.push(`return ${maps[this.index.arity()]};`);
+
+
+    function emitEntry(i, arity)
+    {
+      if (i === arity)
+      {
+        return `tuples`;
+      }
+      return `new Map([[v${i}, ${emitEntry(i+1, arity)}]])`;
+    }
+    const addBody = [compileIndexConstraintAssignments(this.index.constraints, indices => `tuple.${indices.map(i => `t${i}`).join('.')}`)];
+    for (let i = 0; i < this.index.arity(); i++)
+    {
+      addBody.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(${vn[i]});
+      if (${maps[i+1]} === undefined)
+      {
+        const tuples = [tuple];
+        ${maps[i]}.set(${vn[i]}, ${emitEntry(i+1, this.index.arity())});
+        ${this.logDebug(`\`Index${this.name}: addGet added \${tuple} to members\``)}
+        return;
+      }
+      `)
+    }
+    addBody.push(`${maps[this.index.arity()]}.push(tuple);`);
+
+    const removeBody = [compileIndexConstraintAssignments(this.index.constraints, indices => `tuple.${indices.map(i => `t${i}`).join('.')}`)];
+    for (let i = 0; i < this.index.arity(); i++)
+    {
+      removeBody.push(`
+      const ${maps[i+1]} = ${maps[i]}.get(${vn[i]});
+      `)
+    }
+    removeBody.push(`
+    ${maps[this.index.arity()]}.splice(${maps[this.index.arity()]}.indexOf(tuple), 1)
+    `);  
+
+    function emitLookup(i, arity)
+    {
+      if (i === arity)
+      {
+        return `result.push(...${maps[arity]})`;
+      }
+      return `
+        for (const ${maps[i+1]} of ${maps[i]}.values())
+        {
+          if (${maps[i+1]} !== undefined)
+          {
+            ${emitLookup(i+1, arity)}
+          }
+        }
+        `;
+    }
+
+    function emitCount(i, arity)
+    {
+      if (i === arity)
+      {
+        return `${maps[i]}.length`;
+      }
+      return `[...${maps[i]}.values()].reduce((acc, ${maps[i+1]}) => acc += ${emitCount(i+1, arity)}, 0)`;
+    }
+    const countBody = `return ${emitCount(0, this.index.arity())}`
+
+    return `
+      
+class Index${this.name}
+{
+  constructor()
+  {
+    this.members = ${this.index.arity() === 0 ? `[]` : `new Map()`};
+  }
+
+  get(${vn})
+  {
+    ${getBody.join('\n')}
+  }
+
+  add(tuple)
+  {
+    ${addBody.join('\n')}
+  }
+
+  remove(tuple)
+  {
+    ${removeBody.join('\n')}
+  }
+
+  count()
+  {
+    ${countBody}
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Functor_${this.name}()`;
   }
 }
 

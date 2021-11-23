@@ -1,24 +1,82 @@
 import { App, Assign, Atom, Lit, Neg, Var } from './rsp.js';
 
-class Constraints
+
+export class CPos
 {
-  constructor(bindings, constraints)
+  constructor(indices)
   {
-    this.atomBindings = bindings;
-    this.atomConstraints = constraints;
+    this.indices = [...indices];
   }
 
-  atom2bindings(atom)
+  equals(x)
   {
-    return this.atomBindings.get(atom);
+    return x instanceof CPos
+      && equals(this.indices, x.indices);
   }
 
-  atom2constraints(atom)
+  toString()
   {
-    return this.atomConstraints.get(atom);
+    return `[${this.indices.join()}]`;
   }
-
 }
+
+export class CVar
+{
+  constructor(name)
+  {
+    this.name = name;
+  }
+
+  equals(x)
+  {
+    return x instanceof CVar
+      && this.name === x.name;
+  }
+
+  toString()
+  {
+    return this.name;
+  }
+}
+
+export class CLit
+{
+  constructor(value)
+  {
+    this.value = value;
+  }
+
+  equals(x)
+  {
+    return x instanceof CLit
+      && this.value === x.value;
+  }
+
+  toString()
+  {
+    return String(this.value);
+  }
+}
+
+export class CPred
+{
+  constructor(pred)
+  {
+    this.pred = pred;
+  }
+
+  equals(x)
+  {
+    return x instanceof CPred
+      && this.pred === x.pred;
+  }
+
+  toString()
+  {
+    return `[${this.pred}]`;
+  }
+}
+
 
 export function computeConstraints(program)
 {
@@ -129,26 +187,26 @@ function compilePositiveAtom(atom, target, compileEnv, atomBindings, constraints
       {
         if (compileEnv.has(term.name))
         {
-          constraints.push(new EqConstraint(new Index([...target, i]), term));
+          constraints.push(new EqConstraint(new CPos([...target, i]), new CVar(term.name)));
         }
         else if (atomBindings.has(term.name)) // this var was already locally encountered, e.g. 2nd 'a' in [I a x a]
         {
-          constraints.push(new EqConstraint(new Index([...target, i]), atomBindings.get(term.name)));
+          constraints.push(new EqConstraint(new CPos([...target, i]), atomBindings.get(term.name)));
         }
         else
         {
           // not encountered before (locally, externally): bind
-          atomBindings.set(term.name, new Index([...target, i]));
+          atomBindings.set(term.name, new CPos([...target, i]));
         }
       }
     }
     else if (term instanceof Lit)
     {
-      constraints.push(new EqConstraint(new Index([...target, i]), term));
+      constraints.push(new EqConstraint(new CPos([...target, i]), new CLit(term.value)));
     }
     else if (term instanceof Atom) // functor
     {
-      constraints.push(new PredElementConstraint(new Index([...target, i]), new Pred(term.pred)));
+      constraints.push(new ElementOfConstraint(new CPos([...target, i]), new CPred(term.pred)));
       compilePositiveAtom(term, [...target, i], compileEnv, atomBindings, constraints);
     }
     else
@@ -158,83 +216,252 @@ function compilePositiveAtom(atom, target, compileEnv, atomBindings, constraints
   })
 }
 
-export class Index
+class Constraints
 {
-  constructor(indices)
+  constructor(bindings, constraints)
   {
-    this.indices = [...indices];
+    this.a2b = bindings;
+    this.a2c = constraints;
+  }
+
+  atom2constraints()
+  {
+    return this.a2c;
+  }
+
+  atomBindings(atom)
+  {
+    return this.a2b.get(atom);
+  }
+
+  atomConstraints(atom)
+  {
+    return this.a2c.get(atom);
   }
 
   toString()
   {
-    return `[${this.indices.join()}]`;
+    return `bindings \n${[...this.a2b.entries()].map(([k,v]) => `${k} -> ${v}` ).join('\n')}
+constraints \n${[...this.a2c.entries()].map(([k,v]) => `${k} -> ${v.join(' ')}` ).join('\n')}`;
   }
+
 }
 
-// export class Var
-// {
-//   constructor(name)
-//   {
-//     this.name = name;
-//   }
-
-//   toString()
-//   {
-//     return this.name;
-//   }
-// }
-
-// export class Constant
-// {
-//   constructor(value)
-//   {
-//     this.value = value;
-//   }
-
-//   toString()
-//   {
-//     return String(this.value);
-//   }
-// }
-
-export class Pred
+function equals(x, y)
 {
-  constructor(pred)
+  if (x === y)
   {
-    this.pred = pred;
+    return true;
+  }
+
+  if (Array.isArray(x))
+  {
+    if (Array.isArray(y) && x.length === y.length)
+    {
+      for (let i = 0; i < x.length; i++)
+      {
+        if (!equals(x[i], y[i]))
+        {
+          return false;
+        }
+      }
+      return true;   
+    }
+    return false;
+  }
+  return x.equals && x.equals(y);
+}
+
+class Index
+{
+  constructor(constraints, varNames)
+  {
+    this.constraints = constraints;
+    this.varNames = varNames;
+  }
+
+  equals(x)
+  {
+    return x instanceof Index
+      && equals(this.constraints, x.constraints);
+  }
+
+  arity() 
+  {
+    return this.varNames.length;
   }
 
   toString()
   {
-    return `[${this.pred}]`;
+    return `{index ${this.constraints.join()}}`
   }
 }
 
 export class EqConstraint
 {
-  constructor(x, y)
+  constructor(left, right)
   {
-    this.x = x;
-    this.y = y;
+    this.left = left;
+    this.right = right;
+  }
+
+  equals(x)
+  {
+    return x instanceof EqConstraint
+      && equals(this.left, x.left)
+      && equals(this.right, x.right)
   }
 
   toString()
   {
-    return `${this.x} === ${this.y}`
+    return `{${this.left} === ${this.right}}`;
   }
 }
 
-export class PredElementConstraint
+export class ElementOfConstraint
 {
-  constructor(x, pred)
+  constructor(left, right)
   {
-    this.x = x;
-    this.pred = pred;
+    this.left = left;
+    this.right = right;
+  }
+
+  equals(x)
+  {
+    return x instanceof ElementOfConstraint
+      && equals(this.left, x.left)
+      && equals(this.right, x.right)
   }
 
   toString()
   {
-    return `${this.x} ∈ ${this.pred}`
+    return `{${this.left} ∈ ${this.right}}`;
+  }
+}
+
+export class EqIndexConstraint
+{
+  constructor(left, right)
+  {
+    this.left = left;
+    this.right = right;
   }
 
+  equals(x)
+  {
+    return x instanceof EqIndexConstraint
+      && equals(this.left, x.left)
+      && equals(this.right, x.right)
+  }
+
+  toString()
+  {
+    return `{${this.left} === ${this.right}}`;
+  }
+}
+
+export class ElementOfIndexConstraint
+{
+  constructor(left, right)
+  {
+    this.left = left;
+    this.right = right;
+  }
+
+  equals(x)
+  {
+    return x instanceof ElementOfIndexConstraint
+      && equals(this.left, x.left)
+      && equals(this.right, x.right)
+  }
+
+  toString()
+  {
+    return `{${this.left} ∈ ${this.right}}`;
+  }
+}
+
+export function computeIndexes(constraints)
+{
+  const pred2indexes = new Map();
+  const atom2index = new Map();
+  const atom2indexedConstraints = new Map();
+  const atom2residualConstraints = new Map();
+  
+  for (const [atom, atomConstraints] of constraints.atom2constraints().entries())
+  {
+    const varNames = [];
+    const indexConstraints = [];
+    atom2indexedConstraints.set(atom, []);
+    atom2residualConstraints.set(atom, []);
+    for (const atomConstraint of atomConstraints)
+    {
+      if (atomConstraint instanceof EqConstraint)
+      {
+        if (atomConstraint.left instanceof CPos)
+        {
+          if (atomConstraint.right instanceof CVar)
+          {
+            const varName = atomConstraint.right.name;
+            if (!varNames.includes(varName))
+            {
+              varNames.push(varName);
+            }
+            indexConstraints.push(new EqIndexConstraint(atomConstraint.left, new CVar(`v${varNames.indexOf(varName)}`)));
+            atom2indexedConstraints.get(atom).push(atomConstraint);
+          }
+          else if (atomConstraint.right instanceof CLit)
+          {
+            indexConstraints.push(new EqIndexConstraint(atomConstraint.left, atomConstraint.right));
+            atom2indexedConstraints.get(atom).push(atomConstraint);
+          }
+          else 
+          {
+            atom2residualConstraints.get(atom).push(atomConstraint);            
+          }
+        }
+      }
+      else
+      {
+        atom2residualConstraints.get(atom).push(atomConstraint);
+      }
+    }
+    if (!pred2indexes.has(atom.pred))
+    {
+      pred2indexes.set(atom.pred, []);
+    }
+    if (indexConstraints.length > 0)
+    {
+      const theIndex = new Index(indexConstraints, varNames);
+      const indexesForPred = pred2indexes.get(atom.pred);
+      if (!indexesForPred.find(x => equals(x, theIndex)))
+      {
+        pred2indexes.get(atom.pred).push(theIndex);
+      }
+      // console.log(`*** ${atom} -> ${theIndex}`);
+      atom2index.set(atom, theIndex);  
+    }
+  }
+  return new Indexes(pred2indexes, atom2indexedConstraints, atom2residualConstraints, atom2index);
+}
+
+class Indexes
+{
+  constructor(pred2indexes, atom2indexedConstraints, atom2residualConstraints, atom2index)
+  {
+    this.p2i = pred2indexes;
+    this.a2ic = atom2indexedConstraints;
+    this.a2rc = atom2residualConstraints; 
+    this.a2i = atom2index;
+  }
+
+  toString()
+  {
+    return `
+    pred2indexes\n${[...this.p2i.entries()].map(([k,v]) => `${k} -> ${[...v].join(' ')}` ).join('\n')}
+    atom2indexedConstraints\n${[...this.a2ic.entries()].map(([k,v]) => `${k} -> ${[...v].join(' ')}` ).join('\n')}
+    atom2residualConstraints\n${[...this.a2rc.entries()].map(([k,v]) => `${k} -> ${[...v].join(' ')}` ).join('\n')}    
+    atom2index\n${[...this.a2i.entries()].map(([k,v]) => `${k} -> ${v}` ).join('\n')}    
+    `;
+  }
 }
