@@ -361,6 +361,7 @@ testAdd(`(rule [R] (not [I 1]) [I 2])`, `[I 1] [I 2]`, ``);
 // functors
 testAdd(`(rule [R [X x]] [I x])`, `[I 123]`, `[R [X 123]]`);
 testAdd(`(rule [R [X [Y y]]] [I y])`, `[I 123]`, `[R [X [Y 123]]]`);
+testAdd(`(rule [R [X [Y] y]] [I y])`, `[I 123]`, `[R [X [Y] 123]]`);
 
 // matching with multiple occurrences of same var in single atom
 testAdd(`(rule [R x y z] [I x y x z])`, `[I 1 2 1 3]`, `[R 1 2 3]`);
@@ -420,6 +421,9 @@ test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2
 test(`(rule [F (lambda () 123)]) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
 // alloc not allowed in that position: test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
 test(`(rule [F (lambda (x) [Functor x])]) (rule [R (f 123)] [F f])`, `[F _] [R [Functor 123]]`);
+
+// aggregation/groupby
+test(`(rule [R #:max x] [I x]) (rule [I 1]) (rule [I 2])`, `[R 2] [I 1] [I 2]`);
 
 // funny chars
 testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);

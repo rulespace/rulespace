@@ -1,3 +1,4 @@
+import { createRandom } from '@rulespace/common';
 import { sexp2rsp } from '../sexp2rsp.js';
 import { str2sexp } from '../str2sexp.js';
 import { compileToModule, compileModuleTuples } from './test-common.js';
@@ -13,9 +14,12 @@ const src = `
 
   `;
 
+const random = ((r) => () => Math.floor(r() * 150))(createRandom());
 
-//compileToModule(src, 'standalone', {debug:false, assertions:false}).then(module => {
-import('./compiled/standalone.mjs').then(module => {
+
+
+compileToModule(src, 'standalone', {debug:false, assertions:false}).then(module => {
+//import('./compiled/standalone.mjs').then(module => {
 
 console.log(`count: ${module.count()}`);
 
@@ -24,7 +28,7 @@ for (let i = 0; i < 100; i++)
 {
   for (let j = 0; j < 100; j++)
   {
-    module.addTuples([new module.Link(i, j)]);
+    module.addTuples([new module.Link(random(), random())]);
   }
 }
 const end = Date.now();

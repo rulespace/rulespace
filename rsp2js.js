@@ -1,7 +1,14 @@
 import { Arrays, assertTrue, Sets } from '@rulespace/common';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
-import { SimpleArray, NestedMaps, RelationConstructorEmitter, ProductClassEmitter, ProductGBClassEmitter, GBClassEmitter, FunctorConstructorEmitter, RelationEmitter, RelationEmitter0, FunctorEmitter0, FunctorEmitter, ClosureEmitter0, ClosureEmitter } from './rsp2js-emitters.js';
+import { 
+  RelationEmitter0, RelationEmitter, 
+  FunctorEmitter0, FunctorEmitter,
+  ClosureEmitter0, ClosureEmitter, 
+  GroupByEmitter0, GroupByEmitter, 
+  ProductEmitter, NestedMapsProductEmitter,
+  ProductGBEmitter 
+} from './rsp2js-emitters.js';
 import * as Constraints from './constrainer.js';
 
 class RspJsCompilationError extends Error
@@ -255,18 +262,18 @@ function createRelationEmitter(name, arity)
 {
   if (arity === 0)
   {
-    return new RelationEmitter0(name, logDebug);
+    return new RelationEmitter0(name, publicFunction, logDebug);
   }
-  return new RelationEmitter(name, arity, logDebug);
+  return new RelationEmitter(name, arity, publicFunction, logDebug);
 }
 
-function createFunctorEmitter(name, arity)
+function createFunctorEmitter(name, arity, publicFunction, logDebug)
 {
   if (arity === 0)
   {
-    return new FunctorEmitter0(name, logDebug);
+    return new FunctorEmitter0(name, publicFunction, logDebug);
   }
-  return new FunctorEmitter(name, arity, logDebug);
+  return new FunctorEmitter(name, arity, publicFunction, logDebug);
 }
 
 function createClosureEmitter(name, arity)
@@ -278,10 +285,30 @@ function createClosureEmitter(name, arity)
   return new ClosureEmitter(name, arity, logDebug);
 }
 
+function createGroupByEmitter(name, arity, logDebug)
+{
+  if (arity === 0)
+  {
+    return new GroupByEmitter0(name, logDebug);
+  }
+  return new GroupByEmitter(name, arity, logDebug);
+}
+
+function createProductEmitter(name, arity, recursive, logDebug)
+{
+  // return new ProductEmitter(name, arity, recursive, logDebug);
+  return new NestedMapsProductEmitter(name, arity, recursive, logDebug);
+}
+
+function createProductGBEmitter(name, arity, logDebug)
+{
+  return new ProductGBEmitter(name, arity, logDebug);
+}
+
+
+
 const relationEmitters = new Map(analysis.preds.map(pred => [pred, createRelationEmitter(pred.name, pred.arity)]));
 
-const relationTce = new SimpleArray(logDebug);
-const relationTe = new RelationConstructorEmitter(publicFunction);
 
 // function getPred(pred, values)
 // {
@@ -293,53 +320,61 @@ const relationTe = new RelationConstructorEmitter(publicFunction);
 //   return relationTce.addGet(pred, values);
 // }
 
-// function selectPred(pred)
-// {
-//   return relationTce.select(pred);
-// }
+function selectPred(pred)
+{
+  return `relation_${pred}.select()`;
+}
 
 // function removePred(pred, values)
 // {
 //   return relationTce.remove(pred, values);
 // }
 
-// function isEmptyPred(pred)
-// {
-//   return relationTce.isEmpty(pred);
-// }
-
-function outProductsPred(tupleExp) // returns Set
+function countPred(pred)
 {
-  return relationTe.outProducts(tupleExp);
-}
-
-function addOutProductPred(tupleExp, productExp)
-{
-  return relationTe.addOutProduct(tupleExp, productExp);
+  return `relation_${pred}.count()`;
 }
 
 
-const functorTce = relationTce;
-const functorTe = new FunctorConstructorEmitter(publicFunction); // TODO export (public) stuff
-
-const GBTce = new SimpleArray(logDebug);
-const GBTe = new GBClassEmitter();
-
-
-const closureTce = new SimpleArray(logDebug); // TODO; in principle only NestedMaps-type of container can be used
-// const closureTe = new RelationConstructorEmitter(publicFunction); closures cannot be deconstructed
-
-const productTce = new NestedMaps(logDebug);
-const productTe = new ProductClassEmitter();
-
-const productGBTce = productTce;
-const productGBTe = new ProductGBClassEmitter();
-
-
-function addGetProd(name, arity)
+function countClosure(closure)
 {
-  return productTce.addGet(name, arity);
+  return `relation_${closure}.count()`;
 }
+
+function countProd(rule)
+{
+  if (rule.tupleArity() === 0)
+  {
+    return `0`;
+  }
+  return `product${rule.aggregates() ? 'GB' : ''}_Rule${rule._id}.count()`;
+}
+
+function outProductsPred(pred, tupleExp) // returns Set
+{
+  return relationEmitters.get(pred).outProducts(tupleExp);
+}
+
+function addOutProductPred(pred, tupleExp, productExp)
+{
+  return relationEmitters.get(pred).addOutProduct(tupleExp, productExp);
+}
+
+function addGetProd(name, tuples)
+{
+  return `product_${name}.addGet(${tuples})`;
+}
+
+function addGetProdGB(name, tuples)
+{
+  return `productGB_${name}.addGet(${tuples})`;
+}
+
+function addGetGroupBy(name, valueExps)
+{
+  return `groupby_${name}.addGet(${valueExps.join()})`;
+}
+
 
 ////////////
 
@@ -534,21 +569,23 @@ function main()
 function emitTupleObject(pred)
 {
   const arity = pred.arity;
+  const relationEmitter = relationEmitters.get(pred);
   
   let sb = `
-    ${relationTe.objectDeclaration(pred, arity)}
-    ${relationEmitters.get(pred).declaration(indexes ? (indexes.p2i.get(pred.name) ?? []) : [])}
-    const relation_${pred} = ${relationEmitters.get(pred).instantiate()}
+    ${relationEmitter.objectDeclaration()}
+    ${relationEmitter.containerDeclaration(indexes ? (indexes.p2i.get(pred.name) ?? []) : [])}
+    const relation_${pred} = ${relationEmitter.instantiate()}
   `;
 
   if (pred.negAppearsIn.size > 0)
   {
     const negPredName = `NOT_${pred}`;
-    const relationEmitter = createRelationEmitter(negPredName, arity);
+    const negRelationEmitter = createRelationEmitter(negPredName, arity);
+    relationEmitters.set(negPredName, negRelationEmitter); // TODO need to move
     sb += `
-    ${relationTe.objectDeclaration(negPredName, arity)}
-    ${relationEmitter.declaration([])} // TODO indexes for neg preds?
-    const relation_${negPredName} = ${relationEmitter.instantiate()}
+    ${negRelationEmitter.objectDeclaration()}
+    ${negRelationEmitter.containerDeclaration([])} // TODO indexes for neg preds?
+    const relation_${negPredName} = ${negRelationEmitter.instantiate()}
     `
   }
 
@@ -558,11 +595,11 @@ function emitTupleObject(pred)
 function emitFunctorObject(functor)
 {
   const arity = functor.arity;
-  const functorEmitter = createFunctorEmitter(functor, arity);
+  const functorEmitter = createFunctorEmitter(functor.name, arity, publicFunction, logDebug);
 
   return  `
-  ${functorTe.objectDeclaration(functor, arity)};
-  ${functorEmitter.declaration()}
+  ${functorEmitter.objectDeclaration()};
+  ${functorEmitter.containerDeclaration()}
   const functor_${functor} = ${functorEmitter.instantiate()}
   `;
 }
@@ -642,7 +679,7 @@ function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 
   if (allConditions.length === 0)
   {
-    tupleSelection = `deltaPos === ${i} ? deltaTuples : relation_${pred}.select()`;
+    tupleSelection = `deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}`;
   }
   else
   {
@@ -650,7 +687,7 @@ function compileAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
     const atomIndexedConstraints = indexes ? indexes.a2ic.get(atom) : [];
     if (atomIndexedConstraints.length === 0)
     {
-      selection = `relation_${pred}.select()`;
+      selection = selectPred(pred);
     }
     else
     {
@@ -829,41 +866,49 @@ function compileLitAtom(atom, i, rule, compileEnv, ptuples, rcIncs, cont)
 
 function emitRule(rule)
 {
+  /* rule (tuple arity ${tupleArity}) (${recursive ? 'recursive' : 'non-recursive'}) (non-aggregating)
+  ${rule} 
+  */
+  const compileEnv = new Map();
+  const tupleArity = rule.tupleArity();
+  const recursive = analysis.ruleIsRecursive(rule); // TODO this must go at some point!
+  const productName = `Rule${rule._id}`;
 
-/* rule (tuple arity ${tupleArity}) (${recursive ? 'recursive' : 'non-recursive'}) (non-aggregating)
-${rule} 
-*/
-const compileEnv = new Map();
-const tupleArity = rule.tupleArity();
-const recursive = analysis.ruleIsRecursive(rule); // TODO this must go at some point!
-const productName = `Rule${rule._id}Product`;
+  const fire = `
+  function fireRule${rule._id}(deltaPos, deltaTuples) // emitRule
+  {
+    ${logDebug(`'fire ${rule._id} ${rule}'`)}
+    ${logDebug('`deltaPos ${deltaPos} deltaTuples ${[...deltaTuples].join()}`')}
+  
+    ${profileStart(`fireRule${rule._id}`)}
+  
+    const newTuples = new Set();
+  
+    ${compileRuleFireBody(rule, 0, compileEnv, [], [])}
+  
+    ${profileEnd(`fireRule${rule._id}`)}
+  
+    ${logDebug('`=> newTuples ${[...newTuples].join()}`')}
+  
+    return newTuples;
+  } // end fireRule${rule._id}    
+  `
 
-return `
-${productTe.objectDeclaration(productName, tupleArity, recursive, productTce)}
-${productTce.containerDeclaration(productName, tupleArity)}
-${productTce.getDeclaration(productName, tupleArity)}
-${productTce.addGetDeclaration(productName, tupleArity)}
-${productTce.removeDeclaration(productName, tupleArity)}
-${productTce.countDeclaration(productName, tupleArity)}
+  if (tupleArity > 0)
+  {
+    const productEmitter = createProductEmitter(productName, tupleArity, recursive, logDebug);
 
-function fireRule${rule._id}(deltaPos, deltaTuples)
-{
-  ${logDebug(`'fire ${rule._id} ${rule}'`)}
-  ${logDebug('`deltaPos ${deltaPos} deltaTuples ${[...deltaTuples].join()}`')}
-
-  ${profileStart(`fireRule${rule._id}`)}
-
-  const newTuples = new Set();
-
-  ${compileRuleFireBody(rule, 0, compileEnv, [], [])}
-
-  ${profileEnd(`fireRule${rule._id}`)}
-
-  ${logDebug('`=> newTuples ${[...newTuples].join()}`')}
-
-  return newTuples;
-} // end fireRule${rule._id}
-  `;
+    return `
+    ${productEmitter.objectDeclaration()}
+    ${productEmitter.containerDeclaration()}
+    const product_${productName} = ${productEmitter.instantiate()}    
+    ${fire}
+      `;  
+  }
+  else
+  {
+    return fire;
+  }
 }
 
 function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cloned code from `compileRule`
@@ -879,8 +924,8 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     const t2ps = ptuples.map(tuple => `${tuple}._outproductsgb.add(productGB);`);
     return `
       // updates for ${head}
-      const productGB = ${addGetProd(`Rule${rule._id}ProductGB`, ptuples)};
-      const groupby = ${addGetProd(`Rule${rule._id}GB`, gb.map(t => compileEnv.get(t.name)))};
+      const productGB = ${addGetProdGB(`Rule${rule._id}`, ptuples)};
+      const groupby = ${addGetGroupBy(`Rule${rule._id}`, gb.map(t => compileEnv.get(t.name)))};
 
       if (productGB._outgb === groupby) // 'not new': TODO turn this around
       {
@@ -942,7 +987,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     {
       return `
       // atom ${atom} [no conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : relation_${pred}.select()))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}))
       {
         ${bindUnboundVars.join('\n        ')}
         ${compileRuleGBFireBody(rule, i+1, compileEnv, ptuples)}
@@ -953,7 +998,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
     {
       return `
       // atom ${atom} [conditions]
-      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : relation_${pred}.select()))
+      for (const ${tuple} of (deltaPos === ${i} ? deltaTuples : ${selectPred(pred)}))
       {
         if (${conditions.join('&&')})
         {
@@ -1000,22 +1045,22 @@ function emitRuleGB(rule)
     throw new Error(`${rule}: aggregating rules must not be recursive`);
   }
 
+  const productName = `Rule${rule._id}`;
+
+  const groupByEmitter = createGroupByEmitter(`Rule${rule._id}`, numGbTerms, logDebug);
+  const productGBEmitter = createProductGBEmitter(productName, tupleArity, logDebug);
+  
   return `
 /* rule (tuple arity ${tupleArity}) (non-recursive) (aggregating) 
 ${rule} 
 */
-${GBTe.objectDeclaration(`Rule${rule._id}GB`, numGbTerms)}
-${GBTce.containerDeclaration(`Rule${rule._id}GB`,numGbTerms)}
-${GBTce.getDeclaration(`Rule${rule._id}GB`, numGbTerms)}
-${GBTce.addGetDeclaration(`Rule${rule._id}GB`, numGbTerms)}
+${groupByEmitter.objectDeclaration()}
+${groupByEmitter.containerDeclaration()}
+const groupby_Rule${rule._id} = ${groupByEmitter.instantiate()}
 
-${productGBTe.objectDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-${productGBTce.containerDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-${productGBTce.getDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-${productGBTce.addGetDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-${productGBTce.removeDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-${productGBTce.countDeclaration(`Rule${rule._id}ProductGB`, tupleArity)}
-// TODO: Product removal!
+${productGBEmitter.objectDeclaration()}
+${productGBEmitter.containerDeclaration()}
+const productGB_${productName} = ${productGBEmitter.instantiate()}
 
 function fireRule${rule._id}GB(deltaPos, deltaTuples, updates)
 {
@@ -1045,7 +1090,7 @@ function emitIterators(preds, edbPreds, rules)
 ${publicFunction('tuples')}() 
 {
   const result = [];
-  ${preds.map(pred => `relation_${pred}.select().forEach(tuple => result.push(tuple))`).join('\n  ')}
+  ${preds.map(pred => `${selectPred(pred)}.forEach(tuple => result.push(tuple))`).join('\n  ')}
   return result;
 }
 
@@ -1068,7 +1113,7 @@ ${publicFunction('rootTuples')}()   // all EDBs and IDB facts
 
 function emitClear(edbPreds)
 {
-  const clearers = edbPreds.map(edbPred => `removeTuples(relation_${edbPred}.select());`);
+  const clearers = edbPreds.map(edbPred => `removeTuples(${selectPred(edbPred)});`);
 
   return `
 ${publicFunction('clear')}()
@@ -1083,9 +1128,9 @@ function emitCount(preds, functors, closures)
   return `
 ${publicFunction('count')}()
 {
-  const c1 = ${preds.flatMap(pred => [`relation_${pred}.count()`, ...pred.rules.map(rule => productTce.count(`Rule${rule._id}Product` + (rule.aggregates() ? 'GB' : '')))]).join('\n      +')}
+  const c1 = ${preds.flatMap(pred => [countPred(pred), ...pred.rules.map(rule => countProd(rule))]).join('\n      +')}
   const c2 = ${[0, ...functors.map(functor => `functor_${functor}.count()`)].join('\n      +')}
-  const c3 = ${[0, ...closures.map(closure => closureTce.count(closure))].join('\n      +')}
+  const c3 = ${[0, ...closures.map(closure => countClosure(closure))].join('\n      +')}
   return c1 + c2 + c3;
 }  
   `;
@@ -1629,7 +1674,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
   }
   else // derived tuple: construct product, deal with provenance
   {
-    const t2ps = ptuples.map(tuple => addOutProductPred(tuple, `product`));
+    const t2ps = ptuples.map(tupleExp => addOutProductPred(analysis.name2pred.get(pred), tupleExp, `product`));
     const noRecursionConditions = ptuples.map(tuple => `${tuple} !== existing_${pred}_tuple`);
 
     return `
@@ -1643,7 +1688,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
     {
       const new_${pred}_tuple = relation_${pred}.addGet(${termExps});
       newTuples.add(new_${pred}_tuple);
-      const product = ${addGetProd(`Rule${rule._id}Product`, ptuples)};
+      const product = ${addGetProd(`Rule${rule._id}`, ptuples)};
       ${t2ps.join('\n        ')}
       product._outtuple = new_${pred}_tuple;
       new_${pred}_tuple._inproducts.add(product);
@@ -1652,7 +1697,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
     }
     else if (${noRecursionConditions.join(' && ')}) // remove direct recursion in product
     {
-      const product = ${addGetProd(`Rule${rule._id}Product`, ptuples)};
+      const product = ${addGetProd(`Rule${rule._id}`, ptuples)};
       ${t2ps.join('\n        ')}
       product._outtuple = existing_${pred}_tuple;
       existing_${pred}_tuple._inproducts.add(product);
@@ -1827,7 +1872,7 @@ function emitDeltaRemoveTuple(pred)
   const rules = [...pred.posAppearsIn];
   const productRemoval = rules.map(r => `
         // rule ${r}
-        if (outproduct instanceof Rule${r._id}Product)
+        if (outproduct instanceof Rule${r._id}_Product)
         {
           ${Array.from({length:r.tupleArity()}, (_, i) => 
             `outproduct.tuple${i}._outproducts.delete(outproduct);`).join('\n            ')}
@@ -1842,7 +1887,7 @@ function emitDeltaRemoveTuple(pred)
   {
     relation_${pred}.remove(${tns.map(tn => `${pred}_tuple.${tn}`)});
     removed_${pred}_tuples.push(${pred}_tuple);
-    for (const outproduct of ${outProductsPred(`${pred}_tuple`)})
+    for (const outproduct of ${outProductsPred(pred, `${pred}_tuple`)})
     {
       outproduct._remove();
       ${productRemoval.join('  else')}
@@ -1868,7 +1913,7 @@ function emitDeltaRemoveNOTTuple(pred)
   const rules = [...pred.negAppearsIn];
   const productRemoval = rules.map(r => `
         // rule ${r}
-        if (outproduct instanceof Rule${r._id}Product)
+        if (outproduct instanceof Rule${r._id}_Product)
         {
           ${Array.from({length:r.tupleArity()}, (_, i) => 
             `outproduct.tuple${i}._outproducts.delete(outproduct);`).join('\n            ')}
@@ -1883,7 +1928,7 @@ function emitDeltaRemoveNOTTuple(pred)
   {
     relation_NOT_${pred}.remove(${tns.map(tn => `NOT_${pred}_tuple.${tn}`)});
     // removed_NOT_${pred}_tuples.push(NOT_${pred}_tuple); // TODO is this ever used?
-    for (const outproduct of ${outProductsPred(`NOT_${pred}_tuple`)})
+    for (const outproduct of ${outProductsPred(`NOT_${pred}`, `NOT_${pred}_tuple`)})
     {
       ${productRemoval.join('  else')}
     }
