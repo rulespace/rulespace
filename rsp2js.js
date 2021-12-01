@@ -7,7 +7,8 @@ import {
   ClosureEmitter0, ClosureEmitter, 
   GroupByEmitter0, GroupByEmitter, 
   ProductEmitter, NestedMapsProductEmitter,
-  ProductGBEmitter 
+  ProductGBEmitter, 
+  NestedMapsRelationEmitter
 } from './rsp2js-emitters.js';
 import * as Constraints from './constrainer.js';
 
@@ -264,7 +265,8 @@ function createRelationEmitter(name, arity)
   {
     return new RelationEmitter0(name, publicFunction, logDebug);
   }
-  return new RelationEmitter(name, arity, publicFunction, logDebug);
+  // return new RelationEmitter(name, arity, publicFunction, logDebug);
+  return new NestedMapsRelationEmitter(name, arity, publicFunction, logDebug);
 }
 
 function createFunctorEmitter(name, arity, publicFunction, logDebug)
@@ -363,6 +365,16 @@ function addOutProductPred(pred, tupleExp, productExp)
 function addGetProd(name, tuples)
 {
   return `product_${name}.addGet(${tuples})`;
+}
+
+function addProd(name, prodExp)
+{
+  return `product_${name}.add(${prodExp})`;
+}
+
+function getProd(name, tupleExps)
+{
+  return `product_${name}.get(${tupleExps})`;
 }
 
 function addGetProdGB(name, tuples)
@@ -1688,6 +1700,8 @@ function compileRuleHead(rule, compileEnv, ptuples)
     {
       const new_${pred}_tuple = relation_${pred}.addGet(${termExps});
       newTuples.add(new_${pred}_tuple);
+      // const product = new Rule${rule._id}_Product(${ptuples});
+      // ${addProd(`Rule${rule._id}`, `product`)};
       const product = ${addGetProd(`Rule${rule._id}`, ptuples)};
       ${t2ps.join('\n        ')}
       product._outtuple = new_${pred}_tuple;

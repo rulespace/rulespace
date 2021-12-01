@@ -181,7 +181,7 @@ ${new IndexEmitter(idx, `${i}_${this.name}`, this.logDebug).declaration()}
 const index${i}_${this.name} = new Index${i}_${this.name}();
 `).join('\n')}
 
-class Relation_${this.name}
+class Relation_${this.name} // RelationEmitter.containerDeclaration
 {
   constructor()
   {
@@ -224,6 +224,24 @@ class Relation_${this.name}
       return newItem;
     }
     return item;
+  }
+
+  add(item)
+  {
+    this.members.push(item);
+    ${indexes.map((idx, i) =>
+        (constantPred => constantPred === ''
+                          ? `
+                          ${this.logDebug(`\`adding \${newItem} to index${i}\``)}
+                          index${i}_${this.name}.add(item)
+                            `
+                          : `
+                          if (${constantPred})
+                          {
+                            ${this.logDebug(`\`adding \${newItem} to index${i}\``)}
+                            index${i}_${this.name}.add(item)
+                          }
+                          `)(compileIndexConstraints(idx.constraints.filter(isStaticIndexConstraint), indices => [`v${indices[0]}`, ...indices.slice(1).map(i => `t${i}`)].join('.')))).join('\n')}
   }
 
   remove(${valueNames(this.arity)})
@@ -292,6 +310,97 @@ class Relation_${this.name}
   }
 }
 
+export class NestedMapsRelationEmitter
+{
+  constructor(name, arity, publicFunction, logDebug)
+  {
+    this.name = name;
+    this.arity = arity;
+
+    this.publicFunction = publicFunction;
+    this.logDebug = logDebug;
+  }
+
+  // object 
+
+  objectDeclaration()
+  {
+    return relationObjectDeclaration(this.name, this.arity, this.publicFunction);
+  }
+
+  outProducts(tupleExp)
+  {
+    return `${tupleExp}._outproducts`;
+  }
+
+  addOutProduct(tupleExp, productExp)
+  {
+    return `${tupleExp}._outproducts.add(${productExp})`
+  }  
+
+  // container
+  containerDeclaration(indexes)
+  {
+    if (indexes.length !== 0)
+    {
+      throw new Error('indexes not suppported in this representation');
+    }
+
+    return `
+    
+class Relation_${this.name} // NestedMapsRelationEmitter.containerDeclaration
+{
+  constructor()
+  {
+    this.members = new Map();
+  }
+
+  get(${valueNames(this.arity)})
+  {
+    ${nestedMapsGetDeclaration(this.arity)}
+  }
+
+  addGet(${valueNames(this.arity)})
+  {
+    ${nestedMapsAddGetDeclaration(this.arity, tn => `new ${this.name}(${tn.join(', ')})`, this.logDebug)}
+  }
+
+  add(item)
+  {
+    ${nestedMapsAddDeclaration(this.arity, i => `t${i}`, this.logDebug)}
+  }
+
+  remove(${valueNames(this.arity)})
+  {
+    ${nestedMapsRemoveDeclaration(this.arity)}
+  }
+
+  removeDirect(item)
+  {
+    this.remove(${Arrays.range(this.arity).map(i => `item.t${i}`).join(', ')})    
+  }
+
+  count()
+  {
+    ${nestedMapsCountDeclaration(this.arity, `this.members`)}
+  }
+
+  select()
+  {
+    ${nestedMapsSelectDeclaration(this.arity, `this.members`)}
+  }
+}
+
+    `;
+  }
+
+  instantiate()
+  {
+    return `new Relation_${this.name}()`;
+  }
+}
+
+
 export class RelationEmitter0 // arity 0
 {
   constructor(name, publicFunction, logDebug)
@@ -348,13 +457,13 @@ class Relation_${this.name}
     return item;
   }
 
+  add(item)
+  {
+    this.member = item;
+  }
+
   remove()
   {
-    const item = this.get();
-    if (item === null)
-    {
-      return;
-    }
     this.member = null;
     ${this.logDebug('`removed ${item} from members`')}
   }    
@@ -466,6 +575,11 @@ class Functor_${this.name}
     return item;
   }
 
+  add(item)
+  {
+    this.members.push(item);
+  }
+
   remove(${valueNames(this.arity)})
   {
     for (let i = 0; i < this.members.length; i++)
@@ -546,6 +660,11 @@ class Functor_${this.name}
       return newItem;
     }
     return item;
+  }
+
+  add(item)
+  {
+    this.member = item;
   }
 
   remove()
@@ -630,6 +749,11 @@ class Closure_${this.name}
     return item;
   }
 
+  add(item)
+  {
+    this.members.push(item);
+  }
+
   remove(${valueNames(this.arity)})
   {
     for (let i = 0; i < this.members.length; i++)
@@ -700,6 +824,11 @@ class Closure_${this.name}
       return newItem;
     }
     return item;
+  }
+
+  add(item)
+  {
+    this.member = item;
   }
 
   remove()
@@ -961,6 +1090,11 @@ class Product_${this.name}
     return item;
   }
 
+  add(item)
+  {
+    this.members.push(item);
+  }
+
   remove(${valueNames(this.arity)})
   {
     for (let i = 0; i < this.members.length; i++)
@@ -1004,7 +1138,7 @@ function nestedMapsGetDeclaration(arity)
   for (let i = 0; i < arity; i++)
   {
     sb.push(`
-    const ${maps[i+1]} = ${maps[i]}.get(t${i});
+    const ${maps[i+1]} = ${maps[i]}.get(v${i});
     if (${maps[i+1]} === undefined)
     {
       return null;
@@ -1015,7 +1149,7 @@ function nestedMapsGetDeclaration(arity)
   return sb.join('\n');
 }
 
-function nestedMapsAddGetDeclaration(name, arity, logDebug)
+function nestedMapsAddGetDeclaration(arity, instantiateExpGen, logDebug)
 {
   function emitEntry(i)
   {
@@ -1035,10 +1169,39 @@ function nestedMapsAddGetDeclaration(name, arity, logDebug)
     const ${maps[i+1]} = ${maps[i]}.get(${tn[i]});
     if (${maps[i+1]} === undefined)
     {
-      const tuple = new ${name}_Product(${tn.join(', ')});
+      const tuple = ${instantiateExpGen(tn)};
       ${maps[i]}.set(${tn[i]}, ${emitEntry(i+1)});
-      ${logDebug(`\`addGet added ${name}(${tn.map(t => `\${${t}}`)}) to members\``)}
+      ${logDebug(`\`addGet added \${tuple} to members\``)}
       return tuple;
+    }
+    `)
+  }
+  sb.push(`return ${maps[arity]};`);
+  return sb.join('\n');
+}
+
+function nestedMapsAddDeclaration(arity, fieldAccessExpGen, logDebug)
+{
+  function emitEntry(i)
+  {
+    if (i === arity)
+    {
+      return `item`;
+    }
+    return `new Map([[item.${fieldAccessExpGen(i)}, ${emitEntry(i+1)}]])`;
+  }
+
+  const sb = [];
+  const maps = [`this.members`].concat(Arrays.range(arity).map(i => "l" + i));
+  for (let i = 0; i < arity; i++)
+  {
+    sb.push(`
+    const ${maps[i+1]} = ${maps[i]}.get(item.${fieldAccessExpGen(i)});
+    if (${maps[i+1]} === undefined)
+    {
+      ${maps[i]}.set(item.${fieldAccessExpGen(i)}, ${emitEntry(i+1)});
+      ${logDebug(`\`add added \${item} to members\``)}
+      return;
     }
     `)
   }
@@ -1062,36 +1225,36 @@ function nestedMapsRemoveDeclaration(arity)
   return sb.join('\n');
 }
 
-  // selectDecl_(pred, arity)
-  // {
+function nestedMapsSelectDeclaration(arity, rootExp)
+{
 
-  //   function emitLookup(i)
-  //   {
-  //     if (i === arity)
-  //     {
-  //       return `result.push(${maps[arity]})`;
-  //     }
-  //     return `
-  //       for (const ${maps[i+1]} of ${maps[i]}.values())
-  //       {
-  //         if (${maps[i+1]} !== undefined)
-  //         {
-  //           ${emitLookup(i+1)}
-  //         }
-  //       }
-  //       `;
-  //   }
+  function emitLookup(i)
+  {
+    if (i === arity)
+    {
+      return `result.push(${maps[arity]})`;
+    }
+    return `
+      for (const ${maps[i+1]} of ${maps[i]}.values())
+      {
+        if (${maps[i+1]} !== undefined)
+        {
+          ${emitLookup(i+1)}
+        }
+      }
+      `;
+  }
 
-  //   const maps = [`${pred}_members`].concat(Arrays.range(arity).map(i => "l" + i));
+  const maps = [rootExp].concat(Arrays.range(arity).map(i => "l" + i));
 
-  //   return `
-  //   const result = [];
-  //   ${emitLookup(0)}
-  //   return result;
-  //   `;
-  // }
+  return `
+  const result = [];
+  ${emitLookup(0)}
+  return result;
+  `;
+}
 
-function nestedMapsCountDeclaration(arity)
+function nestedMapsCountDeclaration(arity, rootExp)
 {
 
   function emitCount(i)
@@ -1103,7 +1266,7 @@ function nestedMapsCountDeclaration(arity)
     return `[...${maps[i]}.values()].reduce((acc, ${maps[i+1]}) => acc += ${emitCount(i+1)}, 0)`;
   }
 
-  const maps = [`this.members`].concat(Arrays.range(arity).map(i => "l" + i));
+  const maps = [rootExp].concat(Arrays.range(arity).map(i => "l" + i));
 
   return `return ${emitCount(0)};
   `;
@@ -1146,7 +1309,12 @@ class Product_${this.name} // NestedMapsProductEmitter.containerDeclaration
 
   addGet(${valueNames(this.arity)})
   {
-    ${nestedMapsAddGetDeclaration(this.name, this.arity, this.logDebug)}
+    ${nestedMapsAddGetDeclaration(this.arity, tn => `new ${this.name}_Product(${tn.join(', ')})`, this.logDebug)}
+  }
+
+  add(item)
+  {
+    ${nestedMapsAddDeclaration(this.arity, i => `tuple${i}`, this.logDebug)}
   }
 
   remove(${valueNames(this.arity)})
@@ -1161,7 +1329,7 @@ class Product_${this.name} // NestedMapsProductEmitter.containerDeclaration
 
   count()
   {
-    ${nestedMapsCountDeclaration(this.arity)}
+    ${nestedMapsCountDeclaration(this.arity, `this.members`)}
   }
 }
 
@@ -1258,6 +1426,11 @@ class ProductGB_${this.name}
       return newItem;
     }
     return item;
+  }
+
+  add(item)
+  {
+    this.members.push(item);
   }
 
   remove(${valueNames(this.arity)})
@@ -1375,6 +1548,11 @@ class GroupBy_${this.name} // GroupByEmitter.containerDeclaration
     return item;
   }
 
+  add(item)
+  {
+    this.members.push(item);
+  }
+
   remove(${valueNames(this.arity)})
   {
     for (let i = 0; i < this.members.length; i++)
@@ -1455,6 +1633,11 @@ class GroupBy_${this.name} // GroupByEmitter0.containerDeclaration
       return newItem;
     }
     return item;
+  }
+
+  add(item)
+  {
+    this.member = newItem;
   }
 
   remove()
