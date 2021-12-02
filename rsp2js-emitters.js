@@ -114,14 +114,14 @@ function isDynamicIndexConstraint(constraint)
 }
 
 
-function relationObjectDeclaration(name, arity, publicFunction)
+function relationObjectDeclaration(name, arity, exportName)
 {
   const tn = termNames(arity);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
  
   return `
-${publicFunction(name)}(${termNames(arity).join(', ')})
+function ${exportName(name)}(${termNames(arity).join(', ')})
 {
 ${termAssignments.join('\n  ')}
 this._inproducts = new Set(); //TODO not reqd for edb
@@ -144,12 +144,12 @@ relation_${name}.removeDirect(this)
 
 export class RelationEmitter
 {
-  constructor(name, arity, publicFunction, logDebug)
+  constructor(name, arity, exportName, logDebug)
   {
     this.name = name;
     this.arity = arity;
 
-    this.publicFunction = publicFunction;
+    this.exportName = exportName;
     this.logDebug = logDebug;
   }
 
@@ -157,7 +157,7 @@ export class RelationEmitter
 
   objectDeclaration()
   {
-    return relationObjectDeclaration(this.name, this.arity, this.publicFunction);
+    return relationObjectDeclaration(this.name, this.arity, this.exportName);
   }
 
   outProducts(tupleExp)
@@ -312,12 +312,12 @@ class Relation_${this.name} // RelationEmitter.containerDeclaration
 
 export class NestedMapsRelationEmitter
 {
-  constructor(name, arity, publicFunction, logDebug)
+  constructor(name, arity, exportName, logDebug)
   {
     this.name = name;
     this.arity = arity;
 
-    this.publicFunction = publicFunction;
+    this.exportName = exportName;
     this.logDebug = logDebug;
   }
 
@@ -325,7 +325,7 @@ export class NestedMapsRelationEmitter
 
   objectDeclaration()
   {
-    return relationObjectDeclaration(this.name, this.arity, this.publicFunction);
+    return relationObjectDeclaration(this.name, this.arity, this.exportName);
   }
 
   outProducts(tupleExp)
@@ -403,10 +403,10 @@ class Relation_${this.name} // NestedMapsRelationEmitter.containerDeclaration
 
 export class RelationEmitter0 // arity 0
 {
-  constructor(name, publicFunction, logDebug)
+  constructor(name, exportName, logDebug)
   {
     this.name = name;
-    this.publicFunction = publicFunction;
+    this.exportName = exportName;
     this.logDebug = logDebug;
   }
 
@@ -414,7 +414,7 @@ export class RelationEmitter0 // arity 0
 
   objectDeclaration()
   {
-    return relationObjectDeclaration(this.name, this.arity, this.publicFunction);
+    return relationObjectDeclaration(this.name, this.arity, this.exportName);
   }
 
   outProducts(tupleExp)
@@ -496,14 +496,14 @@ class Relation_${this.name}
 }
 
 
-function functorObjectDeclaration(name, arity, publicFunction)
+function functorObjectDeclaration(name, arity, exportName)
 {
   const tn = termNames(arity);
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
 
   return `
-  ${publicFunction(name)}(${tn.join(', ')})
+  function ${exportName(name)}(${tn.join(', ')})
   {
     ${termAssignments.join('\n  ')}
     this._rc = 0;
@@ -520,12 +520,12 @@ function functorObjectDeclaration(name, arity, publicFunction)
 
 export class FunctorEmitter
 {
-  constructor(name, arity, publicFunction, logDebug)
+  constructor(name, arity, exportName, logDebug)
   {
     this.name = name;
     this.arity = arity;
 
-    this.publicFunction = publicFunction;
+    this.exportName = exportName;
     this.logDebug = logDebug;
   }
 
@@ -534,7 +534,7 @@ export class FunctorEmitter
 
   objectDeclaration()
   {
-    return functorObjectDeclaration(this.name, this.arity, this.publicFunction);
+    return functorObjectDeclaration(this.name, this.arity, this.exportName);
   }  
 
   //container
@@ -618,10 +618,10 @@ class Functor_${this.name}
 
 export class FunctorEmitter0 // arity 0
 {
-  constructor(name, publicFunction, logDebug)
+  constructor(name, exportName, logDebug)
   {
     this.name = name;
-    this.publicFunction = publicFunction;
+    this.exportName = exportName;
     this.logDebug = logDebug;
   }
 
@@ -629,7 +629,7 @@ export class FunctorEmitter0 // arity 0
 
   objectDeclaration()
   {
-    return functorObjectDeclaration(this.name, 0, this.publicFunction);
+    return functorObjectDeclaration(this.name, 0, this.exportName);
   }  
 
   // container

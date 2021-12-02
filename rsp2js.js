@@ -205,9 +205,8 @@ export function rsp2js(rsp, options={})
   const OPT_module = options.module === true ? true : false;
   const FLAG_compile_to_module = OPT_module;
   const FLAG_compile_to_ctr = !OPT_module;
-  const publicFunctions = [];
-  const publicFunction = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function ${name}`};
-  // const publicFunctionStar = name => { publicFunctions.push(name); return `${FLAG_compile_to_module ? 'export ' : ''}function* ${name}`};
+  const exportedNames = [];
+  const exportName = name => { exportedNames.push(name); return name };
 
   
   const FLAG_debug = options.debug ?? false;
@@ -263,19 +262,19 @@ function createRelationEmitter(name, arity)
 {
   if (arity === 0)
   {
-    return new RelationEmitter0(name, publicFunction, logDebug);
+    return new RelationEmitter0(name, exportName, logDebug);
   }
-  // return new RelationEmitter(name, arity, publicFunction, logDebug);
-  return new NestedMapsRelationEmitter(name, arity, publicFunction, logDebug);
+  // return new RelationEmitter(name, arity, exportName, logDebug);
+  return new NestedMapsRelationEmitter(name, arity, exportName, logDebug);
 }
 
-function createFunctorEmitter(name, arity, publicFunction, logDebug)
+function createFunctorEmitter(name, arity, exportName, logDebug)
 {
   if (arity === 0)
   {
-    return new FunctorEmitter0(name, publicFunction, logDebug);
+    return new FunctorEmitter0(name, exportName, logDebug);
   }
-  return new FunctorEmitter(name, arity, publicFunction, logDebug);
+  return new FunctorEmitter(name, arity, exportName, logDebug);
 }
 
 function createClosureEmitter(name, arity)
@@ -479,7 +478,7 @@ function main()
   ${emitClear(edbPreds)}
   ${emitCount(preds, analysis.functors(), [...syntacticLambdas.values()])}
 
-  ${publicFunction('toTupleMap')}(tuples)
+  function ${exportName('toTupleMap')}(tuples)
   {
     const map = new Map();
   
@@ -500,33 +499,33 @@ function main()
     return map;
   }
 
-  ${publicFunction('addTupleMap')}(addTuples)
+  function ${exportName('addTupleMap')}(addTuples)
   {
     return computeDelta(addTuples, []);
   }
   
-  ${publicFunction('addTuples')}(edbTuples)
+  function ${exportName('addTuples')}(edbTuples)
   {
     return addTupleMap(toTupleMap(edbTuples));
   }
   
-  ${publicFunction('getTuple')}(tuple)
+  function ${exportName('getTuple')}(tuple)
   {
     return tuple.get();
   }
   
-  ${publicFunction('removeTupleMap')}(remTuples)
+  function ${exportName('removeTupleMap')}(remTuples)
   {
     return computeDelta([], remTuples);
   } 
   
-  ${publicFunction('removeTuples')}(edbTuples)
+  function ${exportName('removeTuples')}(edbTuples)
   {
     return removeTupleMap(toTupleMap(edbTuples));
   }
 
   // "slow" functions, only for external usage
-  ${publicFunction('outProducts')}(x)
+  function ${exportName('outProducts')}(x)
   {
     if (x._outproducts)
     {
@@ -535,7 +534,7 @@ function main()
     return [];
   }
 
-  ${publicFunction('outProductsGroupBy')}(x)
+  function ${exportName('outProductsGroupBy')}(x)
   {
     if (x._outproductsgb)
     {
@@ -544,7 +543,7 @@ function main()
     return [];
   }
 
-  ${publicFunction('inProducts')}(x)
+  function ${exportName('inProducts')}(x)
   {
     if (x._inproducts)
     {
@@ -553,7 +552,7 @@ function main()
     return [];
   }
 
-  ${publicFunction('outTuple')}(x)
+  function ${exportName('outTuple')}(x)
   {
     if (x._outtuple)
     {
@@ -562,7 +561,7 @@ function main()
     return null;
   }
 
-  ${publicFunction('outGroupBy')}(x)
+  function ${exportName('outGroupBy')}(x)
   {
     if (x._outgb)
     {
@@ -572,7 +571,7 @@ function main()
   }
 
   ${FLAG_profile ? emitProfileResults() : ``}
-  ${FLAG_compile_to_ctr ? `return {${publicFunctions.join(', ')}};` : ``}
+  ${FLAG_compile_to_ctr ? `return` : `export`} {${exportedNames.join(', ')}};
   // the end`];
 
   return sb.join('\n');
@@ -607,7 +606,7 @@ function emitTupleObject(pred)
 function emitFunctorObject(functor)
 {
   const arity = functor.arity;
-  const functorEmitter = createFunctorEmitter(functor.name, arity, publicFunction, logDebug);
+  const functorEmitter = createFunctorEmitter(functor.name, arity, exportName, logDebug);
 
   return  `
   ${functorEmitter.objectDeclaration()};
@@ -1099,14 +1098,14 @@ function emitIterators(preds, edbPreds, rules)
 
   return `
 // from membership
-${publicFunction('tuples')}() 
+function ${exportName('tuples')}() 
 {
   const result = [];
   ${preds.map(pred => `${selectPred(pred)}.forEach(tuple => result.push(tuple))`).join('\n  ')}
   return result;
 }
 
-${publicFunction('rootTuples')}()   // all EDBs and IDB facts
+function ${exportName('rootTuples')}()   // all EDBs and IDB facts
 {
   // expensive impl: alternative would be to keep set of externally added EDBs and all IDB facts
   // but, this is cheap as long as reachability stuff (tracing) is not required
@@ -1128,7 +1127,7 @@ function emitClear(edbPreds)
   const clearers = edbPreds.map(edbPred => `removeTuples(${selectPred(edbPred)});`);
 
   return `
-${publicFunction('clear')}()
+function ${exportName('clear')}()
 {
   ${clearers.join('\n')}
 }  
@@ -1138,7 +1137,7 @@ ${publicFunction('clear')}()
 function emitCount(preds, functors, closures)
 {
   return `
-${publicFunction('count')}()
+function ${exportName('count')}()
 {
   const c1 = ${preds.flatMap(pred => [countPred(pred), ...pred.rules.map(rule => countProd(rule))]).join('\n      +')}
   const c2 = ${[0, ...functors.map(functor => `functor_${functor}.count()`)].join('\n      +')}
@@ -1956,7 +1955,7 @@ function emitComputeDelta(strata, preds)
   const deltaRemovedTuplesEntries = preds.map(pred => `[${pred}, removed_${pred}_tuples]`);
 
   return `
-${publicFunction('computeDelta')}(addTuples, remTuples)
+function ${exportName('computeDelta')}(addTuples, remTuples)
 {
   const addedTuplesMap = new Map(addTuples);
   const removedTuplesMap = new Map(remTuples);
@@ -2067,7 +2066,7 @@ function emitProfileResults()
   {
     const vars = profileVars.names().map(name => `${name}`);
     return `    
-${publicFunction('profileResults')}()
+function ${exportName('profileResults')}()
 {
   return { ${vars.join()}, ${rules.map(r => `Rule${r._id}:'${r.toString()}'`)} };
 }
