@@ -5,30 +5,35 @@ import { instance2dot } from '../utils.js'
 
 const src = `
 
-(rule [R] (not [I 1])) (rule [I 2])
+(rule [CancellationsToday user today #:count user] [BookingCanceled user today _])
+
+(rule [BookingCanceled "u" 1 1])
+
+(rule [Cancellations #:sum count] [CancellationsToday user today count])
 
   `;
 
 
 compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module => {
-//import('./compiled/standalone.mjs').then(module => {
+// import('./compiled/standalone.mjs').then(module => {
 
 // console.log(`count: ${module.count()}`);
 
-// module.addTuples(compileModuleTuples(module, `[Link 1 2] [Link 2 3]`));
-// console.log("tuples: " + [...module.tuples()].join('\n'));
-// console.log("roots: " + [...module.rootTuples()].join('\n'));
-// console.log(`count: ${module.count()}`);
+console.log("\n\n\nDELTA add");
+module.addTuples(compileModuleTuples(module, `[BookingCanceled "u" 1 2] [BookingCanceled "u" 1 3]`));
+console.log("tuples: " + [...module.tuples()].join('\n'));
+console.log("roots: " + [...module.rootTuples()].join('\n'));
+console.log(`count: ${module.count()}`);
 
 // sanityCheck(module); // reachableTuples is not always equal to members
 
-// console.log("\n\n\n");
-// module.removeTuples(compileModuleTuples(module, `[Link 1 2] [Link 2 3]`).map(t => t.get())); 
+// console.log("\n\n\nDELTA remove");
+// module.removeTuples(compileModuleTuples(module, `[BookingCanceled "u" 1 2] [BookingCanceled "u" 1 1]`).map(t => t.get())); 
 // console.log("tuples: " + [...module.tuples()].join('\n'));
 // console.log(`count: ${module.count()}`);
 
 // sanityCheck(module);
 
-// console.log(instance2dot(module))
+console.log(instance2dot(module));
 })
 

@@ -149,44 +149,13 @@ class RequiredBuiltInFuns
 }
 const requiredBuiltInFunDefs = new RequiredBuiltInFuns();
 
-// TODO: move to analysis
-function cyclicNegations(analysis)
-{
-  const result = [];
-  const strata = analysis.strata();
-  for (const stratum of strata)
-  {
-    const stratumPreds = analysis.stratumPreds(stratum);
-    for (const pred of stratumPreds)
-    {
-      for (const stratumRule of analysis.predRules(pred))
-      {
-        for (const atom of stratumRule.body)
-        {
-          if (atom instanceof Neg)
-          {
-            const posAtom = atom.atom;
-            const negatedPred = analysis.name2pred.get(posAtom.pred);
-            if (stratumPreds.includes(negatedPred))
-            {
-              // throw new RspJsCompilationError(`unable to stratify program: cyclic negation of predicate ${negatedPred} in ${stratumRule}\n(stratum predicates: ${stratum.preds.join()})`);
-              result.push({negatedPred, stratumRule, stratum});
-            }
-          }
-        }  
-      }
-    }
-  }
-  return result;
-}
-
 export function rsp2js(rsp, options={})
 {
   const analysis = analyzeProgram(rsp);
   const strata = analysis.strata();
   const preds = analysis.preds;
 
-  const cns = cyclicNegations(analysis);
+  const cns = analysis.cyclicNegations();
   if (cns.length > 0)
   {
     throw new RspJsCompilationError(`unable to stratify program: cyclic negations: ${cns.map(cn => `\npredicate ${cn.negatedPred} in ${cn.stratumRule}\n(stratum predicates: ${cn.stratum.preds.join()})`)}`);
@@ -354,6 +323,11 @@ function countProd(rule)
 function outProductsPred(pred, tupleExp) // returns Set
 {
   return relationEmitters.get(pred).outProducts(tupleExp);
+}
+
+function outProductsGbPred(pred, tupleExp) // returns Set
+{
+  return relationEmitters.get(pred).outProductsGb(tupleExp);
 }
 
 function addOutProductPred(pred, tupleExp, productExp)
@@ -946,6 +920,7 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
       {
         productGB.value = ${compileEnv.get(aggregate.name)}; // TODO: aggregate is func dep on tuples, arrange this in another way (e.g. set in ctr)?
         productGB._outgb = groupby;
+        groupby._inproductsgb.add(productGB);
         const currentAdditionalValues = updates.get(groupby);
         if (!currentAdditionalValues)
         {
@@ -1402,13 +1377,14 @@ function stratumInitialAddLogic(stratum)
     }
     else // single-pred non-recursive stratum
     {
-      sb.push(`// single-pred non-recursive stratum`);
+      sb.push(`// initialAdd: single-pred non-recursive stratum`);
       assertTrue(stratum.preds.length === 1);
     }
      
     for (const pred of stratum.preds)
     {
       sb.push(`const added_${pred}_tuples = addedTuplesMap.get(${pred})?.slice(0) ?? [];`); // `slice` for copying (need to keep original facts) TODO optimize by emitting only `[]` when no fact rules exist
+
 
       // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
       sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all rules once"')); 
@@ -1472,7 +1448,7 @@ function emitDeltaEdbForAggregatingRule(rule, stratum)
 {
   const pred = rule.head.pred;
   const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, rule, pred, stratum));
-  const gbNames = Array.from({length: rule.head.terms.length - 1}, (_, i) => "groupby.t"+i);
+  const gbNames = Arrays.range(rule.head.terms.length - 1).map(i => "groupby.t" + i);
 
   const aggregateName ="t" + (rule.head.terms.length - 1);  
   const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
@@ -1526,7 +1502,7 @@ ${rule}
           deltaRemove_${pred}(groupby._outtuple);
         }
         groupby._outtuple = updatedResultTuple;
-        updatedResultTuple.ingb = groupby;
+        updatedResultTuple._ingb = groupby; // TODO!!!! is not a field on tuple
         added_${pred}_tuples.push(updatedResultTuple);
       }
     }
@@ -1726,7 +1702,7 @@ function emitRemoveIdbDueToAddition(pred)
   const tn = termNames2(pred.arity);
   const fieldAccesses = tn.map(n => `added_${pred}_tuple.${n}`);    
   sb.push(`
-  ${logDebug(`"removing idb tuples due to addition of ${pred} tuples"`)}
+  ${logDebug(`\`removing idb tuples due to addition of \${added_${pred}_tuples.length}  ${pred} tuples\``)}
   for (const added_${pred}_tuple of added_${pred}_tuples)
   {
     const NOT_${pred}_tuple = relation_NOT_${pred}.get(${fieldAccesses});
@@ -1763,7 +1739,7 @@ function stratumDeltaLogic(stratum)
     {
       assertTrue(pred.edb);
       sb.push(`
-      // removing ${pred} tuples because of user delta
+      // removing \${${pred}_tuples_to_be_removed.length} ${pred} tuples because of user delta
       const ${pred}_tuples_to_be_removed = (removedTuplesMap.get(${pred}) || []);
       for (const ${pred}_tuple of ${pred}_tuples_to_be_removed)
       {
@@ -1778,7 +1754,8 @@ function stratumDeltaLogic(stratum)
   {
     for (const pred of stratum.preds)
     {
-      assertTrue(!pred.stratumIsEdb);      
+      assertTrue(!pred.stratumIsEdb);
+            
     }
 
     if (analysis.stratumHasRecursiveRule(stratum))
@@ -1821,26 +1798,28 @@ function stratumDeltaLogic(stratum)
     }
     else // single-pred non-recursive stratum
     {
-      sb.push(`// single-pred non-recursive stratum`);
+      sb.push(`// delta: single-pred non-recursive stratum`);
       assertTrue(stratum.preds.length === 1);
 
       const pred = stratum.preds[0];
-      sb.push(`
-      ${logDebug(`"removing damaged ${pred} tuples due to removal of stratum-edb tuples"`)}
-      for (const damaged_${pred}_tuple of damaged_${pred}_tuples)
+      if (analysis.predHasNonAggregatingRule(pred)) // TODO: other 'part' is below
       {
-        if (damaged_${pred}_tuple._inproducts.size === 0)
+        sb.push(`
+        ${logDebug(`\`removing \${damaged_${pred}_tuples.length} damaged ${pred} tuples due to removal of stratum-edb tuples\``)}
+        for (const damaged_${pred}_tuple of damaged_${pred}_tuples)
         {
-          deltaRemove_${pred}(damaged_${pred}_tuple);
+          if (damaged_${pred}_tuple._inproducts.size === 0)
+          {
+            deltaRemove_${pred}(damaged_${pred}_tuple);
+          }
         }
-      }
       `);
+      }
     }
      
     for (const pred of stratum.preds)
     {
       sb.push(`const added_${pred}_tuples = [];`);
-      //sb.push(`const added_${pred}_tuples = addedTuplesMap.get(${pred})?.slice(0) ?? [];`); // during delta you cannot have idbs due to facts
 
       // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
       sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all rules once"'));
@@ -1848,6 +1827,70 @@ function stratumDeltaLogic(stratum)
       {
         if (rule.aggregates())
         {
+          // this is other part: here we check damaged gbs
+          let joinOperation; // join semilattice
+          let addOperation, identityValue; // commutative group
+          const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
+          const aggregateName ="t" + (rule.head.terms.length - 1);  
+          const gbNames = Arrays.range(rule.head.terms.length - 1).map(i => "groupby.t" + i); 
+          switch (aggregator)
+          {
+            case "max": joinOperation = "Math.max(acc, val)"; break;
+            case "min": joinOperation = "Math.min(acc, val)"; break;
+            case "sum": addOperation = "acc + val"; identityValue = 0; break;
+            case "count": addOperation = "acc + 1"; identityValue = 0; break;
+            default: throw new Error("Unknown aggregator: " + aggregator);
+          }
+        
+          let updateOperation;
+          if (joinOperation)
+          {
+            updateOperation = `additionalValues.reduce((acc, val) => ${joinOperation})`
+          }
+          else if (addOperation)
+          {
+            updateOperation = `additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue})`
+          }
+          else
+          {
+            throw new Error("No update operation for aggregator: " + aggregator)
+          }
+
+          sb.push(`
+          for (const groupby of damaged_Rule${rule._id}_gbs)
+          {
+            if (groupby._inproductsgb.size === 0)
+            {
+              groupby_Rule${rule._id}.removeDirect(groupby);
+              deltaRemove_${rule.head.pred}(groupby._outtuple);
+            }
+            else
+            {
+              const additionalValues = [];
+              for (const inproductgb of groupby._inproductsgb)
+              {
+                additionalValues.push(inproductgb.value);
+              }
+              ${logDebug('`update after delete: gb ${groupby} additional vals ${additionalValues}`')}
+              const currentResultTuple = groupby._outtuple;
+              ${logDebug('`currentResultTuple ${currentResultTuple}`')}
+              const updatedValue = ${updateOperation};
+              if (groupby._outtuple.${aggregateName} === updatedValue)
+              {
+                // no change, so nothing more to do
+              }
+              else
+              {
+                deltaRemove_${rule.head.pred}(groupby._outtuple);
+                const updatedResultTuple = relation_${rule.head.pred}.addGet(${[...gbNames, `updatedValue`]}); // could be 'add'
+                groupby._outtuple = updatedResultTuple;
+                updatedResultTuple._ingb = groupby; // TODO!!!! is not a field on tuple
+                added_${rule.head.pred}_tuples.push(updatedResultTuple);
+              }
+            }
+          }
+          `)
+
           sb.push(emitDeltaEdbForAggregatingRule(rule, stratum));
         }
         else
@@ -1883,28 +1926,74 @@ function emitDeltaRemoveTuple(pred)
 {
   const tns = termNames(pred);
   const rules = [...pred.posAppearsIn];
-  const productRemoval = rules.map(r => `
-        // rule ${r}
-        if (outproduct instanceof Rule${r._id}_Product)
-        {
-          ${Array.from({length:r.tupleArity()}, (_, i) => 
-            `outproduct.tuple${i}._outproducts.delete(outproduct);`).join('\n            ')}
-          const ${r.head.pred}_tuple = outproduct._outtuple;
-          ${r.head.pred}_tuple._inproducts.delete(outproduct);
-          damaged_${r.head.pred}_tuples.push(${r.head.pred}_tuple);
-        }
-  `);
+
+  const productRemovals = []; // static
+  const productGbRemovals = []; // static
+
+  for (const rule of rules)
+  {
+    if (rule.aggregates())
+    {
+      productGbRemovals.push(`
+      // rule ${rule} (aggregating)
+      if (outproductgb instanceof Rule${rule._id}_ProductGB)
+      {
+        ${Arrays.range(rule.tupleArity()).map(i => 
+          `outproductgb.tuple${i}._outproductsgb.delete(outproductgb);`).join('\n            ')}
+        const ${rule.head.pred}_gb = outproductgb._outgb;
+        ${rule.head.pred}_gb._inproductsgb.delete(outproductgb);
+        // ${rule.head.pred}_gb_removedProductGbs.push(outproductgb);
+        damaged_Rule${rule._id}_gbs.add(${rule.head.pred}_gb);
+      }
+      `);
+      // damagedGbRemovalNames.push(`damaged_Rule${rule._id}_gbs`);
+    } // aggregating rule
+    else // does not aggregate
+    {
+      productRemovals.push(`
+      // rule ${rule} (non-aggregating)
+      if (outproduct instanceof Rule${rule._id}_Product)
+      {
+        ${Arrays.range(rule.tupleArity()).map(i => 
+          `outproduct.tuple${i}._outproducts.delete(outproduct);`).join('\n            ')}
+        const ${rule.head.pred}_tuple = outproduct._outtuple;
+        ${rule.head.pred}_tuple._inproducts.delete(outproduct);
+        damaged_${rule.head.pred}_tuples.push(${rule.head.pred}_tuple);
+      }
+      `);
+    }
+  }
+
+
+    const productRemoveLoop = productRemovals.length === 0
+    ? ``
+    : `
+    for (const outproduct of ${outProductsPred(pred, `${pred}_tuple`)})
+    {
+      outproduct._remove();
+      ${productRemovals.join('  else')}
+    }    
+    `;
+   
+    const productGbRemoveLoop = productGbRemovals.length === 0
+    ? ``
+    : `
+    for (const outproductgb of ${outProductsGbPred(pred, `${pred}_tuple`)})
+    {
+      outproductgb._remove();
+      ${productGbRemovals.join('  else')}
+    }
+    `;
+    
 
   return `
   function deltaRemove_${pred}(${pred}_tuple)
   {
+    ${logDebug(`\`deltaRemove_${pred} \${${pred}_tuple}\``)}
     relation_${pred}.remove(${tns.map(tn => `${pred}_tuple.${tn}`)});
     removed_${pred}_tuples.push(${pred}_tuple);
-    for (const outproduct of ${outProductsPred(pred, `${pred}_tuple`)})
-    {
-      outproduct._remove();
-      ${productRemoval.join('  else')}
-    }
+    ${productRemoveLoop}
+    ${productGbRemoveLoop}
     const refs = ${pred}_tuple._refs; // TODO check this statically (compile away when possible)
     if (refs.length > 0) 
     {
@@ -1966,6 +2055,13 @@ function ${exportName('computeDelta')}(addTuples, remTuples)
   ${preds
     .filter(pred => !pred.edb) 
     .map(pred => `const damaged_${pred}_tuples = [];`)
+    .join('\n  ')
+  }
+
+  ${preds
+    .flatMap(pred => pred.rules)
+    .filter(rule => rule.aggregates())
+    .map(rule => `const damaged_Rule${rule._id}_gbs = new Set();`)
     .join('\n  ')
   }
 

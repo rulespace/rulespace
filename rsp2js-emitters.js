@@ -208,6 +208,7 @@ class Relation_${this.name} // RelationEmitter.containerDeclaration
     {
       const newItem = new ${this.name}(${valueNames(this.arity)});
       this.members.push(newItem);
+      ${this.logDebug('`+ ${newItem}`')}
       ${indexes.map((idx, i) =>
           (constantPred => constantPred === ''
                             ? `
@@ -252,7 +253,7 @@ class Relation_${this.name} // RelationEmitter.containerDeclaration
       if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
       {
         this.members.splice(i, 1);
-        ${this.logDebug('`removed ${item} from members`')}
+        ${this.logDebug('`- ${item}`')}
 
         ${indexes.map((idx, i) =>
           (constantPred => constantPred === ''
@@ -278,6 +279,7 @@ class Relation_${this.name} // RelationEmitter.containerDeclaration
     // can only 'directly' remove items that still exist!
     const index = this.members.indexOf(item);
     this.members.splice(index, 1);
+    ${this.logDebug('`- ${item}`')}
   }
 
   select()
@@ -333,6 +335,11 @@ export class NestedMapsRelationEmitter
     return `${tupleExp}._outproducts`;
   }
 
+  outProductsGb(tupleExp)
+  {
+    return `${tupleExp}._outproductsgb`;
+  }
+
   addOutProduct(tupleExp, productExp)
   {
     return `${tupleExp}._outproducts.add(${productExp})`
@@ -372,7 +379,7 @@ class Relation_${this.name} // NestedMapsRelationEmitter.containerDeclaration
 
   remove(${valueNames(this.arity)})
   {
-    ${nestedMapsRemoveDeclaration(this.arity)}
+    ${nestedMapsRemoveDeclaration(this.arity, this.logDebug)}
   }
 
   removeDirect(item)
@@ -452,6 +459,7 @@ class Relation_${this.name}
     {
       const newItem = new ${this.name}();
       this.member = newItem;
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -473,6 +481,7 @@ class Relation_${this.name}
     // in principle, this is only reached 'internally', so you cannot remove item that was not first selected
     // so: assert that this.member === item
     this.member = null;
+    ${this.logDebug('`- ${item}`')}
   }
 
   select()
@@ -570,6 +579,7 @@ class Functor_${this.name}
     {
       const newItem = new ${this.name}(${valueNames(this.arity)});
       this.members.push(newItem);
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -588,7 +598,7 @@ class Functor_${this.name}
       if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
       {
         this.members.splice(i, 1);
-        ${this.logDebug('`removed ${item} from members`')}
+        ${this.logDebug('`- ${item}`')}
         return;
       }
     }    
@@ -599,6 +609,7 @@ class Functor_${this.name}
     // can only 'directly' remove items that still exist!
     const index = this.members.indexOf(item);
     this.members.splice(index, 1);
+    ${this.logDebug('`- ${item}`')}
   }
 
   count()
@@ -657,6 +668,7 @@ class Functor_${this.name}
     {
       const newItem = new ${this.name}();
       this.member = newItem;
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -675,7 +687,7 @@ class Functor_${this.name}
       return;
     }
     this.member = null;
-    ${this.logDebug('`removed ${item} from members`')}
+    ${this.logDebug('`- ${item}`')}
   }    
 
   removeDirect(item)
@@ -683,6 +695,7 @@ class Functor_${this.name}
     // in principle, this is only reached 'internally', so you cannot remove item that was not first selected
     // so: assert that this.member === item
     this.member = null;
+    ${this.logDebug('`- ${item}`')}
   }
 
   count()
@@ -744,6 +757,7 @@ class Closure_${this.name}
     {
       const newItem = new ${this.name}(${valueNames(this.arity)});
       this.members.push(newItem);
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -762,7 +776,7 @@ class Closure_${this.name}
       if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
       {
         this.members.splice(i, 1);
-        ${this.logDebug('`removed ${item} from members`')}
+        ${this.logDebug('`- ${item}`')}
         return;
       }
     }    
@@ -773,6 +787,7 @@ class Closure_${this.name}
     // can only 'directly' remove items that still exist!
     const index = this.members.indexOf(item);
     this.members.splice(index, 1);
+    ${this.logDebug('`- ${item}`')}
   }
 
   count()
@@ -821,6 +836,7 @@ class Closure_${this.name}
     {
       const newItem = new ${this.name}();
       this.member = newItem;
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -839,7 +855,7 @@ class Closure_${this.name}
       return;
     }
     this.member = null;
-    ${this.logDebug('`removed ${item} from members`')}
+    ${this.logDebug('`- ${item}`')}
   }    
 
   removeDirect(item)
@@ -847,6 +863,7 @@ class Closure_${this.name}
     // in principle, this is only reached 'internally', so you cannot remove item that was not first selected
     // so: assert that this.member === item
     this.member = null;
+    ${this.logDebug('`- ${item}`')}
   }
 
   count()
@@ -1085,6 +1102,7 @@ class Product_${this.name}
     {
       const newItem = new ${this.name}_Product(${valueNames(this.arity)});
       this.members.push(newItem);
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -1103,7 +1121,7 @@ class Product_${this.name}
       if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
       {
         this.members.splice(i, 1);
-        ${this.logDebug('`removed ${item} from members`')}
+        ${this.logDebug('`- ${item}`')}
         return;
       }
     }    
@@ -1114,6 +1132,7 @@ class Product_${this.name}
     // can only 'directly' remove items that still exist!
     const index = this.members.indexOf(item);
     this.members.splice(index, 1);
+    ${this.logDebug('`- ${item}`')}
   }
 
   count()
@@ -1171,7 +1190,7 @@ function nestedMapsAddGetDeclaration(arity, instantiateExpGen, logDebug)
     {
       const tuple = ${instantiateExpGen(tn)};
       ${maps[i]}.set(${tn[i]}, ${emitEntry(i+1)});
-      ${logDebug(`\`addGet added \${tuple} to members\``)}
+      ${logDebug(`\`+ \${tuple}\``)}
       return tuple;
     }
     `)
@@ -1209,7 +1228,7 @@ function nestedMapsAddDeclaration(arity, fieldAccessExpGen, logDebug)
   return sb.join('\n');
 }
 
-function nestedMapsRemoveDeclaration(arity)
+function nestedMapsRemoveDeclaration(arity, logDebug)
 {
   const sb = [];
   const tn = valueNames(arity);
@@ -1220,6 +1239,7 @@ function nestedMapsRemoveDeclaration(arity)
     const ${maps[i+1]} = ${maps[i]}.get(${tn[i]});
     `)
   }
+  sb.push(logDebug(`\`- \${${maps[arity - 1]}.get(${tn[arity-1]})}\``));
   sb.push(`
   ${maps[arity - 1]}.delete(${tn[arity-1]});`);  
   return sb.join('\n');
@@ -1319,7 +1339,7 @@ class Product_${this.name} // NestedMapsProductEmitter.containerDeclaration
 
   remove(${valueNames(this.arity)})
   {
-    ${nestedMapsRemoveDeclaration(this.arity)}
+    ${nestedMapsRemoveDeclaration(this.arity, this.logDebug)}
   }
 
   removeDirect(item)
@@ -1362,6 +1382,11 @@ class ${name}_ProductGB // productGBObjectDeclaration
   tuples() // or, a field initialized in ctr?
   {
     return [${tupleFields.join(', ')}];
+  }
+
+  _remove() // hard coded dep on 'global'
+  {
+    productGB_${name}.removeDirect(this);
   }
 
   toString()
@@ -1423,6 +1448,7 @@ class ProductGB_${this.name}
     {
       const newItem = new ${this.name}_ProductGB(${valueNames(this.arity)});
       this.members.push(newItem);
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -1441,18 +1467,19 @@ class ProductGB_${this.name}
       if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
       {
         this.members.splice(i, 1);
-        ${this.logDebug('`removed ${item} from members`')}
+        ${this.logDebug('`- ${item}`')}
         return;
       }
     }    
   }
 
-  // removeDirect(item)
-  // {
-  //   // can only 'directly' remove items that still exist!
-  //   const index = this.members.indexOf(item);
-  //   this.members.splice(index, 1);
-  // }
+  removeDirect(item)
+  {
+    // can only 'directly' remove items that still exist!
+    const index = this.members.indexOf(item);
+    this.members.splice(index, 1);
+    ${this.logDebug('`- ${item}`')}
+  }
 
   count()
   {
@@ -1482,12 +1509,13 @@ class ${name}_GB // groupByObjectDeclaration
   constructor(${tn.join(', ')})
   {
     ${termAssignments.join('; ')};
+    this._inproductsgb = new Set();
     this._outtuple = null;  
   }
 
   toString()
   {
-    return atomString('${name}', ${termFields.join(', ')});
+    return \`[${name}_GB ${termFields.map(tf => `\${${tf}}`).join(' ')}]\`;
   }
 }
     `;    
@@ -1543,6 +1571,7 @@ class GroupBy_${this.name} // GroupByEmitter.containerDeclaration
     {
       const newItem = new ${this.name}_GB(${valueNames(this.arity)});
       this.members.push(newItem);
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -1561,7 +1590,7 @@ class GroupBy_${this.name} // GroupByEmitter.containerDeclaration
       if (${Arrays.range(this.arity).map(i => `v${i} === item.t${i}`).join(' && ')})
       {
         this.members.splice(i, 1);
-        ${this.logDebug('`removed ${item} from members`')}
+        ${this.logDebug('`- ${item}`')}
         return;
       }
     }    
@@ -1572,6 +1601,7 @@ class GroupBy_${this.name} // GroupByEmitter.containerDeclaration
     // can only 'directly' remove items that still exist!
     const index = this.members.indexOf(item);
     this.members.splice(index, 1);
+    ${this.logDebug('`- ${item}`')}
   }
 
   count()
@@ -1630,6 +1660,7 @@ class GroupBy_${this.name} // GroupByEmitter0.containerDeclaration
     {
       const newItem = new ${this.name}_GB();
       this.member = newItem;
+      ${this.logDebug('`+ ${newItem}`')}
       return newItem;
     }
     return item;
@@ -1648,7 +1679,7 @@ class GroupBy_${this.name} // GroupByEmitter0.containerDeclaration
       return;
     }
     this.member = null;
-    ${this.logDebug('`removed ${item} from members`')}
+    ${this.logDebug('`- ${item}`')}
   }    
 
   removeDirect(item)
@@ -1656,6 +1687,7 @@ class GroupBy_${this.name} // GroupByEmitter0.containerDeclaration
     // in principle, this is only reached 'internally', so you cannot remove item that was not first selected
     // so: assert that this.member === item
     this.member = null;
+    ${this.logDebug('`- ${item}`')}
   }
 
   count()

@@ -374,10 +374,8 @@ export function analyzeProgram(program)
 
   const self = { 
     program, name2pred,
-    preds,
-
+    preds,    
     
-    // new design (to be phased in): methods on this obj instead of methods/props on objects)
     strata()
     {
       return strata;
@@ -388,6 +386,38 @@ export function analyzeProgram(program)
     {
       return [...name2functor.values()];
     },
+
+
+    // TODO must be broken up (per stratum, into cyclic preds(?) or something similar)
+    cyclicNegations()
+    {
+      const result = [];
+      const strata = this.strata();
+      for (const stratum of strata)
+      {
+        const stratumPreds = this.stratumPreds(stratum);
+        for (const pred of stratumPreds)
+        {
+          for (const stratumRule of this.predRules(pred))
+          {
+            for (const atom of stratumRule.body)
+            {
+              if (atom instanceof Neg)
+              {
+                const posAtom = atom.atom;
+                const negatedPred = this.name2pred.get(posAtom.pred);
+                if (stratumPreds.includes(negatedPred))
+                {
+                  result.push({negatedPred, stratumRule, stratum});
+                }
+              }
+            }  
+          }
+        }
+      }
+      return result;
+    },
+
 
     predNegativelyAppearsInRules(pred)
     {
@@ -431,15 +461,14 @@ export function analyzeProgram(program)
       return false;
     },
 
-    // is pred created by agg rule? (condition: has exactly one agg rule to avoid complex/impossible semantics with groupbys)
-    predIsAggregating(pred)
+    predHasAggregatingRule(pred)
     {
-      if (pred.rules.size === 1)
-      {
-        const aggregates = [...pred.rules][0].aggregates();
-        return aggregates;
-      }
-      return false;
+      return pred.rules.some(r => this.ruleIsAggregating(r));
+    },
+
+    predHasNonAggregatingRule(pred)
+    {
+      return pred.rules.some(r => !this.ruleIsAggregating(r));
     },
 
     ruleStratum(rule)
@@ -457,6 +486,11 @@ export function analyzeProgram(program)
     {
       const stratum = rule2stratum.get(rule);
       return stratum.recursiveRules.has(rule);
+    },
+
+    ruleIsAggregating(rule)
+    {
+      return rule.aggregates();
     },
 
     stratumHasRecursiveRule(stratum)
