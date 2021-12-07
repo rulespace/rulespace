@@ -1387,7 +1387,7 @@ function stratumInitialAddLogic(stratum)
 
 
       // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
-      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all rules once"')); 
+      sb.push(logDebug('"initial: adding idb tuples due to stratum-edb addition by firing all rules once"')); 
       for (const rule of pred.rules)
       {
         if (rule.aggregates())
@@ -1414,7 +1414,7 @@ function stratumInitialAddLogic(stratum)
     // now, we still must fixpoint the recursive rules
     if (stratum.recursiveRules.size > 0)
     {
-      sb.push(logDebug('"adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
+      sb.push(logDebug('"initial: adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
       const recursivePreds = new Set(stratum.preds.map(pred => pred.name))
       sb.push(`// recursive preds: ${[...recursivePreds].join()}`);
       // here we can use emitRecursiveRules (also used for deltas),
@@ -1822,7 +1822,7 @@ function stratumDeltaLogic(stratum)
       sb.push(`const added_${pred}_tuples = [];`);
 
       // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
-      sb.push(logDebug('"adding idb tuples due to stratum-edb addition by firing all rules once"'));
+      sb.push(logDebug('"delta: adding idb tuples due to stratum-edb addition by firing all rules once"'));
       for (const rule of pred.rules)
       {
         if (rule.aggregates())
@@ -1903,7 +1903,7 @@ function stratumDeltaLogic(stratum)
     // now, we still must fixpoint the recursive rules
     if (stratum.recursiveRules.size > 0)
     {
-      sb.push(logDebug('"adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
+      sb.push(logDebug('"delta: adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
       const recursivePreds = new Set(stratum.preds.map(pred => pred.name))
       sb.push(`// recursive preds: ${[...recursivePreds].join()}`);
       const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], recursivePreds);

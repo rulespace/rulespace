@@ -759,6 +759,9 @@ testIncrementalAdd(example9, `
 [I 'a 'bb] [J 'bb 20] [J 'bb 30]
 [I 'b 'bb] [J 'bb 40]
 `);
+testRemoveEdb(example9, `[I 'a 'aa] [J 'aa 10] 
+[I 'a 'bb] [J 'bb 20] [J 'bb 30]
+[I 'b 'bb] [J 'bb 40]`);
 
 
 // ===
@@ -811,6 +814,46 @@ const example12 =
 testAdd(example12, `[I 5] [I 10]`, `[F 0 1] [F 1 1] [F 2 2] [F 3 6] [F 4 24] [F 5 120]
                                     [F 6 720] [F 7 5040] [F 8 40320] [F 9 362880] [F 10 3628800]
                                     [Factorial 10 3628800] [Factorial 5 120]`); 
+
+
+// ===
+const example13 =
+`
+(rule [CancellationsToday user today #:count user] [BookingCanceled user today _])
+
+(rule [Cancellations #:sum count] [CancellationsToday user today count])
+ `
+
+testAdd(example13, `
+[BookingCanceled "user" 1 1]
+[BookingCanceled "user" 1 2]
+[BookingCanceled "user" 1 3]
+[BookingCanceled "user" 2 1]
+[BookingCanceled "user" 2 2]
+[BookingCanceled "user2" 2 3]
+`,
+`
+[CancellationsToday "user" 1 3]
+[CancellationsToday "user" 2 2]
+[CancellationsToday "user2" 2 1]
+[Cancellations 6]
+`);
+testIncrementalAdd(example13, `
+[BookingCanceled "user" 1 1]
+[BookingCanceled "user" 1 2]
+[BookingCanceled "user" 1 3]
+[BookingCanceled "user" 2 1]
+[BookingCanceled "user" 2 2]
+[BookingCanceled "user2" 2 3]
+`);
+testRemoveEdb(example13, `
+[BookingCanceled "user" 1 1]
+[BookingCanceled "user" 1 2]
+[BookingCanceled "user" 1 3]
+[BookingCanceled "user" 2 1]
+[BookingCanceled "user" 2 2]
+[BookingCanceled "user2" 2 3]
+`);
 
 // ============
 console.log("done: " + (performance.now() - start) + "ms");

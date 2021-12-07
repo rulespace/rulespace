@@ -23,8 +23,8 @@ const ctr = compileToConstructor(src, {debug:true, assertions:true});
 const instance = ctr();
 
 console.log("\n\n\n");
-console.log("tuples: " + [...instance.tuples()].join('\n'));
+console.log("tuples: " + instance.tuples().join('\n'));
 console.log("\n\n\n");
 instance.addTuples(compileModuleTuples(instance, `[BookingCanceled "user4" 2 6]`));
 
-console.log("tuples: " + [...instance.tuples()].join('\n'));
+console.log("tuples: " + instance.tuples().join('\n'));
