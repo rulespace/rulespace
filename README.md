@@ -18,7 +18,7 @@ cd common
 npm link
 cd ..
 cd rulespace
-npm link common
+npm link @rulespace/common
 npm test
 ```
 
