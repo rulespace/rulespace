@@ -123,3 +123,24 @@ wl duration: 1891 ms
   fireRule1Calls: 1763,
   fireRule4Duration: 325.68816900253296,
   fireRule4Calls: 159,
+
+refactoring of rsp2js emitters
+wl duration: 258 ms
+{
+  fireRule2Duration: 2.1240077018737793,
+  fireRule2Calls: 1001,
+  fireRule3Duration: 1.8176448345184326,
+  fireRule3Calls: 1001,
+  fireRule0Duration: 2.224808692932129,
+  fireRule0Calls: 1001,
+  fireRule1Duration: 179.088481426239,
+  fireRule1Calls: 1763,
+  fireRule4Duration: 31.632890939712524,
+  fireRule4Calls: 159,
+  Rule0: '(rule [Reachable x y] [Link x y])',
+  Rule1: '(rule [Reachable x y] [Link x z] [Reachable z y])',
+  Rule2: '(rule [Node x] [Link x _])',
+  Rule3: '(rule [Node y] [Link _ y])',
+  Rule4: '(rule [Unreachable x y] [Node x] [Node y] ¬[Reachable x y])'
+}
+
