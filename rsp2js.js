@@ -921,14 +921,14 @@ function compileRuleGBFireBody(rule, i, compileEnv, ptuples) // TODO contains cl
         productGB.value = ${compileEnv.get(aggregate.name)}; // TODO: aggregate is func dep on tuples, arrange this in another way (e.g. set in ctr)?
         productGB._outgb = groupby;
         groupby._inproductsgb.add(productGB);
-        const currentAdditionalValues = updates.get(groupby);
-        if (!currentAdditionalValues)
+        const currentDelta = updates.get(groupby); // TODO: send bucket when calling fire, iso. entire map
+        if (currentDelta === undefined)
         {
-          updates.set(groupby, [${compileEnv.get(aggregate.name)}]);
+          updates.set(groupby, [[${compileEnv.get(aggregate.name)}], []]);
         }
         else
         {
-          currentAdditionalValues.push(${compileEnv.get(aggregate.name)});
+          currentDelta[0].push(${compileEnv.get(aggregate.name)});
         }
         ${t2ps.join('\n        ')}
       }
@@ -1283,7 +1283,7 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
         // atom ${i} ${atom} (edb) (aggregating)
         if (added_${pred}_tuples.length > 0)
         {
-          fireRule${rule._id}GB(${i}, added_${pred}_tuples, updates${rule._id});
+          fireRule${rule._id}GB(${i}, added_${pred}_tuples, delta_Rule${rule._id}_gbs);
         }
       `];  
       }
@@ -1317,11 +1317,16 @@ function emitEdbAtom(atom, i, rule, producesPred, stratum)
 function emitComputeInitialAdd(strata, preds) 
 {
   const deltaAddedTuplesEntries = preds.map(pred => `[${pred}, added_${pred}_tuples]`);
+  const deltaGbUpdates = preds // TODO: there will never be removes during initialAdd! (but we have to follow protocol here for the fireRuleGB methods)
+    .flatMap(pred => pred.rules)
+    .filter(rule => rule.aggregates())
+    .map(rule => `const delta_Rule${rule._id}_gbs = new Map(); // gb -> [added values, removed values]`);
 
   return `
 function computeInitialAdd()
 {
   const addedTuplesMap = new Map();
+  ${deltaGbUpdates.join('\n')}
   ${logDebug('"=== computeInitialAdd"')}
   ${logDebug('"addedTupleMap " + [...addedTuplesMap.values()]')}
 
@@ -1444,13 +1449,8 @@ ${rule}
   `;
 }
 
-function emitDeltaEdbForAggregatingRule(rule, stratum)
+function aggregationUpdateOperation(rule, valuesToAddExp, existingValueExp)
 {
-  const pred = rule.head.pred;
-  const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, rule, pred, stratum));
-  const gbNames = Arrays.range(rule.head.terms.length - 1).map(i => "groupby.t" + i);
-
-  const aggregateName ="t" + (rule.head.terms.length - 1);  
   const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
   let joinOperation; // join semilattice
   let addOperation, identityValue; // commutative group
@@ -1466,44 +1466,145 @@ function emitDeltaEdbForAggregatingRule(rule, stratum)
   let updateOperation;
   if (joinOperation)
   {
-    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${joinOperation}) : additionalValues.reduce((acc, val) => ${joinOperation}, currentResultTuple.${aggregateName})`
+    updateOperation = existingValueExp
+      ? `${valuesToAddExp}.reduce((acc, val) => ${joinOperation}, ${existingValueExp})`
+      : `${valuesToAddExp}.reduce((acc, val) => ${joinOperation})`
   }
   else if (addOperation)
   {
-    updateOperation = `currentResultTuple === null ? additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue}) : additionalValues.reduce((acc, val) => ${addOperation}, currentResultTuple.${aggregateName})`
+    updateOperation = existingValueExp
+      ? `${valuesToAddExp}.reduce((acc, val) => ${addOperation}, ${existingValueExp})`
+      : `${valuesToAddExp}.reduce((acc, val) => ${addOperation}, ${identityValue})`
   }
   else
   {
     throw new Error("No update operation for aggregator: " + aggregator)
   }
+  return updateOperation;
+}
+
+function emitUpdateAggregation(rule, groupByExp, currentValueExp, updatedValueExp)
+{
+  const gbNames = Arrays.range(rule.head.terms.length - 1).map(i => `${groupByExp}.t${i}`);
+
+  return `
+  if (${updatedValueExp} === ${currentValueExp})
+  {
+    ${logDebug(`\`new value is same as current value, keeping \${${groupByExp}} with value \${${currentValueExp}}\``)}
+    // do nothing
+  }
+  else
+  {
+    ${logDebug(`\`new value \${${updatedValueExp}} is different from current value \${${currentValueExp}}, updating \${${groupByExp}}\``)}
+    deltaRemove_${rule.head.pred}(currentResultTuple);
+    const updatedResultTuple = relation_${rule.head.pred}.addGet(${[...gbNames, `updatedValue`]});
+    groupby._outtuple = updatedResultTuple;
+    updatedResultTuple._ingb = groupby; // TODO!!!! is not a field on tuple
+    added_${rule.head.pred}_tuples.push(updatedResultTuple);  
+  }
+  `
+}
+
+function emitDeltaEdbForAggregatingRule(rule, stratum)
+{
+  const pred = rule.head.pred;
+  const atoms = rule.body.flatMap((atom, i) => emitEdbAtom(atom, i, rule, pred, stratum));
+  const aggregateName ="t" + (rule.head.terms.length - 1);  
+  const gbNames = Arrays.range(rule.head.terms.length - 1).map(i => `groupby.t${i}`); // only used in initial thingie
+
+  // currentResultTuple.${aggregateName}
 
   return `
     /* Rule${rule._id} (aggregating)
 ${rule}
     */
 
-    const updates${rule._id} = new Map(); // groupby -> additional values
-
     ${atoms.join('\n    ')}
 
     // bind head ${rule.head}
-    for (const [groupby, additionalValues] of updates${rule._id})
+    for (const [groupby, [additionalValues, valuesToRemove]] of delta_Rule${rule._id}_gbs)
     {
-      ${logDebug('`update: gb ${groupby} additional vals ${additionalValues}`')}
+      ${logDebug('`updating ${groupby} + ${additionalValues} - ${valuesToRemove}`')}
       const currentResultTuple = groupby._outtuple;
-      ${logDebug('`currentResultTuple ${currentResultTuple}`')}
-      const updatedValue = ${updateOperation};
-      const updatedResultTuple = relation_${pred}.addGet(${[...gbNames, `updatedValue`]})  
-      ${logDebug('`updatedResultTuple ${updatedResultTuple}`')}
-      if (groupby._outtuple !== updatedResultTuple)
+
+      // if there is no current result tuple, we cannot have removes, and all adds are the initial adds
+      if (currentResultTuple === null)
       {
-        if (groupby._outtuple !== null)
-        { 
-          deltaRemove_${pred}(groupby._outtuple);
+        ${logDebug('`no current result tuple for ${groupby}, so no removes possible`')}
+        if (additionalValues.length === 0) // no aggregands added?? (TODO turn this into optionally compiled-in assertion)
+        {
+          throw new Error(\`illegal situation for \${groupby}: expecting aggregands to be added\`)
         }
-        groupby._outtuple = updatedResultTuple;
-        updatedResultTuple._ingb = groupby; // TODO!!!! is not a field on tuple
-        added_${pred}_tuples.push(updatedResultTuple);
+        if (valuesToRemove.length > 0) // aggregands removed??? (TODO turn this into optionally compiled-in assertion)
+        {
+          throw new Error(\`illegal situation for \${groupby}: did not expect removed aggregands\`)
+        }
+        const initialValue = ${aggregationUpdateOperation(rule, `additionalValues`)}
+        ${logDebug('`initial value ${initialValue}`')}
+        const initialResultTuple = relation_${rule.head.pred}.addGet(${[...gbNames, `initialValue`]}); // can be 'add' of tuple iso. 'addGet'
+        groupby._outtuple = initialResultTuple;
+        initialResultTuple._ingb = groupby; // TODO!!!! is not a field on tuple
+        added_${rule.head.pred}_tuples.push(initialResultTuple);      
+      }
+      else // there is already a result tuple for the gb
+      {
+        if (groupby._inproductsgb.size === 0 ) // all existing aggregands were removed
+        {
+          if (additionalValues.length === 0) // no aggregands have been added
+          {
+            ${logDebug('`all existing aggregands removed, no new ones: removing ${groupby}`')}
+            groupby_Rule${rule._id}.removeDirect(groupby);
+            deltaRemove_${rule.head.pred}(groupby._outtuple);  
+          }
+          else // all existing aggregands were removed, and some were added
+          {
+            ${logDebug('`all existing aggregands were removed, and some were added`')}
+            const currentValue = currentResultTuple.${aggregateName}
+            const updatedValue = ${aggregationUpdateOperation(rule, `additionalValues`)}
+            ${emitUpdateAggregation(rule, `groupby`, `currentValue`, `updatedValue`)}
+          }
+        }
+        else if (valuesToRemove.length === 0) // no aggregands removed
+        {
+          if (additionalValues.length === 0) // no aggregands added (TODO turn this into optionally compiled-in assertion)
+          {
+            throw new Error(\`illegal situation for \${groupby}: no aggregands added or removed, yet it appears in the set of updated aggregations\`)
+          }
+          ${logDebug('`only aggregands added for ${groupby}`')}
+          const currentValue = currentResultTuple.${aggregateName}
+          const updatedValue = ${aggregationUpdateOperation(rule, `additionalValues`, `currentValue`)}
+          ${emitUpdateAggregation(rule, `groupby`, `currentValue`, `updatedValue`)}
+        }
+        else // some but not all aggregands have been removed
+        {
+          // (note: here and elsewhere the inproductgbs for the added aggregands have already been added)
+          if (additionalValues.length === 0) // no aggregands have been added
+          {
+            ${logDebug('`some but not all aggregands have been removed, and none were added for ${groupby}`')}
+            // recomputing from scratch; TODO: have "minus" operation here
+            const remainingValues = [];
+            for (const inproductgb of groupby._inproductsgb) // recomputing based on (remaining) inproductgbs is safe, because none were added
+            {
+              remainingValues.push(inproductgb.value);
+            }
+            const currentValue = currentResultTuple.${aggregateName}
+            const updatedValue = ${aggregationUpdateOperation(rule, `remainingValues`)}
+            ${emitUpdateAggregation(rule, `groupby`, `currentValue`, `updatedValue`)}
+          }
+          else // aggregands have been removed and added
+          {
+            ${logDebug('`some but not all aggregands have been removed, and some were added for ${groupby}`')}
+            // recomputing from scratch; TODO: have "minus" operation here
+            const updatedValues = [];
+            for (const inproductgb of groupby._inproductsgb) // remember: inproductsgb includes those for added gb
+            {
+              updatedValues.push(inproductgb.value);
+            }
+            const currentValue = currentResultTuple.${aggregateName}
+            const updatedValue = ${aggregationUpdateOperation(rule, `updatedValues`)}
+            ${emitUpdateAggregation(rule, `groupby`, `currentValue`, `updatedValue`)}
+          }
+        }
       }
     }
   `;
@@ -1802,7 +1903,7 @@ function stratumDeltaLogic(stratum)
       assertTrue(stratum.preds.length === 1);
 
       const pred = stratum.preds[0];
-      if (analysis.predHasNonAggregatingRule(pred)) // TODO: other 'part' is below
+      if (analysis.predHasNonAggregatingRule(pred)) // TODO: other 'part' is in `emitDeltaEdbForAggregatingRule`
       {
         sb.push(`
         ${logDebug(`\`removing \${damaged_${pred}_tuples.length} damaged ${pred} tuples due to removal of stratum-edb tuples\``)}
@@ -1827,70 +1928,6 @@ function stratumDeltaLogic(stratum)
       {
         if (rule.aggregates())
         {
-          // this is other part: here we check damaged gbs
-          let joinOperation; // join semilattice
-          let addOperation, identityValue; // commutative group
-          const aggregator = rule.head.terms[rule.head.terms.length - 1].aggregator;
-          const aggregateName ="t" + (rule.head.terms.length - 1);  
-          const gbNames = Arrays.range(rule.head.terms.length - 1).map(i => "groupby.t" + i); 
-          switch (aggregator)
-          {
-            case "max": joinOperation = "Math.max(acc, val)"; break;
-            case "min": joinOperation = "Math.min(acc, val)"; break;
-            case "sum": addOperation = "acc + val"; identityValue = 0; break;
-            case "count": addOperation = "acc + 1"; identityValue = 0; break;
-            default: throw new Error("Unknown aggregator: " + aggregator);
-          }
-        
-          let updateOperation;
-          if (joinOperation)
-          {
-            updateOperation = `additionalValues.reduce((acc, val) => ${joinOperation})`
-          }
-          else if (addOperation)
-          {
-            updateOperation = `additionalValues.reduce((acc, val) => ${addOperation}, ${identityValue})`
-          }
-          else
-          {
-            throw new Error("No update operation for aggregator: " + aggregator)
-          }
-
-          sb.push(`
-          for (const groupby of damaged_Rule${rule._id}_gbs)
-          {
-            if (groupby._inproductsgb.size === 0)
-            {
-              groupby_Rule${rule._id}.removeDirect(groupby);
-              deltaRemove_${rule.head.pred}(groupby._outtuple);
-            }
-            else
-            {
-              const additionalValues = [];
-              for (const inproductgb of groupby._inproductsgb)
-              {
-                additionalValues.push(inproductgb.value);
-              }
-              ${logDebug('`update after delete: gb ${groupby} additional vals ${additionalValues}`')}
-              const currentResultTuple = groupby._outtuple;
-              ${logDebug('`currentResultTuple ${currentResultTuple}`')}
-              const updatedValue = ${updateOperation};
-              if (groupby._outtuple.${aggregateName} === updatedValue)
-              {
-                // no change, so nothing more to do
-              }
-              else
-              {
-                deltaRemove_${rule.head.pred}(groupby._outtuple);
-                const updatedResultTuple = relation_${rule.head.pred}.addGet(${[...gbNames, `updatedValue`]}); // could be 'add'
-                groupby._outtuple = updatedResultTuple;
-                updatedResultTuple._ingb = groupby; // TODO!!!! is not a field on tuple
-                added_${rule.head.pred}_tuples.push(updatedResultTuple);
-              }
-            }
-          }
-          `)
-
           sb.push(emitDeltaEdbForAggregatingRule(rule, stratum));
         }
         else
@@ -1943,10 +1980,17 @@ function emitDeltaRemoveTuple(pred)
         const ${rule.head.pred}_gb = outproductgb._outgb;
         ${rule.head.pred}_gb._inproductsgb.delete(outproductgb);
         // ${rule.head.pred}_gb_removedProductGbs.push(outproductgb);
-        damaged_Rule${rule._id}_gbs.add(${rule.head.pred}_gb);
+        const deltaGb = delta_Rule${rule._id}_gbs.get(${rule.head.pred}_gb);
+        if (deltaGb === undefined)
+        {
+          delta_Rule${rule._id}_gbs.set(${rule.head.pred}_gb, [[], [outproductgb.value]]);
+        }
+        else
+        {
+          deltaGb.push(outproductgb.value);
+        }
       }
       `);
-      // damagedGbRemovalNames.push(`damaged_Rule${rule._id}_gbs`);
     } // aggregating rule
     else // does not aggregate
     {
@@ -2061,7 +2105,7 @@ function ${exportName('computeDelta')}(addTuples, remTuples)
   ${preds
     .flatMap(pred => pred.rules)
     .filter(rule => rule.aggregates())
-    .map(rule => `const damaged_Rule${rule._id}_gbs = new Set();`)
+    .map(rule => `const delta_Rule${rule._id}_gbs = new Map(); // gb -> [added values, removed values]`)
     .join('\n  ')
   }
 
