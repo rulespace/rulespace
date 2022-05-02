@@ -555,7 +555,7 @@ SchemeTokenizer.prototype.skipWhitespace =
   }
 
 
-// console.log(String(new SchemeParser().parse("[test 1 2]")));
+//  console.log(str2sexp("1"))
 
 
 // following stuff is language- (Scheme-) specific
