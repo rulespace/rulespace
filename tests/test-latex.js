@@ -3,7 +3,17 @@ import { compileToRsp } from "./test-common.js";
 
 
 const src = `
-(rule [A x] [B x] [C x])
+(rule [Reachable x y]
+  [Link x y])
+(rule [Reachable x y]
+  [Link x z] [Reachable z y])
+(rule [Node x]
+  [Link x _])
+(rule [Node y]
+  [Link _ y])
+(rule [Unreachable x y]
+  [Node x] [Node y] (not [Reachable x y]))
+
 `;
 
 

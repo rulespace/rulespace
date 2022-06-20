@@ -281,6 +281,7 @@ export function reactive(instanceCtr, deltaObservers)
       {
         const delta = method.apply(instance, args);
         notify(delta);
+        return delta;
       }
     }
 
