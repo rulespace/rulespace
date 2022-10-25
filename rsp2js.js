@@ -1265,6 +1265,8 @@ function compileApplication(app, env, termAids, rcIncs)
         return `(${compileExpression(rands[0], env, termAids, rcIncs)}) % 2 === 0`;
       case "odd?":
         return `(${compileExpression(rands[0], env, termAids, rcIncs)}) % 2 === 1`;
+      case "getProp":
+        return `(typeof ${compileExpression(rands[0], env, termAids, rcIncs)} === "object" && Reflect.get(${compileExpression(rands[0], env, termAids, rcIncs)}, ${compileExpression(rands[1], env, termAids, rcIncs)}))`;
     }
   }
   return `(${compileExpression(rator, env, termAids, rcIncs)})(${rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')})`;
