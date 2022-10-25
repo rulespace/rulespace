@@ -3,8 +3,7 @@ import { sexp2rsp } from "./sexp2rsp.js";
 import { rsp2js } from "./rsp2js.js";
 import { MutableMaps } from "../common/common.js";
 
-export { rsp2latex } from "./rsp2latex.js";
-
+// export { rsp2latex } from "./rsp2latex.js";
 
 export function compileToRsp(src)
 {
@@ -25,12 +24,6 @@ export function compileToModuleSrc(src, options)
   const rsp = compileToRsp(src);
   const compiled = rsp2js(rsp, {...options, module:true});
   return compiled;
-}
-
-export function instance2dot(instance)
-{
-  const tuples = [...instance.rootTuples()];
-  return toDot(instance, tuples);
 }
 
 export function visitNodes(instance, tuples_, visitTuple, visitProduct, visitProductGb, visitGroupBy)
@@ -166,95 +159,6 @@ export function visitLinks(instance, tuples_, visitTuple2Product, visitProduct2T
   }
 }
 
-
-
-//////
-
-
-function toDot(instance, tuples = instance.tuples())
-{
-
-  function valueLabel(value)
-  {
-    if (value instanceof Function)
-    {
-      return '<function>';
-    }
-    if (value._outproducts)
-    {
-      return tupleLabel(value);
-    }
-    if (typeof value === 'string')
-    {
-      return `\\"${value}\\"`
-    }
-    return value;
-  }
-
-  function tupleLabel(tuple)
-  {
-    return `[${tuple.name()} ${tuple.values().map(valueLabel).join(' ')}]`;
-  }
-
-  function gbLabel(gb)
-  {
-    return gb;
-  }
-
-  function productLabel(product)
-  {
-    return product.constructor.name;
-  }
-
-  function productGBLabel(product)
-  {
-    return product.constructor.name;
-  }
-  
-  const tagMap = new Map();
-  function getTag(obj)
-  {
-    let tag = tagMap.get(obj);
-    if (tag !== undefined)
-    {
-      return tag;
-    }
-    tag = tagMap.size;
-    tagMap.set(obj, tag);
-    return tag;
-  }
-  
-  let sb = "digraph G {\nnode [style=filled,fontname=\"Roboto Condensed\"];\n";
-  visitNodes(instance, tuples,
-    tuple => { 
-      sb += `${getTag(tuple)} [shape=box label="${tupleLabel(tuple)}"];\n`;
-      instance.outProducts(tuple).forEach(product => sb += `${getTag(tuple)} -> ${getTag(product)};\n`);
-      instance.outProductsGroupBy(tuple).forEach(productGb => sb += `${getTag(tuple)} -> ${getTag(productGb)};\n`);
-      return true;
-    },
-    product => {
-      sb += `${getTag(product)} [label="${productLabel(product)}" color="0.650 0.200 1.000"];\n`;
-      sb += `${getTag(product)} -> ${getTag(instance.outTuple(product))};\n`;
-      return true;
-    },
-    productGb => {
-      sb += `${getTag(productGb)} [label="${productGBLabel(productGb)}"];\n`;
-      sb += `${getTag(productGb)} -> ${getTag(instance.outGroupBy(productGb))};\n`;      
-      return true;
-    },
-    groupBy => {
-      sb += `${getTag(groupBy)} [shape=diamond label="${gbLabel(groupBy)}"];\n`;
-      const outTuple = instance.outTuple(groupBy);
-      if (outTuple !== null)
-      {
-        sb += `${getTag(groupBy)} -> ${getTag(outTuple)};\n`;
-      }
-      return true;
-    });
-  sb += "}";
-
-  return sb;
-}
 
 ////////////
 

@@ -511,6 +511,7 @@ function functorObjectDeclaration(name, arity, exportName)
   const termAssignments = tn.map(t => `this.${t} = ${t};`);
   const termFields = tn.map(t => `this.${t}`);
 
+  // TODO: when are outproducts ever used on a functor?
   return `
   function ${exportName(name)}(${tn.join(', ')})
   {

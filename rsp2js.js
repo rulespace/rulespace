@@ -1841,14 +1841,15 @@ function stratumDeltaLogic(stratum)
     {
       assertTrue(pred.edb);
       sb.push(`
+      // adding ${pred} tuples because of user delta
+      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) || []);
+
       // removing \${${pred}_tuples_to_be_removed.length} ${pred} tuples because of user delta
       const ${pred}_tuples_to_be_removed = (removedTuplesMap.get(${pred}) || []);
       for (const ${pred}_tuple of ${pred}_tuples_to_be_removed)
       {
         deltaRemove_${pred}(${pred}_tuple);
       }
-      // adding ${pred} tuples because of user delta
-      const added_${pred}_tuples = delta_add_${pred}_tuples(addedTuplesMap.get(${pred}) || []);
       `);
     }      
   }
@@ -1859,6 +1860,36 @@ function stratumDeltaLogic(stratum)
       assertTrue(!pred.stratumIsEdb);
             
     }
+
+    for (const pred of stratum.preds)
+    {
+      sb.push(`const added_${pred}_tuples = [];`);
+
+      // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
+      sb.push(logDebug('"delta: adding idb tuples due to stratum-edb addition by firing all rules once"'));
+      for (const rule of pred.rules)
+      {
+        if (rule.aggregates())
+        {
+          sb.push(emitDeltaEdbForAggregatingRule(rule, stratum));
+        }
+        else
+        {
+          sb.push(emitDeltaEdbForRule(rule, stratum));
+        }
+      }
+    }
+  
+    // now, we still must fixpoint the recursive rules
+    if (stratum.recursiveRules.size > 0)
+    {
+      sb.push(logDebug('"delta: adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
+      const recursivePreds = new Set(stratum.preds.map(pred => pred.name))
+      sb.push(`// recursive preds: ${[...recursivePreds].join()}`);
+      const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], recursivePreds);
+      sb.push(recursiveRules);
+    }    
+
 
     if (analysis.stratumHasRecursiveRule(stratum))
     {
@@ -1917,36 +1948,7 @@ function stratumDeltaLogic(stratum)
         }
       `);
       }
-    }
-     
-    for (const pred of stratum.preds)
-    {
-      sb.push(`const added_${pred}_tuples = [];`);
-
-      // although this fires all rules (recursive or not), this already takes care of the non-recursive rules
-      sb.push(logDebug('"delta: adding idb tuples due to stratum-edb addition by firing all rules once"'));
-      for (const rule of pred.rules)
-      {
-        if (rule.aggregates())
-        {
-          sb.push(emitDeltaEdbForAggregatingRule(rule, stratum));
-        }
-        else
-        {
-          sb.push(emitDeltaEdbForRule(rule, stratum));
-        }
-      }
-    }
-  
-    // now, we still must fixpoint the recursive rules
-    if (stratum.recursiveRules.size > 0)
-    {
-      sb.push(logDebug('"delta: adding idb tuples due to stratum-idb addition by firing recursive rules"')); 
-      const recursivePreds = new Set(stratum.preds.map(pred => pred.name))
-      sb.push(`// recursive preds: ${[...recursivePreds].join()}`);
-      const recursiveRules = emitRecursiveRules([...stratum.recursiveRules], recursivePreds);
-      sb.push(recursiveRules);
-    }    
+    }     
   }
 
   for (const pred of stratum.preds)
