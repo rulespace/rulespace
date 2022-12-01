@@ -1,3 +1,4 @@
+import { assertTrue } from '@rulespace/common';
 import { App, Assign, Atom, Lit, Neg, Var } from './rsp.js';
 
 
@@ -167,6 +168,9 @@ function handleApplicationAtom(atom, i, rule, compileEnv, bindings, constraints)
 
 function handleAssignmentAtom(atom, i, rule, compileEnv, bindings, constraints)
 {
+  const left = atom.left;
+  assertTrue(left instanceof Var);
+  compileEnv.set(left.name, left.name);
 }
 
 function handleLitAtom(atom, i, rule, compileEnv, bindings, constraints)

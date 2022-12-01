@@ -1,5 +1,3 @@
-import { visitNodes } from "./utils.js";
-
 // every node object should be unique (object identity)
 export class Graph
 {
@@ -165,6 +163,139 @@ export class Graph
     sb += "}";
   
     return sb;
+  }
+}
+
+export function visitNodes(instance, tuples_, visitTuple, visitProduct, visitProductGb, visitGroupBy)
+{
+  const wl = [...tuples_];
+  const seen = new Set();
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    if (seen.has(tuple))
+    {
+      continue;
+    }
+    seen.add(tuple);
+    if (!visitTuple(tuple))
+    {
+      continue;
+    }
+    for (const product of instance.outProducts(tuple))
+    {
+      if (seen.has(product))
+      {
+        continue;     
+      }
+      seen.add(product);
+      if (!visitProduct(product))
+      {
+        continue;
+      }
+      const outTuple = instance.outTuple(product);
+      if (outTuple !== null)
+      {
+        wl.push(outTuple);
+      }  
+    }
+    for (const productGB of instance.outProductsGroupBy(tuple))
+    {
+      if (seen.has(productGB))
+      {
+        continue;     
+      }
+      seen.add(productGB);  
+      if (!visitProductGb(productGB))
+      {
+        continue;
+      }
+      const groupby = instance.outGroupBy(productGB);
+      if (!seen.has(groupby))
+      {
+        seen.add(groupby);
+        if (!visitGroupBy(groupby))
+        {
+          continue;
+        }
+        const outTuple = instance.outTuple(groupby);
+        if (outTuple !== null)
+        {
+          wl.push(outTuple);
+        }
+      }
+    }
+  }
+}
+
+export function visitLinks(instance, tuples_, visitTuple2Product, visitProduct2Tuple)
+{
+  const wl = [...tuples_];
+  const seen = new Set();
+  while (wl.length > 0)
+  {
+    const tuple = wl.pop();
+    if (seen.has(tuple))
+    {
+      continue;
+    }
+    seen.add(tuple);
+    // const t = getTag(tuple);
+    for (const product of instance.outProducts(tuple))
+    {
+      // sb += `${t} -> ${getTag(product)};\n`;    
+      if (seen.has(product))
+      {
+        continue;     
+      }
+      if (!visitTuple2Product(tuple, product))
+      {
+        continue;
+      }
+      seen.add(product);
+      // const p = getTag(product);
+      const outTuple = instance.outProduct(product);
+      if (outTuple !== null)
+      {
+        // sb += `${p} -> ${getTag(outTuple)};\n`;
+        if (!visitProduct2Tuple(product, outTuple))
+        {
+          continue;
+        }
+        wl.push(outTuple);
+      }  
+    }
+    // for (const productGB of instance.outProductsGroupBy(tuple))
+    // {
+    //   //sb += `${t} -> ${getTag(productGB)};\n`;
+    //   if (seen.has(productGB))
+    //   {
+    //     continue;     
+    //   }
+    //   seen.add(productGB);  
+    //   if (!visitProductGb(productGB))
+    //   {
+    //     continue;
+    //   }
+    //   // const p = getTag(productGB);
+    //   const groupby = instance.outGroupBy(outgb);
+    //   // const gb = getTag(groupby);
+    //   // sb += `${p} -> ${gb};\n`;      
+    //   if (!seen.has(groupby))
+    //   {
+    //     seen.add(groupby);
+    //     if (!visitGroupBy(groupby))
+    //     {
+    //       continue;
+    //     }
+    //     const outTuple = instance.outTuple(groupby);
+    //     if (outTuple !== null)
+    //     {
+    //       // sb += `${gb} -> ${getTag(outTuple)};\n`;
+    //       wl.push(outTuple);
+    //     }
+    //   }
+    // }
   }
 }
 
@@ -342,5 +473,5 @@ export function pgraph2dot(g)
 
 export function instance2dot(instance)
 {
-  return graph2dot(instance2graph(instance));
+  return pgraph2dot(instance2graph(instance));
 }

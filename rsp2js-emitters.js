@@ -472,8 +472,8 @@ class Relation_${this.name}
 
   remove()
   {
+    ${this.logDebug('`removed ${this.member} from members`')}
     this.member = null;
-    ${this.logDebug('`removed ${item} from members`')}
   }    
 
   removeDirect(item)
