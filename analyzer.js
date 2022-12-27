@@ -1,5 +1,5 @@
 import { assertTrue, MutableSets, MutableMaps } from '@rulespace/common';
-import { Atom, Neg, App, Assign, Lit, Var, Lam, Agg } from './rsp.js';
+import { Atom, Neg, App, Assign, Lit, Var, Lam, Agg, Rule } from './rsp.js';
 
 // TODO: flag assignment to already bound identifier:  [X x] [Y y] [:= x y]
 
@@ -205,9 +205,13 @@ function collect(program)
     return pred;
   }
 
+  for (const tuple of program.tuples)
+  {
+    handleAtom(tuple);
+  }
+
   for (const rule of program.rules)
   {
-    //console.log(`${rule._id} ${rule}`);
     const head = rule.head;
     const headPred = handleAtom(head, rule);
     if (rule.tupleArity() > 0)
@@ -249,10 +253,9 @@ function collect(program)
       else
       {
         throw new Error(`cannot handle ${atom} of type ${atom.constructor.name} in ${rule}`);
-      }
+      }  
     }
-  }
-
+  } 
   return { name2pred, name2functor };
 }
 

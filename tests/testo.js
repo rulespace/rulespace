@@ -1,11 +1,20 @@
-class Link extends Array
+const n = 8;
+
+let x = 1;
+let y = 2;
+
+while (y <= n)
 {
-  name()
+  if (x < n)
   {
-    return "Link";
+    x = x * 2;
   }
+  else
+  {
+    x = x - y;
+  }
+  y = y + 1;
+  console.log(x);
 }
 
-const l = new Link(1, 4);
-
-console.log(l, l.name(), l.values());
+console.log(x, y)

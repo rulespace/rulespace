@@ -233,6 +233,37 @@ function testAdd(src, edbTuplesSrc, expectedIdbTuplesSrc)
   }
 }
 
+/** only tests simple adding, no permutations or anything */
+function testSimpleAdd(src, edbTuplesSrc, expectedTuplesSrc)
+{
+  const ctr = compileToConstructor(src, {assertions:true, info:false});
+  const edbAtoms = compileAtoms(edbTuplesSrc);
+  const expectedAtoms = compileAtoms(expectedTuplesSrc);
+  const module = ctr();
+  // sanityCheck(module);
+  const initialTuples = [...module.tuples()]; // only facts + computed idbs  
+
+
+  const edbTuples = edbAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+  const delta = module.addTuples(edbTuples);
+  const expectedTuples = expectedAtoms.map(atom => atomToFreshModuleTuple(module, atom));
+  if (!equalTuples(module.tuples(), expectedTuples))
+  {
+    console.error("expected tuples: " + [...expectedTuples].join());
+    console.error("  module tuples: " + [...module.tuples()].join());
+    throw new Error("assertion failed");
+  }
+  
+  const actualDeltaTuples = [...delta.added()].flatMap(kv => kv[1]);
+  const expectedDeltaTuples = [...Sets.difference(module.tuples(), initialTuples)];
+  if (!equalTuples(actualDeltaTuples, expectedDeltaTuples))
+  {
+    console.error("expected delta tuples: " + expectedDeltaTuples.join());
+    console.error("         delta tuples: " + actualDeltaTuples.join());
+    throw new Error("assertion failed");
+  }
+}
+
 function testError(src, edbTuplesSrc, expectedErrorMessageStart)
 {
   try
@@ -431,6 +462,11 @@ testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
 // external names
 global.globalf = x => x*x;
 test(`(rule [O x] (:= x (globalf 4)))`, `[O 16]`);
+
+// tuple declarations
+testSimpleAdd(`(tuple [T x y z])`, `[T 1 2 3]`, `[T 1 2 3]`);
+test(`(tuple [T x y z]) (rule [T 1 2 3])`, `[T 1 2 3]`);
+testAdd(`(tuple [T x y z])`, `[T 1 2 3]`, ``); // must be edb tuple (so no idb tuples)
 
 // bug: function symbols in head not analyzed
 testAdd(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);

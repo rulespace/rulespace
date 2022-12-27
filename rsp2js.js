@@ -1112,12 +1112,16 @@ function ${exportName('clear')}()
 
 function emitCount(preds, functors, closures)
 {
+  const predCount = [0, ...preds.flatMap(pred => [countPred(pred), ...pred.rules.map(rule => countProd(rule))])].join('\n      +');
+  const functorCount = [0, ...functors.map(functor => `functor_${functor}.count()`)].join('\n      +');
+  const closureCount = [0, ...closures.map(closure => countClosure(closure))].join('\n      +');
+
   return `
 function ${exportName('count')}()
 {
-  const c1 = ${preds.flatMap(pred => [countPred(pred), ...pred.rules.map(rule => countProd(rule))]).join('\n      +')}
-  const c2 = ${[0, ...functors.map(functor => `functor_${functor}.count()`)].join('\n      +')}
-  const c3 = ${[0, ...closures.map(closure => countClosure(closure))].join('\n      +')}
+  const c1 = ${predCount};
+  const c2 = ${functorCount};
+  const c3 = ${closureCount};
   return c1 + c2 + c3;
 }  
   `;

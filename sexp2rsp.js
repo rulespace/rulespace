@@ -12,20 +12,34 @@ class SexpRspCompilationError extends Error
 
 export function sexp2rsp(sexps)
 {
-  const rules = [];
+  const tuples = []; // only decls
+  const rules = []; // including facts
   if (!(sexps instanceof Null))
   {
     for (const sexp of sexps)
     {
       if (sexp instanceof Pair)
       {
-        if ((sexp.car instanceof Sym) && sexp.car.name === 'rule')
+        if (sexp.car instanceof Sym)
         {
-          rules.push(compileRule(sexp));
+          switch (sexp.car.name)
+          {
+            case 'rule':
+            {
+              rules.push(compileRuleDeclaration(sexp)); 
+              break;
+            }
+            case 'tuple':
+            {
+              tuples.push(compileTupleDeclaration(sexp)); 
+              break;
+            }
+            default: throw new Error(`unknown declaration ${sexp}`);
+          }
         }
         else
         {
-          throw new Error("cannot handle " + sexp);
+          throw new Error(`expected declaration, got ${sexp}`);
         }
       }
       else if (sexp instanceof Tuple)
@@ -38,16 +52,22 @@ export function sexp2rsp(sexps)
       }
     }  
   }
-  return new Program(rules);
+  return new Program(tuples, rules);
 }
 
-function compileRule(ruleExp)
+function compileRuleDeclaration(ruleExp)
 {
   const headExp = ruleExp.cdr.car;
   const head = compileAtom(headExp);
   const bodyExps = ruleExp.cdr.cdr;
   const body = [...bodyExps].map(compileTerm);
   return new Rule(head, body);
+}
+
+function compileTupleDeclaration(tupleExp)
+{
+  const decl = compileAtom(tupleExp.cdr.car);
+  return decl;
 }
 
 function compileFact(headExp)

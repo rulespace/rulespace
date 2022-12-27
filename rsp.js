@@ -4,14 +4,15 @@
 
 export class Program
 {
-  constructor(rules)
+  constructor(tuples, rules)
   {
-    this.rules = rules;
+    this.tuples = tuples; //these are declarations, not facts!
+    this.rules = rules; // these will contain facts (if any)
   }
 
   toString()
   {
-    return this.rules.join('\n');
+    return this.tuples.concat(this.rules).join('\n');
   }
 }
 
@@ -65,6 +66,29 @@ export class Atom
       return `[${this.pred}]`;
     }
     return `[${this.pred} ${this.terms.map(toTermString).join(' ')}]`;
+  }
+}
+
+export class Declaration
+{
+  constructor(pred, terms)
+  {
+    this.pred = pred;
+    this.terms = terms;
+  }
+
+  arity()
+  {
+    return this.terms.length;
+  }
+
+  toString()
+  {
+    if (this.terms.length === 0)
+    {
+      return `(declaration [${this.pred}])`;
+    }
+    return `(declaration [${this.pred} ${this.terms.map(toTermString).join(' ')}])`;
   }
 }
 

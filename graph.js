@@ -9,12 +9,12 @@ export class Graph
     this._bw = new Map();
   }
 
-  nodes()
+  nodes() // returns iter
   {
     return this._nodes;
   }
 
-  *edges()
+  *edges() // returns iter
   {
     for (const [from, tos] of this._fw.entries())
     {
@@ -371,6 +371,9 @@ export function instance2graph(instance)
   }
 
   const g = new Graph();
+
+  // add all root tuples individually (in case they have no outgoing edges)
+  tuples.forEach(t => g.addNode(getTuple(t)));
 
   visitNodes(instance, tuples,
     tuple => { 
