@@ -1,4 +1,4 @@
-import { Arrays, assertTrue } from '@rulespace/common';
+import { Arrays, assertTrue } from '../common/common.js';
 import { CLit, CVar, CPos, CPred, EqIndexConstraint, ElementOfIndexConstraint } from './constrainer.js';
 
 function termNames(arity)

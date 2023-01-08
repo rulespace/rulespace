@@ -1,4 +1,4 @@
-import { assertTrue } from '@rulespace/common';
+import { assertTrue } from '../common/common.js';
 import { App, Assign, Atom, Lit, Neg, Var } from './rsp.js';
 
 

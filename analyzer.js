@@ -1,4 +1,4 @@
-import { assertTrue, MutableSets, MutableMaps } from '@rulespace/common';
+import { assertTrue, MutableSets, MutableMaps } from '../common/common.js';
 import { Atom, Neg, App, Assign, Lit, Var, Lam, Agg, Rule } from './rsp.js';
 
 // TODO: flag assignment to already bound identifier:  [X x] [Y y] [:= x y]

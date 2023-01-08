@@ -1,5 +1,4 @@
-import { performance } from 'perf_hooks';
-import { assertTrue, Sets } from '@rulespace/common';
+import { assertTrue, Sets } from '../../common/common.js';
 import { tupleEquals, compileAtoms, atomToFreshModuleTuple, compileToConstructor, sanityCheck } from './test-common.js';
 import { Atom, Lit, Var } from '../rsp.js';
 
@@ -460,7 +459,7 @@ test(`(rule [R #:max x] [I x]) (rule [I 1]) (rule [I 2])`, `[R 2] [I 1] [I 2]`);
 testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
 
 // external names
-global.globalf = x => x*x;
+globalThis.globalf = x => x*x;
 test(`(rule [O x] (:= x (globalf 4)))`, `[O 16]`);
 
 // tuple declarations

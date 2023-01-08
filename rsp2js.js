@@ -1,4 +1,4 @@
-import { Arrays, assertTrue, Sets } from '@rulespace/common';
+import { Arrays, assertTrue } from '../common/common.js';
 import { Atom, Neg, Agg, Var, Lit, Assign, App, Lam } from './rsp.js';
 import { analyzeProgram, freeVariables } from './analyzer.js';
 import { 
