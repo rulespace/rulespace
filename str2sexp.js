@@ -1,4 +1,4 @@
-import {Characters, assertFalse} from '../common/common.js';
+import {Characters, assertFalse} from './deps.ts';
 
 let __nodeCounter__ = 0;
 

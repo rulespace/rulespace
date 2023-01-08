@@ -1,4 +1,4 @@
-import { Arrays, assertTrue } from '../common/common.js';
+import { Arrays, assertTrue } from './deps.ts';
 import { CLit, CVar, CPos, CPred, EqIndexConstraint, ElementOfIndexConstraint } from './constrainer.js';
 
 function termNames(arity)

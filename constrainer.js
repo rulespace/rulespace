@@ -1,4 +1,4 @@
-import { assertTrue } from '../common/common.js';
+import { assertTrue } from './deps.ts';
 import { App, Assign, Atom, Lit, Neg, Var } from './rsp.js';
 
 
