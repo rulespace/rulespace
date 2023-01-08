@@ -14,12 +14,8 @@ Installation (developer)
 ```
 git clone https://github.com/rulespace/common.git
 git clone https://github.com/rulespace/rulespace.git
-cd common
-npm link
-cd ..
 cd rulespace
-npm link @rulespace/common
-npm test
+deno test
 ```
 
 Overview
