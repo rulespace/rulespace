@@ -1,4 +1,4 @@
-import { Sets, assertTrue } from '../../common/common.js';
+import { Sets, assertTrue } from '../deps.ts';
 import { str2sexp, Pair, Null } from '../str2sexp.js';
 import { sexp2rsp  } from '../sexp2rsp.js';
 import { rsp2js } from '../rsp2js.js';

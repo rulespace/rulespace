@@ -1,4 +1,4 @@
-import { assertTrue, Sets } from 'https://raw.githubusercontent.com/rulespace/common/deno/common.js';
+import { assertTrue, Sets } from '../deps.ts';
 import { tupleEquals, compileAtoms, atomToFreshModuleTuple, compileToConstructor, sanityCheck } from './test-common.js';
 import { Atom, Lit, Var } from '../rsp.js';
 

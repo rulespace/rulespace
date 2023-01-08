@@ -12,8 +12,8 @@ Installation (developer)
 ------------------------
 
 ```
-git clone https://github.com/rulespace/common.git
-git clone https://github.com/rulespace/rulespace.git
+git clone --branch deno https://github.com/rulespace/common.git
+git clone --branch deno https://github.com/rulespace/rulespace.git
 cd rulespace
 deno test
 ```
