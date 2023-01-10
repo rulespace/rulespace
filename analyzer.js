@@ -205,9 +205,9 @@ function collect(program)
     return pred;
   }
 
-  for (const tuple of program.tuples)
+  for (const rel of program.relations)
   {
-    handleAtom(tuple);
+    handleAtom(rel);
   }
 
   for (const rule of program.rules)

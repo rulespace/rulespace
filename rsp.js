@@ -6,7 +6,7 @@ export class Program
 {
   constructor(relations, rules)
   {
-    this.relations = tuples; 
+    this.relations = relations; 
     this.rules = rules; 
   }
 
