@@ -550,6 +550,14 @@ export function freeVariables(exp)
         fv(term, env);
       }
     }
+    else if (exp instanceof App)
+    {
+      fv(exp.operator, env);
+      for (const rand of exp.operands)
+      {
+        fv(rand, env);
+      }
+    }
     else
     {
       throw new Error(`cannot handle expression ${exp} of type ${exp?.constructor?.name}`); 

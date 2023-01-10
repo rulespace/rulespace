@@ -726,8 +726,7 @@ export class ClosureEmitter
     this.logDebug = logDebug;
   }
 
-  // container
-  containerDeclaration()
+  declaration()
   {
     return `
       

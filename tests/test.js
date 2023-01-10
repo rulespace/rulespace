@@ -449,8 +449,9 @@ test(`(rule [X 0]) (rule [X a] [X b] (< b 5) (:= a (+ b 1)))`, `[X 0] [X 1] [X 2
 
 // lambdas
 test(`(rule [F (lambda () 123)]) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
-// alloc not allowed in that position: test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
+// TODO: alloc not allowed in that position: test(`(rule [F f] (:= x 123) (:= f (lambda () x))) (rule [R x] [F f] (:= x (f)))`, `[F _] [R 123]`);
 test(`(rule [F (lambda (x) [Functor x])]) (rule [R (f 123)] [F f])`, `[F _] [R [Functor 123]]`);
+test(`(rule [F x (lambda () x)] (:= x 123)) (rule [R x] [F _ f] (:= x (f)))`, `[F 123 _] [R 123]`);
 
 // aggregation/groupby
 test(`(rule [R #:max x] [I x]) (rule [I 1]) (rule [I 2])`, `[R 2] [I 1] [I 2]`);

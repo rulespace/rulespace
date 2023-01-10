@@ -3,7 +3,8 @@ import { compileToModule, compileModuleTuples } from './test-common.js';
 
 const src = `
 
-(tuple [T x y z])
+(rule [F x (lambda () x)] (:= x 123))
+(rule [R x] [F _ f] (:= x (f)))
 
   `;
 
@@ -19,8 +20,6 @@ compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module =>
 // console.log(`count: ${module.count()}`);
 
 // sanityCheck(module); // reachableTuples is not always equal to members
-
-module.addTuples(compileModuleTuples(module, `[T 1 2 3] [T 4 5 6]`));
 
 console.log(instance2dot(module));
 
