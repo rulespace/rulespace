@@ -1,11 +1,8 @@
-import fs from 'fs';
-import os from 'os';
-import { performance } from 'perf_hooks';
 import { compileToModule } from './test-common.js';
 
 const PERF_LOG_FILE_PREFIX = 'logs/perflog-';
 const PERF_LOG_FILE_SUFFIX = '.csv';
-const HOST_NAME = os.hostname().replace(/\./, '').replace(/-/g, '');
+const HOST_NAME = "TODO"; //os.hostname().replace(/\./, '').replace(/-/g, '');
 const TEST_DATE = new Date();
 const TEST_ID = TEST_DATE.getTime();
 const TEST_MONTH = zeroPad(TEST_DATE.getMonth() + 1);
@@ -19,7 +16,7 @@ const TEST_TIME_STRING = zeroPad(TEST_DATE.getHours()) + zeroPad(TEST_DATE.getMi
 import { wl } from './wl-lrnu1000.js';
 
 // needed when compiling to ctr
-global.performance = performance;
+globalThis.performance = performance;
 
 performProfiling(wl);
 
