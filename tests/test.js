@@ -462,10 +462,10 @@ testAdd(`(rule [R α‘ «β»] [L α‘ «β»])`, `[L 1 2]`, `[R 1 2]`);
 globalThis.globalf = x => x*x;
 test(`(rule [O x] (:= x (globalf 4)))`, `[O 16]`);
 
-// tuple declarations
-testSimpleAdd(`(tuple [T x y z])`, `[T 1 2 3]`, `[T 1 2 3]`);
-test(`(tuple [T x y z]) (rule [T 1 2 3])`, `[T 1 2 3]`);
-testAdd(`(tuple [T x y z])`, `[T 1 2 3]`, ``); // must be edb tuple (so no idb tuples)
+// relation declarations
+testSimpleAdd(`(relation [T x y z])`, `[T 1 2 3]`, `[T 1 2 3]`);
+test(`(relation [T x y z]) (rule [T 1 2 3])`, `[T 1 2 3]`);
+testAdd(`(relation [T x y z])`, `[T 1 2 3]`, ``); // must be edb tuple (so no idb tuples)
 
 // bug: function symbols in head not analyzed
 testAdd(`(rule [R x [V y 9]] [I x y])`, `[I 1 2]`, `[R 1 [V 2 9]]`);

@@ -12,8 +12,8 @@ class SexpRspCompilationError extends Error
 
 export function sexp2rsp(sexps)
 {
-  const tuples = []; // only decls
-  const rules = []; // including facts
+  const relations = []; 
+  const rules = []; 
   if (!(sexps instanceof Null))
   {
     for (const sexp of sexps)
@@ -29,9 +29,9 @@ export function sexp2rsp(sexps)
               rules.push(compileRuleDeclaration(sexp)); 
               break;
             }
-            case 'tuple':
+            case 'relation':
             {
-              tuples.push(compileTupleDeclaration(sexp)); 
+              relations.push(compileRelDeclaration(sexp)); 
               break;
             }
             default: throw new Error(`unknown declaration ${sexp}`);
@@ -52,7 +52,7 @@ export function sexp2rsp(sexps)
       }
     }  
   }
-  return new Program(tuples, rules);
+  return new Program(relations, rules);
 }
 
 function compileRuleDeclaration(ruleExp)
@@ -64,7 +64,7 @@ function compileRuleDeclaration(ruleExp)
   return new Rule(head, body);
 }
 
-function compileTupleDeclaration(tupleExp)
+function compileRelDeclaration(tupleExp)
 {
   const decl = compileAtom(tupleExp.cdr.car);
   return decl;
