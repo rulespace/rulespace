@@ -176,7 +176,7 @@ export function rsp2js(rsp, options={})
   const FLAG_compile_to_module = OPT_module;
   const FLAG_compile_to_ctr = !OPT_module;
   const exportedNames = [];
-  const exportName = name => { exportedNames.push(name); return name };
+  const exportName = name => { return name };
 
   
   const FLAG_debug = options.debug ?? false;
@@ -366,6 +366,8 @@ function addGetGroupBy(name, valueExps)
 
 function main()
 {
+  const exportName = name => { exportedNames.push(name); return name};
+
   const sb = [profileVars, requiredBuiltInFunDefs, lambdas, `
   
   ${FLAG_compile_to_ctr ? `"use strict"` : ``}
@@ -553,6 +555,7 @@ function main()
 
 function emitTupleObject(pred)
 {
+  exportedNames.push(pred.name);
   const arity = pred.arity;
   const relationEmitter = relationEmitters.get(pred);
   
@@ -579,6 +582,7 @@ function emitTupleObject(pred)
 
 function emitFunctorObject(functor)
 {
+  exportedNames.push(functor.name); 
   const arity = functor.arity;
   const functorEmitter = createFunctorEmitter(functor.name, arity, exportName, logDebug);
 
@@ -1070,7 +1074,8 @@ function emitIterators(preds, edbPreds, rules)
 {
   // const edbTupleYielders = edbPreds.map(pred => `yield* select_${pred}()`);
   // const gbYielders = rules.flatMap((rule, i) => rule.aggregates() ? [`//yield* Rule${rule._id}GB.members;`] : []);
-
+  exportedNames.push('tuples');
+  exportedNames.push('rootTuples');
   return `
 // from membership
 function ${exportName('tuples')}() 
@@ -1100,6 +1105,7 @@ function ${exportName('rootTuples')}()   // all EDBs and IDB facts
 function emitClear(edbPreds)
 {
   const clearers = edbPreds.map(edbPred => `removeTuples(${selectPred(edbPred)});`);
+  exportedNames.push('clear');
 
   return `
 function ${exportName('clear')}()
@@ -1115,6 +1121,7 @@ function emitCount(preds, functors, closures)
   const functorCount = [0, ...functors.map(functor => `functor_${functor}.count()`)].join('\n      +');
   const closureCount = [0, ...closures.map(closure => countClosure(closure))].join('\n      +');
 
+  exportedNames.push('count');
   return `
 function ${exportName('count')}()
 {
@@ -2094,7 +2101,7 @@ function emitComputeDelta(strata, preds)
 {
   const deltaAddedTuplesEntries = preds.map(pred => `[${pred}, added_${pred}_tuples]`);
   const deltaRemovedTuplesEntries = preds.map(pred => `[${pred}, removed_${pred}_tuples]`);
-
+  exportedNames.push('computeDelta');
   return `
 function ${exportName('computeDelta')}(addTuples, remTuples)
 {
@@ -2212,6 +2219,7 @@ function tupleIsGrounded(tuple)
 
 function emitProfileResults()
   {
+    exportedNames.push('profileResults');  
     const vars = profileVars.names().map(name => `${name}`);
     return `    
 function ${exportName('profileResults')}()
