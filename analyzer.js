@@ -233,8 +233,8 @@ function collect(program)
       else if (atom instanceof Neg)
       {
         const posAtom = atom.atom;
-        const pred = handleAtom(posAtom);
-        pred.precedes.add(headPred, rule);
+        const pred = handleAtom(posAtom, rule);
+        pred.precedes.add(headPred);
         headPred.negDependsOn.add(pred);
         pred.negAppearsIn.add(rule);
       }
