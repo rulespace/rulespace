@@ -23,7 +23,7 @@ export function compileToModule(src, name, options)
   const rsp = compileToRsp(src);
   const compiled = rsp2js(rsp, {...options, module:true});
   Deno.writeTextFileSync(`./compiled/${name}.mjs`, compiled);
-  name === undefined ? 'run' : name;
+  name = name === undefined ? 'run' : name;
   return import(`./compiled/${name}.mjs`);
 }
 
