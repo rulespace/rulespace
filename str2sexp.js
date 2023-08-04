@@ -403,6 +403,8 @@ SchemeTokenizer.prototype.parseString =
       }
       s += c;
     }
+    // FIXME: hotfix: handle newlines by inserting explicit backslash to continue string
+    s = s.replaceAll('\n', '\\\n');
     var po = new String(s);
     po.tag = ++__nodeCounter__;
     sp.length = this.reader.pos - sp.pos + 1;

@@ -1757,7 +1757,7 @@ function compileRuleHead(rule, compileEnv, ptuples)
   if (fact)
   {
     return `
-    // adding edb ${head}
+    /* adding edb ${head} */
     
     // term aids
     ${termAids.join('\n')}
