@@ -1227,14 +1227,14 @@ function compileApplication(app, env, termAids, rcIncs)
 {
   assertTrue(env instanceof Map)
 
-  function compileRatorRands(i)
-  {
-    if (i === rands.length - 2)
-    {
-      return `${compileExpression(rands[i], env)} ${rator.name} ${compileExpression(rands[i+1], env, termAids, rcIncs)}`;
-    }
-    return `${compileExpression(rands[0], env)} ${rator.name} ${compileRatorRands(i+1, env, termAids, rcIncs)}`;
-  }
+  // function compileRatorRands(i)
+  // {
+  //   if (i === rands.length - 2)
+  //   {
+  //     return `${compileExpression(rands[i], env)} ${rator.name} ${compileExpression(rands[i+1], env, termAids, rcIncs)}`;
+  //   }
+  //   return `${compileExpression(rands[0], env)} ${rator.name} ${compileRatorRands(i+1, env, termAids, rcIncs)}`;
+  // }
 
   const rator = app.operator;
   const rands = app.operands;
@@ -1309,7 +1309,17 @@ function compileApplication(app, env, termAids, rcIncs)
         {
           return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`;
         }
-        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join('&&');
+        // return rands.slice(0, -1).map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `((x=>x===false?false:true)(${e}))`).join(' && ') + ` && (${compileExpression(rands.at(-1), env, termAids, rcIncs)})` ;
+        const x = freshVariable('$x');
+        const compileSub = (i) =>
+        {
+          if (rands.length === i+1)
+          {
+            return compileExpression(rands[i], env, termAids, rcIncs);
+          }
+          return `((${x}=>${x}===false?false:(${compileSub(i+1)}))(${compileExpression(rands[i], env, termAids, rcIncs)}))`;
+        }
+        return compileSub(0);
       }
       case "or":
       {
@@ -1321,7 +1331,16 @@ function compileApplication(app, env, termAids, rcIncs)
         {
           return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`;
         }
-        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join('||');
+        const x = freshVariable('$x');
+        const compileSub = (i) =>
+        {
+          if (rands.length === i+1)
+          {
+            return compileExpression(rands[i], env, termAids, rcIncs);
+          }
+          return `((${x}=>${x}===false?(${compileSub(i+1)}):${x})(${compileExpression(rands[i], env, termAids, rcIncs)}))`;
+        }
+        return compileSub(0);
       }
       case "not":
         return `!${compileExpression(rands[0], env, termAids, rcIncs)}`;
