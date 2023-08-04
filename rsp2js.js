@@ -1343,7 +1343,7 @@ function compileApplication(app, env, termAids, rcIncs)
         return compileSub(0);
       }
       case "not":
-        return `!${compileExpression(rands[0], env, termAids, rcIncs)}`;
+        return `${compileExpression(rands[0], env, termAids, rcIncs)} === false`;
       case "even?":
         return `(${compileExpression(rands[0], env, termAids, rcIncs)}) % 2 === 0`;
       case "odd?":

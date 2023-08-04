@@ -432,6 +432,9 @@ test(`(rule [R x] (:= x (or 1 2 3)))`, `[R 1]`);
 test(`(rule [R x] (:= x (or 1 #f 3)))`, `[R 1]`);
 test(`(rule [R x] (:= x (or 0)))`, `[R 0]`);
 test(`(rule [R x] (:= x (not #f)))`, `[R #t]`);
+test(`(rule [R x] (:= x (not #t)))`, `[R #f]`);
+test(`(rule [R x] (:= x (not 0)))`, `[R #f]`);
+test(`(rule [R x] (:= x (not 1)))`, `[R #f]`);
 test(`(rule [R x] (:= x (even? 123)))`, `[R #f]`);
 test(`(rule [R x] (:= x (even? 124)))`, `[R #t]`);
 
