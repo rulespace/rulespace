@@ -2,9 +2,7 @@ import { instance2dot } from '../graph.js';
 import { compileToModule, compileModuleTuples } from './test-common.js';
 
 const src = `
-
-(rule [F x (lambda () x)] (:= x 123))
-(rule [R x] [F _ f] (:= x (f)))
+(rule [R x] (:= x (and #t #f)))
 
   `;
 
@@ -14,10 +12,10 @@ compileToModule(src, 'standalone', {debug:true, assertions:true}).then(module =>
 // console.log(`count: ${module.count()}`);
 
 // console.log("\n\n\nDELTA add");
-// const delta1 = module.addTuples(compileModuleTuples(module, `[A]`));
-// console.log("tuples: " + [...module.tuples()].join('\n'));
-// console.log("roots: " + [...module.rootTuples()].join('\n'));
-// console.log(`count: ${module.count()}`);
+// const delta1 = module.addTuples(compileModuleTuples(module, `[I 123]`));
+console.log("tuples: " + [...module.tuples()].join('\n'));
+console.log("roots: " + [...module.rootTuples()].join('\n'));
+console.log(`count: ${module.count()}`);
 
 // sanityCheck(module); // reachableTuples is not always equal to members
 

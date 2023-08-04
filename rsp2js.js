@@ -1252,22 +1252,76 @@ function compileApplication(app, env, termAids, rcIncs)
       case "<=":
         return `${compileExpression(rands[0], env, termAids, rcIncs)} ${rator.name} ${compileExpression(rands[1], env, termAids, rcIncs)}`;
       case "+":
-      case "-":
-    {
-      if (rands.length === 1)
       {
-          return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`; // ignore + (?)
-      }
-      if (rands.length > 1)
-      {
-          return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join(rator.name);
-      }
-    }
-      case "*":
-      case "/":
-      if (rands.length > 1)
-      {
+        if (rands.length === 0)
+        {
+          return `0`;
+        }
+        if (rands.length === 1)
+        {
+          return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`;
+        }
         return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join(rator.name);
+      }
+      case "*":
+      {
+        if (rands.length === 0)
+        {
+          return `1`;
+        }
+        if (rands.length === 1)
+        {
+          return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`;
+        }
+        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join(rator.name);
+      }
+      case "-":
+      {
+        if (rands.length === 0)
+        {
+          throw new RspJsCompilationError(`arity mismatch: - expects at least one argument`);
+        }
+        if (rands.length === 1)
+        {
+          return `-${compileExpression(app.operands[0], env, termAids, rcIncs)}`;
+        }
+        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join(rator.name);
+      }
+      case "/":
+      {
+        if (rands.length === 0)
+        {
+          throw new RspJsCompilationError(`arity mismatch: / expects at least one argument`);
+        }
+        if (rands.length === 1)
+        {
+          return `(1/${compileExpression(app.operands[0], env, termAids, rcIncs)})`;
+        }
+        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join(rator.name);
+      }
+      case "and":
+      {
+        if (rands.length === 0)
+        {
+          return `true`;
+        }
+        if (rands.length === 1)
+        {
+          return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`;
+        }
+        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join('&&');
+      }
+      case "or":
+      {
+        if (rands.length === 0)
+        {
+          return `true`;
+        }
+        if (rands.length === 1)
+        {
+          return `${compileExpression(app.operands[0], env, termAids, rcIncs)}`;
+        }
+        return rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).map(e => `(${e})`).join('||');
       }
       case "not":
         return `!${compileExpression(rands[0], env, termAids, rcIncs)}`;
@@ -1277,9 +1331,11 @@ function compileApplication(app, env, termAids, rcIncs)
         return `(${compileExpression(rands[0], env, termAids, rcIncs)}) % 2 === 1`;
       case "getProp":
         return `(typeof ${compileExpression(rands[0], env, termAids, rcIncs)} === "object" && Reflect.get(${compileExpression(rands[0], env, termAids, rcIncs)}, ${compileExpression(rands[1], env, termAids, rcIncs)}))`;
+      default:
+        return `(${compileExpression(rator, env, termAids, rcIncs)})(${rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')})`
     }
   }
-  return `(${compileExpression(rator, env, termAids, rcIncs)})(${rands.map(exp => compileExpression(exp, env, termAids, rcIncs)).join(', ')})`;
+  throw new RspJsCompilationError(`cannot compile operator ${rator}`);
 }
 
 function emitEdbAtom(atom, i, rule, producesPred, stratum)
